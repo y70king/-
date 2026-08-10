@@ -1,0 +1,46 @@
+name: Gold Signal Bot
+
+on:
+  schedule:
+    # كل 5 دقائق (GitHub قد يؤخر التنفيذ بضع دقائق وقت الازدحام)
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}   # يسمح بالتشغيل اليدوي من تبويب Actions
+
+permissions:
+  contents: write
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: gold-signal-bot
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run signal bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python gold_signal_bot.py
+
+      - name: Commit updated state (dedup)
+        run: |
+          git config user.name "gold-signal-bot"
+          git config user.email "actions@github.com"
+          if [ -f state.json ] && ! git diff --quiet -- state.json; then
+            git add state.json
+            git commit -m "state: update last signal [skip ci]"
+            git push
+          else
+            echo "لا يوجد تغيير في state.json"
+          fi

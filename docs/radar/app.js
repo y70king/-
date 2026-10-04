@@ -141,10 +141,62 @@ async function notify(title, body, tag) {
   } catch { /* الصوت والاهتزاز يكفيان */ }
 }
 
+// ───────── البيانات: تحميل التاريخ مرة، وبعدها بث مباشر لحظة بلحظة ─────────
+const WS_URL = "wss://data-stream.binance.vision/stream?streams=" + ["5m", "15m", "1h", "4h"].map(i => `paxgusdt@kline_${i}`).join("/");
+const KEYS = { "5m": "m5", "15m": "m15", "1h": "h1", "4h": "h4" };
+const LIMITS = { m5: 600, m15: 300, h1: 300, h4: 300 };
+let frames = null, ws = null, wsRetry = 0, live = false, lastTick = 0, analyzeTimer = null, resyncTimer = null, clockTimer = null;
+
+async function loadHistory() {
+  const [m5, m15, h1, h4] = await Promise.all([klines("5m", LIMITS.m5), klines("15m", LIMITS.m15), klines("1h", LIMITS.h1), klines("4h", LIMITS.h4)]);
+  frames = { m5, m15, h1, h4 };
+  lastTick = Date.now();
+}
+
+// تحديث كامل (عند التشغيل، بعد انقطاع، أو كل 10 دقائق للاحتياط)
 async function check() {
   if (busy) return; busy = true;
+  try { await loadHistory(); analyzeNow(); }
+  catch (e) { showError(e); }
+  finally { busy = false; }
+}
+
+function showError(e) {
+  $("lastcheck").textContent = e instanceof TypeError && /fetch|network|load/i.test(e.message) || /^HTTP/.test(e.message) ? "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً." : "صار خلل بالتطبيق. سكّره وافتحه مرة ثانية حتى يتحدّث.";
+}
+
+// شمعة جديدة أو تحديث لشمعة قائمة من البث المباشر
+function onKline(k) {
+  const key = KEYS[k.i]; if (!frames || !key) return;
+  const arr = frames[key], bar = { time: k.t, open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
+  const last = arr[arr.length - 1];
+  if (bar.time === last.time) arr[arr.length - 1] = bar;
+  else if (bar.time > last.time) { arr.push(bar); if (arr.length > LIMITS[key]) arr.shift(); }
+  else return;
+  lastTick = Date.now();
+  if (key === "m5") $("price").textContent = px(bar.close);
+  if (!analyzeTimer) analyzeTimer = setTimeout(() => { analyzeTimer = null; analyzeNow(); }, 1000);   // تحليل كل ثانية كحد أقصى
+}
+
+function connect() {
+  if (!running || ws) return;
+  try { ws = new WebSocket(WS_URL); } catch { ws = null; return scheduleReconnect(); }
+  ws.onopen = async () => { wsRetry = 0; live = true; setStateChip(); try { await loadHistory(); analyzeNow(); } catch (e) { showError(e); } };
+  ws.onmessage = ev => { try { const m = JSON.parse(ev.data); if (m.data && m.data.k) onKline(m.data.k); } catch { /* رسالة غير مفهومة */ } };
+  ws.onclose = () => { ws = null; live = false; setStateChip(); scheduleReconnect(); };
+  ws.onerror = () => { try { ws && ws.close(); } catch { /* مغلق أصلاً */ } };
+}
+
+function scheduleReconnect() {
+  if (!running) return;
+  const wait = Math.min(30, 2 ** wsRetry++) * 1000;
+  setTimeout(() => { if (running && !ws) { connect(); if (!live) check(); } }, wait);   // نحدّث بالطريقة العادية لحين رجوع البث
+}
+
+function analyzeNow() {
+  if (!frames) return;
+  const { m5, m15, h1, h4 } = frames;
   try {
-    const [m5, m15, h1, h4] = await Promise.all([klines("5m", 600), klines("15m", 300), klines("1h", 300), klines("4h", 300)]);
     const price = m5[m5.length - 1].close, open = marketOpen();
     $("price").textContent = px(price);
     $("market").textContent = open ? "السوق مفتوح" : "السوق مغلق (عطلة)";
@@ -176,17 +228,23 @@ async function check() {
     }).slice(0, MAX_LOG);
     store.set("radarLog", log); store.set("radarSeen", [...seen].slice(-300));
     renderLog(); renderRecord(); renderGrades(); setStateChip();
-    $("lastcheck").textContent = `آخر فحص ${fmtClock(Date.now())} · التالي بعد دقيقة`;
-  } catch (e) {
-    $("lastcheck").textContent = e instanceof TypeError && /fetch|network|load/i.test(e.message) || /^HTTP/.test(e.message) ? "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً." : "صار خلل بالتطبيق. سكّره وافتحه مرة ثانية حتى يتحدّث.";
-  } finally { busy = false; }
+  } catch (e) { showError(e); }
+}
+
+// سطر الحالة: كم ثانية مرّت على آخر سعر
+function tickClock() {
+  if (!running) return;
+  const sec = Math.max(0, Math.round((Date.now() - lastTick) / 1000));
+  $("lastcheck").textContent = live
+    ? `🟢 مباشر · آخر سعر قبل ${sec} ثانية`
+    : `🟡 البث المباشر منقطع، يحدّث كل دقيقة لحين رجوعه · آخر سعر قبل ${sec} ثانية`;
 }
 
 function setStateChip() {
   const c = $("state");
   if (!running) { c.textContent = "متوقف"; c.className = "chip"; return; }
   if (!marketOpen()) { c.textContent = "يعمل · السوق مغلق"; c.className = "chip closed"; return; }
-  c.textContent = "يعمل"; c.className = "chip on";
+  c.textContent = live ? "مباشر" : "يعمل"; c.className = "chip on";
 }
 
 async function keepAwake() {
@@ -200,14 +258,19 @@ async function start() {
   $("toggle").textContent = "■ إيقاف"; $("toggle").classList.add("running");
   setStateChip(); keepAwake();
   await check();
-  timer = setInterval(check, INTERVAL_MS);
+  connect();
+  timer = setInterval(() => { if (!live) check(); }, INTERVAL_MS);        // احتياط إذا البث منقطع
+  resyncTimer = setInterval(check, 10 * 60 * 1000);                       // مزامنة كاملة كل 10 دقائق
+  clockTimer = setInterval(tickClock, 1000);
 }
 
 function stop() {
-  running = false; clearInterval(timer); timer = null;
+  running = false; live = false;
+  [timer, resyncTimer, clockTimer].forEach(clearInterval); timer = resyncTimer = clockTimer = null;
+  if (ws) { ws.onclose = null; try { ws.close(); } catch { /* مغلق */ } ws = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   $("toggle").textContent = "▶ تشغيل"; $("toggle").classList.remove("running");
-  setStateChip(); $("lastcheck").textContent = "متوقف. اضغط تشغيل لبدء الفحص";
+  setStateChip(); $("lastcheck").textContent = "متوقف. اضغط تشغيل لبدء المتابعة المباشرة";
 }
 
 $("toggle").addEventListener("click", () => (running ? stop() : start()));
@@ -229,14 +292,16 @@ $("optNotify").addEventListener("change", async e => {
 ["optFvg", "optPoc", "optSound", "optAwake"].forEach(id => $(id).addEventListener("change", e => {
   store.set(id, e.target.checked);
   if (id === "optAwake") e.target.checked ? keepAwake() : (wakeLock?.release().catch(() => {}), wakeLock = null);
-  if ((id === "optFvg" || id === "optPoc") && running) check();
+  if ((id === "optFvg" || id === "optPoc") && running) analyzeNow();
 }));
-["optSl", "optTp", "optGrade"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) check(); }));
+["optSl", "optTp", "optGrade"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) analyzeNow(); }));
 ["optFvg", "optPoc", "optNotify", "optSound", "optAwake"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).checked = v; });
 ["optSl", "optTp", "optGrade"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
 if ($("optNotify").checked && (!("Notification" in window) || Notification.permission !== "granted")) $("optNotify").checked = false;
 
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && running) { keepAwake(); check(); } });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && running) { keepAwake(); check(); if (!ws) connect(); }   // نعوّض أي شموع فاتت والهاتف مقفول
+});
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 renderLog(); renderRecord(); renderGrades();
 $("market").textContent = marketOpen() ? "السوق مفتوح" : "السوق مغلق (عطلة)";

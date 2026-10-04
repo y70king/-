@@ -1,6 +1,7 @@
 """Paper-test TradingAgents (multi-agent LLM desk) on gold for two weeks with a $30 / 0.01-lot account.
 
 Needs ONE of these env vars set in the cloud environment settings (never paste keys in chat):
+    DASHSCOPE_API_KEY  -> Qwen Cloud OpenAI-compatible endpoint, model deepseek-v4.1-flash
     DEEPSEEK_API_KEY   -> provider "deepseek"   (cheapest)
     ANTHROPIC_API_KEY  -> provider "anthropic"
     OPENAI_API_KEY     -> provider "openai"
@@ -24,10 +25,15 @@ p.add_argument("--m15", default="/home/user/eval/tradingbot/data_store/xauusd_M1
 p.add_argument("--out", default="ta_decisions.json")
 a = p.parse_args()
 
-provider = next((pv for pv, env in [("deepseek", "DEEPSEEK_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
+if os.environ.get("DASHSCOPE_API_KEY"):
+    os.environ.setdefault("OPENAI_COMPATIBLE_API_KEY", os.environ["DASHSCOPE_API_KEY"])
+    os.environ.setdefault("TRADINGAGENTS_LLM_BACKEND_URL", "https://maas.qwencloudapi.com/compatible-mode/v1")
+    os.environ.setdefault("TRADINGAGENTS_DEEP_THINK_LLM", "deepseek-v4.1-flash")
+    os.environ.setdefault("TRADINGAGENTS_QUICK_THINK_LLM", "deepseek-v4.1-flash")
+provider = next((pv for pv, env in [("openai_compatible", "DASHSCOPE_API_KEY"), ("deepseek", "DEEPSEEK_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY"),
                                     ("openai", "OPENAI_API_KEY")] if os.environ.get(env)), None)
 if provider is None:
-    sys.exit("No DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY in the environment.")
+    sys.exit("No DASHSCOPE_API_KEY / DEEPSEEK_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY in the environment.")
 os.environ.setdefault("TRADINGAGENTS_LLM_PROVIDER", provider)
 
 from tradingagents.default_config import DEFAULT_CONFIG

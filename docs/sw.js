@@ -1,5 +1,5 @@
 // يخزّن واجهة التطبيق للعمل كتطبيق مثبّت؛ أسعار الذهب تُجلب دائماً من الشبكة.
-const CACHE = "gold-signals-v2";
+const CACHE = "gold-signals-v3";
 const SHELL = ["./", "index.html", "app.js", "engine.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

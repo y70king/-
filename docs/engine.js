@@ -66,9 +66,9 @@
     const stop = Math.max(hi[hi.length - 1], lo[lo.length - 1]);
     for (let i = bars.length - 1; i > stop; i--) {
       if (bars[i].close > lastHigh)
-        return { bias: "bullish", eventType: "BOS/CHoCH صاعد", eventTime: bars[i].time, brokenLevel: lastHigh };
+        return { bias: "bullish", eventType: "كسر هيكلي صاعد", eventTime: bars[i].time, brokenLevel: lastHigh };
       if (bars[i].close < lastLow)
-        return { bias: "bearish", eventType: "BOS/CHoCH هابط", eventTime: bars[i].time, brokenLevel: lastLow };
+        return { bias: "bearish", eventType: "كسر هيكلي هابط", eventTime: bars[i].time, brokenLevel: lastLow };
     }
     return { bias: null, reason: "لا يوجد كسر هيكلي حديث" };
   }
@@ -78,10 +78,10 @@
     for (let i = 2; i < bars.length; i++) {
       if (bias === "bullish") {
         const gap = bars[i].low - bars[i - 2].high;
-        if (gap > minSize) zones.push({ index: i, top: bars[i].low, bottom: bars[i - 2].high, time: bars[i].time, type: "FVG صاعد" });
+        if (gap > minSize) zones.push({ index: i, top: bars[i].low, bottom: bars[i - 2].high, time: bars[i].time, type: "فجوة صاعدة" });
       } else {
         const gap = bars[i - 2].low - bars[i].high;
-        if (gap > minSize) zones.push({ index: i, top: bars[i - 2].low, bottom: bars[i].high, time: bars[i].time, type: "FVG هابط" });
+        if (gap > minSize) zones.push({ index: i, top: bars[i - 2].low, bottom: bars[i].high, time: bars[i].time, type: "فجوة هابطة" });
       }
     }
     return zones;
@@ -91,8 +91,8 @@
     const start = Math.max(0, beforeIndex - 15);
     for (let i = beforeIndex - 1; i > start; i--) {
       const b = bars[i];
-      if (bias === "bullish" && b.close < b.open) return { top: b.high, bottom: b.low, time: b.time, type: "Order Block صاعد" };
-      if (bias === "bearish" && b.close > b.open) return { top: b.high, bottom: b.low, time: b.time, type: "Order Block هابط" };
+      if (bias === "bullish" && b.close < b.open) return { top: b.high, bottom: b.low, time: b.time, type: "أوردر بلوك صاعد" };
+      if (bias === "bearish" && b.close > b.open) return { top: b.high, bottom: b.low, time: b.time, type: "أوردر بلوك هابط" };
     }
     return null;
   }

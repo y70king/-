@@ -58,7 +58,7 @@ function renderPipeline(res) {
   const c = res.detail || {};
   if (res.status === "no_zone") {
     if (!c.confirmed15m) setStep(2, c.confirmBias ? `15 دقيقة عكس الاتجاه (${c.confirmBias === "bullish" ? "صاعد" : "هابط"})` : "15 دقيقة بدون كسر هيكلي بعد", "bad");
-    else setStep(2, "لا توجد منطقة FVG حديثة", "wait");
+    else setStep(2, "لا توجد فجوة سعرية حديثة", "wait");
     setStep(3, "—", "");
     return;
   }
@@ -82,7 +82,7 @@ function sigCard(s, example = false) {
   el.className = `sig ${buy ? "buy" : "sell"}${example ? " example" : ""}`;
   const lv = (cls, label, v) => `<div class="lv ${cls}"><span>${label}</span><div class="num">${fmtPx(v)}</div></div>`;
   el.innerHTML = `
-    <div class="top"><span class="dir">${buy ? "شراء BUY ▲" : "بيع SELL ▼"}</span>
+    <div class="top"><span class="dir">${buy ? "شراء ▲" : "بيع ▼"}</span>
       <span class="age">${example ? '<span class="tag">مثال</span>' : ago(s.entryTime)}</span></div>
     <div class="levels">${lv("", "الدخول", s.entryPrice)}${lv("sl", "وقف الخسارة", s.stopLoss)}</div>
     <div class="levels tps">${s.takeProfits.map((t, i) => lv("tp", `الهدف ${i + 1}`, t)).join("")}</div>
@@ -93,7 +93,7 @@ function sigCard(s, example = false) {
   return el;
 }
 
-const EXAMPLE = { bias: "bullish", entryPrice: 4152.4, stopLoss: 4146.1, takeProfits: [4161.85, 4168.15, 4177.6], riskPoints: 6.3, zoneType: "FVG صاعد", entryTime: Date.now() - 12 * 60000 };
+const EXAMPLE = { bias: "bullish", entryPrice: 4152.4, stopLoss: 4146.1, takeProfits: [4161.85, 4168.15, 4177.6], riskPoints: 6.3, zoneType: "فجوة صاعدة", entryTime: Date.now() - 12 * 60000 };
 
 function renderSignals() {
   const box = $("signals"); box.replaceChildren();
@@ -108,7 +108,7 @@ function renderSignals() {
 
 function signalText(s) {
   const buy = s.bias === "bullish";
-  return [`إشارة ذهب ${buy ? "شراء BUY" : "بيع SELL"}`, `الدخول: ${fmtPx(s.entryPrice)}`, `وقف الخسارة: ${fmtPx(s.stopLoss)}`,
+  return [`إشارة ذهب ${buy ? "شراء" : "بيع"}`, `الدخول: ${fmtPx(s.entryPrice)}`, `وقف الخسارة: ${fmtPx(s.stopLoss)}`,
     ...s.takeProfits.map((t, i) => `الهدف ${i + 1}: ${fmtPx(t)}`), `الوقت: ${fmtTime(s.entryTime)}`].join("\n");
 }
 
@@ -169,7 +169,7 @@ async function check() {
     setStateChip();
     $("lastcheck").textContent = `آخر فحص ${fmtClock(Date.now())} · الفحص التالي بعد دقيقة`;
   } catch (e) {
-    $("lastcheck").textContent = `تعذر جلب الأسعار (${e.message}). تأكد من الإنترنت، سيُعاد المحاولة تلقائياً.`;
+    $("lastcheck").textContent = "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً.";
   } finally { busy = false; }
 }
 

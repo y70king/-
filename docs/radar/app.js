@@ -6,7 +6,7 @@ const SYMBOL = "PAXGUSDT";
 const INTERVAL_MS = 60 * 1000;
 const TZ = "Asia/Baghdad";
 const MAX_LOG = 100;
-const NAMES = { fvg: "الفجوات", poc: "POC" };
+const NAMES = { fvg: "الفجوات", poc: "نقطة التحكم" };
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -46,7 +46,7 @@ function signalBlock(s) {
     : `الموجة ${px(s.legLo)} – ${px(s.legHi)} · نقطة التحكم ${px(s.entry)}`;
   return `
     <div class="side"><span class="dir ${buy ? "buy" : "sell"}">${buy ? "شراء ▲" : "بيع ▼"}</span>
-      <span class="order">${buy ? "Buy Limit" : "Sell Limit"} · أمر معلق</span></div>
+      <span class="order">${buy ? "أمر شراء معلّق" : "أمر بيع معلّق"}</span></div>
     <div class="grid">
       <div class="cell entry"><span>الدخول</span><div class="num">${px(s.entry)}</div></div>
       <div class="cell sl"><span>وقف الخسارة</span><div class="num">${px(s.sl)}</div></div>
@@ -163,7 +163,7 @@ async function check() {
     renderLog(); renderRecord(); setStateChip();
     $("lastcheck").textContent = `آخر فحص ${fmtClock(Date.now())} · التالي بعد دقيقة`;
   } catch (e) {
-    $("lastcheck").textContent = `تعذر جلب الأسعار (${e.message}). سيُعاد المحاولة تلقائياً.`;
+    $("lastcheck").textContent = "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً.";
   } finally { busy = false; }
 }
 

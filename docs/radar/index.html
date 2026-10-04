@@ -55,6 +55,13 @@ h1 small { display: block; font: 400 .76rem var(--font); color: var(--muted); ma
 .frames .tf span { display: block; font-size: .7rem; color: var(--muted); }
 .frames .tf b { font-size: .9rem; }
 .frames .bias { background: var(--raise); }
+.g3 { color: var(--gold); } .g2 { color: var(--buy); } .g1 { color: var(--sell); }
+.badge { font-size: .74rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid currentColor; white-space: nowrap; }
+.grades { width: 100%; border-collapse: collapse; font-size: .82rem; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.grades th, .grades td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: center; }
+.grades th { font-weight: 500; color: var(--muted); font-size: .74rem; }
+.grades tr:last-child td { border-bottom: 0; }
+.grades td:first-child { text-align: start; font-weight: 700; }
 .trend.up { color: var(--buy); } .trend.down { color: var(--sell); }
 
 #toggle { width: 100%; border: 0; border-radius: 12px; padding: 17px; cursor: pointer; font: 700 1.1rem var(--font);
@@ -135,7 +142,7 @@ h2 { margin: 6px 0 0; font: 500 1rem var(--font); display: flex; justify-content
     <div class="tf"><span>4 ساعات</span><b id="tfH4" class="trend">—</b></div>
     <div class="tf"><span>ساعة</span><b id="tfH1" class="trend">—</b></div>
     <div class="tf"><span>15 دقيقة</span><b id="tfM15" class="trend">—</b></div>
-    <div class="tf bias"><span>الإشارة على 5 دقائق</span><b id="tfBias" class="trend">—</b></div>
+    <div class="tf bias"><span>درجة الإشارة</span><b id="tfBias">—</b></div>
   </section>
 
   <button id="toggle" type="button">▶ تشغيل</button>
@@ -158,6 +165,9 @@ h2 { margin: 6px 0 0; font: 500 1rem var(--font); display: flex; justify-content
       <button type="button" data-f="poc" aria-pressed="false">نقطة التحكم</button>
     </span>
   </h2>
+  <div style="overflow-x:auto"><table class="grades" aria-label="النتائج حسب الدرجة">
+    <thead><tr><th>الدرجة</th><th>الفجوات</th><th>نقطة التحكم</th></tr></thead>
+    <tbody id="gradeTable"></tbody></table></div>
   <section class="log" id="log"></section>
   <button class="linkbtn" id="clear" type="button">مسح السجل</button>
 
@@ -165,8 +175,8 @@ h2 { margin: 6px 0 0; font: 500 1rem var(--font); display: flex; justify-content
   <section class="settings">
     <label class="row" for="optFvg"><span>محرك الفجوات</span><span class="switch"><input type="checkbox" id="optFvg" checked><span></span></span></label>
     <label class="row" for="optPoc"><span>محرك نقطة التحكم</span><span class="switch"><input type="checkbox" id="optPoc" checked><span></span></span></label>
-    <label class="row" for="optMtf"><span>فلتر الفريمات العالية<small>الإشارة تطلع بس إذا الفريمات متفقة</small></span>
-      <select id="optMtf"><option value="all">4 ساعات + ساعة + 15 د</option><option value="h1">ساعة + 15 د</option><option value="m15">15 د فقط</option></select></label>
+    <label class="row" for="optGrade"><span>الإشارات اللي تطلع<small>حسب درجة اتفاق الفريمات العالية</small></span>
+      <select id="optGrade"><option value="1">الكل</option><option value="2">ذهبية وجيدة</option><option value="3">ذهبية بس</option></select></label>
     <label class="row" for="optSl"><span>وقف خسارة ثابت ($)<small>0 = الوقف الهيكلي لكل محرك</small></span><input type="number" id="optSl" min="0" step="0.5" value="0" inputmode="decimal"></label>
     <label class="row" for="optTp"><span>جني أرباح ثابت ($)<small>0 = الهدف الهيكلي · الهدف 1 = نصفه</small></span><input type="number" id="optTp" min="0" step="0.5" value="0" inputmode="decimal"></label>
     <label class="row" for="optNotify"><span>إشعار على الهاتف<small>يطلب الإذن عند أول تفعيل</small></span><span class="switch"><input type="checkbox" id="optNotify"><span></span></span></label>
@@ -176,7 +186,7 @@ h2 { margin: 6px 0 0; font: 500 1rem var(--font); display: flex; justify-content
 
   <section class="note">
     <p><b>على لوت 0.01:</b> كل 1$ حركة بسعر الذهب = 1$ ربح أو خسارة. الخسارة المتوقعة لكل إشارة مكتوبة تحتها.</p>
-    <p><b>نتيجة الاختبار:</b> جرّبت المحركين على 39 يوم (26 آب – 4 تشرين الأول). مع فلتر الفريمات الثلاثة طلع محرك الفجوات <span class="num">+41$</span> (147 إشارة) ونقطة التحكم <span class="num">−10$</span> (80 إشارة) على لوت 0.01، وبدون الفلتر جانت الاثنين خاسرة. شهر واحد ما يكفي للحكم، فالتطبيق يتابع كل إشارة ويبين نتيجتها الحقيقية.</p>
+    <p><b>نتيجة الاختبار:</b> جرّبت المحركين على 39 يوم (26 آب – 4 تشرين الأول). على لوت 0.01: إشارات الفجوات <b class="g3">الذهبية</b> ربحت <span class="num">+41$</span> (128 إشارة، رابحة بنصفي الفترة)، أما الجيدة والخطرة فخسرت. بنقطة التحكم الذهبية <span class="num">−6$</span> والجيدة <span class="num">+26$</span> والخطرة <span class="num">−60$</span>. شهر واحد ما يكفي للحكم، فجدول الدرجات فوق يحسب النتائج الحقيقية من إشاراتك.</p>
     <p>يعمل الفحص ما دام التطبيق مفتوحاً. السعر من رمز ذهب مدعوم بالذهب الفعلي، وقد يختلف بضعة دولارات عن سعر الذهب عند وسيطك.</p>
   </section>
 </div>

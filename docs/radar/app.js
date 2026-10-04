@@ -7,6 +7,8 @@ const INTERVAL_MS = 60 * 1000;
 const TZ = "Asia/Baghdad";
 const MAX_LOG = 100;
 const NAMES = { fvg: "الفجوات", poc: "نقطة التحكم" };
+const GRADES = { 3: "ذهبية 🥇", 2: "جيدة", 1: "خطرة ⚠️" };
+const gradeBadge = g => g ? `<span class="badge g${g}">${GRADES[g]}</span>` : "";
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -36,7 +38,7 @@ async function klines(interval, limit) {
 }
 
 function cfg() {
-  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0), mtf: $("optMtf").value };
+  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0), minGrade: parseInt($("optGrade").value, 10) || 1 };
 }
 
 function signalBlock(s) {
@@ -45,7 +47,7 @@ function signalBlock(s) {
     ? `الفجوة ${px(s.zoneBottom)} – ${px(s.zoneTop)}`
     : `الموجة ${px(s.legLo)} – ${px(s.legHi)} · نقطة التحكم ${px(s.entry)}`;
   return `
-    <div class="side"><span class="dir ${buy ? "buy" : "sell"}">${buy ? "شراء ▲" : "بيع ▼"}</span>
+    <div class="side"><span class="dir ${buy ? "buy" : "sell"}">${buy ? "شراء ▲" : "بيع ▼"} ${gradeBadge(s.grade)}</span>
       <span class="order">${buy ? "أمر شراء معلّق" : "أمر بيع معلّق"}</span></div>
     <div class="grid">
       <div class="cell entry"><span>الدخول</span><div class="num">${px(s.entry)}</div></div>
@@ -72,6 +74,19 @@ function renderRecord() {
   }
 }
 
+function renderGrades() {
+  const rows = [3, 2, 1].map(g => {
+    const cell = key => {
+      const done = log.filter(s => s.engine === key && s.grade === g && (s.state === "win" || s.state === "loss"));
+      if (!done.length) return "—";
+      const w = done.filter(s => s.state === "win").length;
+      return `${w}/${done.length} · ${usd(done.reduce((a, s) => a + (s.result || 0), 0))}`;
+    };
+    return `<tr><td class="g${g}">${GRADES[g]}</td><td>${cell("fvg")}</td><td>${cell("poc")}</td></tr>`;
+  });
+  $("gradeTable").innerHTML = rows.join("");
+}
+
 const STATE_TXT = { pending: "بانتظار الدخول", active: "الصفقة شغالة", win: "ربح", loss: "خسارة", expired: "انتهت بدون دخول" };
 
 function logItem(s, example = false) {
@@ -80,13 +95,13 @@ function logItem(s, example = false) {
   const st = s.state || "pending";
   const res = st === "win" || st === "loss" ? ` ${usd(s.result)}` : "";
   el.innerHTML = `
-    <div class="row1"><span class="what">${NAMES[s.engine]} · ${s.dir === 1 ? "شراء" : "بيع"} عند <span class="num">${px(s.entry)}</span></span>
+    <div class="row1"><span class="what">${gradeBadge(s.grade)} ${NAMES[s.engine]} · ${s.dir === 1 ? "شراء" : "بيع"} عند <span class="num">${px(s.entry)}</span></span>
       <span class="state ${st}">${example ? "مثال" : STATE_TXT[st] + res}</span></div>
     <div class="row2"><span>وقف <span class="num">${px(s.sl)}</span></span><span>هدف <span class="num">${px(s.tp2)}</span></span><span>${fmtTime(s.firedAt)}</span></div>`;
   return el;
 }
 
-const EXAMPLE = { engine: "poc", dir: 1, entry: 4148.25, sl: 4141.6, tp2: 4163.9, firedAt: Date.now() - 40 * 60000 };
+const EXAMPLE = { engine: "poc", grade: 3, dir: 1, entry: 4148.25, sl: 4141.6, tp2: 4163.9, firedAt: Date.now() - 40 * 60000 };
 
 function renderLog() {
   const box = $("log"); box.replaceChildren();
@@ -137,7 +152,7 @@ async function check() {
     const r = Radar.analyze(m5, { m15, h1, h4 }, cfg());
     const show = (id, d, none) => { const el = $(id); el.textContent = d === 1 ? "صاعد ▲" : d === -1 ? "هابط ▼" : none; el.className = "trend " + (d === 1 ? "up" : d === -1 ? "down" : ""); };
     show("tfH4", r.trends.h4, "محايد"); show("tfH1", r.trends.h1, "محايد"); show("tfM15", r.trends.m15, "محايد");
-    show("tfBias", r.bias, "انتظار");
+    const gb = $("tfBias"); gb.textContent = r.grade ? GRADES[r.grade] : "ماكو اتجاه"; gb.className = r.grade ? "g" + r.grade : "";
     renderEngine("fvg", r.fvg); renderEngine("poc", r.poc);
 
     // إشارات جديدة
@@ -146,9 +161,9 @@ async function check() {
       if (!s.has || seen.has(s.id) || !$(key === "fvg" ? "optFvg" : "optPoc").checked) continue;
       seen.add(s.id);
       if (!open) continue;
-      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending" };
+      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, grade: s.grade, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending" };
       log.unshift(rec);
-      notify(`${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry)}`, `وقف ${px(s.sl)} · هدف ${px(s.tp2)} · خسارة محتملة ${px(s.risk)}$`, s.id);
+      notify(`${GRADES[s.grade]} · ${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry)}`, `وقف ${px(s.sl)} · هدف ${px(s.tp2)} · خسارة محتملة ${px(s.risk)}$`, s.id);
     }
 
     // متابعة نتائج الإشارات المفتوحة
@@ -160,7 +175,7 @@ async function check() {
       return t;
     }).slice(0, MAX_LOG);
     store.set("radarLog", log); store.set("radarSeen", [...seen].slice(-300));
-    renderLog(); renderRecord(); setStateChip();
+    renderLog(); renderRecord(); renderGrades(); setStateChip();
     $("lastcheck").textContent = `آخر فحص ${fmtClock(Date.now())} · التالي بعد دقيقة`;
   } catch (e) {
     $("lastcheck").textContent = "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً.";
@@ -196,7 +211,7 @@ function stop() {
 }
 
 $("toggle").addEventListener("click", () => (running ? stop() : start()));
-$("clear").addEventListener("click", () => { log = []; store.set("radarLog", []); renderLog(); renderRecord(); toast("تم مسح السجل"); });
+$("clear").addEventListener("click", () => { log = []; store.set("radarLog", []); renderLog(); renderRecord(); renderGrades(); toast("تم مسح السجل"); });
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
   filter = b.dataset.f;
   document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
@@ -216,13 +231,13 @@ $("optNotify").addEventListener("change", async e => {
   if (id === "optAwake") e.target.checked ? keepAwake() : (wakeLock?.release().catch(() => {}), wakeLock = null);
   if ((id === "optFvg" || id === "optPoc") && running) check();
 }));
-["optSl", "optTp", "optMtf"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) check(); }));
+["optSl", "optTp", "optGrade"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) check(); }));
 ["optFvg", "optPoc", "optNotify", "optSound", "optAwake"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).checked = v; });
-["optSl", "optTp", "optMtf"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
+["optSl", "optTp", "optGrade"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
 if ($("optNotify").checked && (!("Notification" in window) || Notification.permission !== "granted")) $("optNotify").checked = false;
 
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && running) { keepAwake(); check(); } });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
-renderLog(); renderRecord();
+renderLog(); renderRecord(); renderGrades();
 $("market").textContent = marketOpen() ? "السوق مفتوح" : "السوق مغلق (عطلة)";
 klines("5m", 1).then(k => { $("price").textContent = px(k[0].close); }).catch(() => {});

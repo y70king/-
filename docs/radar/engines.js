@@ -10,7 +10,7 @@
 
   const Defaults = {
     trendEma: 50,          // اتجاه كل فريم: الإغلاق فوق/تحت EMA50 مع ميلها
-    mtf: "all",            // all = 4س + ساعة + 15د متفقة · h1 = ساعة + 15د · m15 = 15د فقط
+    minGrade: 1,           // أقل درجة تُعرض: 3 ذهبية · 2 جيدة · 1 خطرة (الكل)
     trendSlopeBars: 4,
     atrPeriod: 14,
     // الفجوات
@@ -70,13 +70,19 @@
   }
 
   // ───────── محرك الفجوات ─────────
-  // الاتجاه المعتمد: الفريمات العالية لازم تتفق حسب الوضع المختار
-  function bias(t, mode) {
-    if (mode === "m15") return t.m15;
-    if (mode === "h1") return t.h1 && t.m15 === t.h1 ? t.h1 : 0;
-    return t.h4 && t.h1 === t.h4 && t.m15 === t.h4 ? t.h4 : 0;
+  // اتجاه الإشارة: أقرب فريم عنده اتجاه (15د ثم ساعة ثم 4س)
+  function bias(t) { return t.m15 || t.h1 || t.h4 || 0; }
+
+  // درجة الإشارة حسب اتفاق الفريمات العالية مع اتجاهها
+  //   3 ذهبية: الثلاثة متفقة · 2 جيدة: اثنين متفقين والثالث محايد · 1 خطرة: غير ذلك
+  function grade(t, dir) {
+    const v = [t.h4, t.h1, t.m15];
+    const agree = v.filter(x => x === dir).length, oppose = v.filter(x => x === -dir).length;
+    if (agree === 3) return 3;
+    if (agree === 2 && oppose === 0) return 2;
+    return 1;
   }
-  const NO_BIAS = "الفريمات العالية غير متفقة على اتجاه واحد";
+  const NO_BIAS = "كل الفريمات العالية محايدة، ماكو اتجاه";
 
   function fvgEngine(bars5, dir, cfg = Defaults) {
     if (!dir) return { has: false, reason: NO_BIAS };
@@ -190,11 +196,14 @@
   function analyze(bars5, frames, cfg) {
     const c = Object.assign({}, Defaults, cfg || {});
     const trends = { h4: trendOf(frames.h4, c), h1: trendOf(frames.h1, c), m15: trendOf(frames.m15, c) };
-    const dir = bias(trends, c.mtf);
+    const dir = bias(trends), g = dir ? grade(trends, dir) : 0;
     const f = fvgEngine(bars5, dir, c), p = pocEngine(bars5, dir, c);
-    if (f.has) withFixed(f, c);
-    if (p.has) withFixed(p, c);
-    return { trends, bias: dir, fvg: f, poc: p };
+    for (const s of [f, p]) {
+      if (!s.has) continue;
+      withFixed(s, c); s.grade = g;
+      if (g < c.minGrade) Object.assign(s, { has: false, reason: "الإشارة أقل من الدرجة المختارة بالإعدادات" });
+    }
+    return { trends, bias: dir, grade: g, fvg: f, poc: p };
   }
 
   // متابعة إشارة محفوظة على الشموع اللاحقة: انتظار الدخول ← دخلت ← هدف/وقف
@@ -221,7 +230,7 @@
     return Object.assign({}, sig, { state, enteredAt, closedAt, result });
   }
 
-  const api = { Defaults, ema, atr, trendOf, bias, swings, volumeProfilePoc, fvgEngine, pocEngine, analyze, track };
+  const api = { Defaults, ema, atr, trendOf, bias, grade, swings, volumeProfilePoc, fvgEngine, pocEngine, analyze, track };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Radar = api;
 })(typeof self !== "undefined" ? self : this);

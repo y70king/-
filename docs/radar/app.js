@@ -38,7 +38,7 @@ async function klines(interval, limit) {
 }
 
 function cfg() {
-  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0), minGrade: parseInt($("optGrade").value, 10) || 1 };
+  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0), minGrade: parseInt($("optGrade")?.value, 10) || 1 };
 }
 
 function signalBlock(s) {
@@ -178,7 +178,7 @@ async function check() {
     renderLog(); renderRecord(); renderGrades(); setStateChip();
     $("lastcheck").textContent = `آخر فحص ${fmtClock(Date.now())} · التالي بعد دقيقة`;
   } catch (e) {
-    $("lastcheck").textContent = "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً.";
+    $("lastcheck").textContent = e instanceof TypeError && /fetch|network|load/i.test(e.message) || /^HTTP/.test(e.message) ? "تعذر جلب الأسعار. تأكد من الإنترنت، وراح يعيد المحاولة تلقائياً." : "صار خلل بالتطبيق. سكّره وافتحه مرة ثانية حتى يتحدّث.";
   } finally { busy = false; }
 }
 

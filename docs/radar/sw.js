@@ -1,6 +1,6 @@
 // يخزّن واجهة التطبيق للعمل كتطبيق مثبّت؛ أسعار الذهب تُجلب دائماً من الشبكة.
-const CACHE = "gold-radar-v5";
-const SHELL = ["./", "index.html", "app.js", "engines.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "gold-radar-v6";
+const SHELL = ["./", "index.html", "app.js?v=6", "engines.js?v=6", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -13,7 +13,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;              // بيانات السوق: من الشبكة فقط
-  e.respondWith(fetch(e.request).then(r => {
+  e.respondWith(fetch(e.request, { cache: "no-cache" }).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r;
   }).catch(() => caches.match(e.request)));
 });

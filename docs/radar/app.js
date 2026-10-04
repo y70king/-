@@ -3,7 +3,7 @@
 
 const API = "https://data-api.binance.vision/api/v3/klines";
 const SYMBOL = "PAXGUSDT";
-const INTERVAL_MS = 60 * 1000;
+const INTERVAL_MS = 30 * 1000;   // تحديث مضمون كل نص دقيقة
 const TZ = "Asia/Baghdad";
 const MAX_LOG = 100;
 const NAMES = { fvg: "الفجوات", poc: "نقطة التحكم" };
@@ -145,7 +145,7 @@ async function notify(title, body, tag) {
 const WS_URL = "wss://data-stream.binance.vision/stream?streams=" + ["5m", "15m", "1h", "4h"].map(i => `paxgusdt@kline_${i}`).join("/");
 const KEYS = { "5m": "m5", "15m": "m15", "1h": "h1", "4h": "h4" };
 const LIMITS = { m5: 600, m15: 300, h1: 300, h4: 300 };
-let frames = null, ws = null, wsRetry = 0, live = false, lastTick = 0, analyzeTimer = null, resyncTimer = null, clockTimer = null;
+let frames = null, ws = null, wsRetry = 0, live = false, lastTick = 0, lastAnalyze = 0, resyncTimer = null, clockTimer = null;
 
 async function loadHistory() {
   const [m5, m15, h1, h4] = await Promise.all([klines("5m", LIMITS.m5), klines("15m", LIMITS.m15), klines("1h", LIMITS.h1), klines("4h", LIMITS.h4)]);
@@ -174,8 +174,9 @@ function onKline(k) {
   else if (bar.time > last.time) { arr.push(bar); if (arr.length > LIMITS[key]) arr.shift(); }
   else return;
   lastTick = Date.now();
-  if (key === "m5") $("price").textContent = px(bar.close);
-  if (!analyzeTimer) analyzeTimer = setTimeout(() => { analyzeTimer = null; analyzeNow(); }, 1000);   // تحليل كل ثانية كحد أقصى
+  if (key === "m5") $("price").textContent = px(bar.close);   // السعر يتحرك مباشرة
+  // التحليل: فوراً عند سكرة شمعة 5 دقائق (وقت تكوّن الإشارات)، وغير ذلك كل نص دقيقة
+  if ((key === "m5" && k.x) || Date.now() - lastAnalyze >= INTERVAL_MS) analyzeNow();
 }
 
 function connect() {
@@ -195,6 +196,7 @@ function scheduleReconnect() {
 
 function analyzeNow() {
   if (!frames) return;
+  lastAnalyze = Date.now();
   const { m5, m15, h1, h4 } = frames;
   try {
     const price = m5[m5.length - 1].close, open = marketOpen();
@@ -234,10 +236,9 @@ function analyzeNow() {
 // سطر الحالة: كم ثانية مرّت على آخر سعر
 function tickClock() {
   if (!running) return;
-  const sec = Math.max(0, Math.round((Date.now() - lastTick) / 1000));
-  $("lastcheck").textContent = live
-    ? `🟢 مباشر · آخر سعر قبل ${sec} ثانية`
-    : `🟡 البث المباشر منقطع، يحدّث كل دقيقة لحين رجوعه · آخر سعر قبل ${sec} ثانية`;
+  const sec = Math.max(0, Math.round((Date.now() - lastAnalyze) / 1000));
+  const next = Math.max(0, Math.round((INTERVAL_MS - (Date.now() - lastAnalyze)) / 1000));
+  $("lastcheck").textContent = `${live ? "🟢 السعر مباشر" : "🟡 السعر كل نص دقيقة"} · آخر تحليل قبل ${sec} ثانية · التالي بعد ${next} ثانية`;
 }
 
 function setStateChip() {
@@ -260,7 +261,7 @@ async function start() {
   setStateChip(); keepAwake();
   await check();
   connect();
-  timer = setInterval(() => { if (!live) check(); }, INTERVAL_MS);        // احتياط إذا البث منقطع
+  timer = setInterval(check, INTERVAL_MS);                                // تحديث كامل مضمون كل نص دقيقة
   resyncTimer = setInterval(check, 10 * 60 * 1000);                       // مزامنة كاملة كل 10 دقائق
   clockTimer = setInterval(tickClock, 1000);
 }

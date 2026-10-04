@@ -253,8 +253,9 @@ async function keepAwake() {
 }
 
 async function start() {
-  running = true;
-  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); await audio.resume(); } catch { audio = null; }
+  if (running) return;
+  running = true; store.set("radarRunning", true);   // يتذكر إنه شغال حتى بعد تحديث الصفحة
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume().catch(() => {}); } catch { audio = null; }   // بدون انتظار: الصوت يتفعّل مع أول لمسة
   $("toggle").textContent = "■ إيقاف"; $("toggle").classList.add("running");
   setStateChip(); keepAwake();
   await check();
@@ -265,7 +266,7 @@ async function start() {
 }
 
 function stop() {
-  running = false; live = false;
+  running = false; live = false; store.set("radarRunning", false);
   [timer, resyncTimer, clockTimer].forEach(clearInterval); timer = resyncTimer = clockTimer = null;
   if (ws) { ws.onclose = null; try { ws.close(); } catch { /* مغلق */ } ws = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
@@ -305,4 +306,11 @@ document.addEventListener("visibilitychange", () => {
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 renderLog(); renderRecord(); renderGrades();
 $("market").textContent = marketOpen() ? "السوق مفتوح" : "السوق مغلق (عطلة)";
-klines("5m", 1).then(k => { $("price").textContent = px(k[0].close); }).catch(() => {});
+klines("5m", 1).then(k => { if (!running) $("price").textContent = px(k[0].close); }).catch(() => {});
+
+// إذا جان شغال قبل ما ينسكر أو تتحدث الصفحة، يرجع يشتغل لوحده
+if (store.get("radarRunning", false)) start();
+// المتصفح ما يسمح بالصوت قبل أول لمسة، فنفعّله عند أول لمسة على الشاشة
+document.addEventListener("pointerdown", () => {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { audio = null; }
+}, { once: true });

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>رادار الذهب</title>
+<meta name="theme-color" content="#14161c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="رادار الذهب">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* تخطيط: شاشة أدوات بعمود واحد — السعر وزر التشغيل، ثم لوحتا المحركين (الفجوات / POC) كل واحدة بلونها، ثم سجل الإشارات بنتائجها، ثم الإعدادات */
+:root {
+  --bg: #14161c; --panel: #1c1f28; --raise: #252935; --line: #30354a; --fg: #ecebe6; --muted: #959aab;
+  --gold: #e6b450; --fvg: #4fc3c7; --poc: #b392f0; --buy: #4cc98a; --sell: #f2776b;
+  --font: "Readex Pro", "Segoe UI", Tahoma, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #f1f0ec; --panel: #ffffff; --raise: #f5f4f0; --line: #dddbd3; --fg: #1c1e25; --muted: #686b77;
+  --gold: #9a6a0e; --fvg: #11797d; --poc: #6b45b8; --buy: #15804c; --sell: #c03a2f;
+  color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #f1f0ec; --panel: #ffffff; --raise: #f5f4f0; --line: #dddbd3; --fg: #1c1e25; --muted: #686b77;
+  --gold: #9a6a0e; --fvg: #11797d; --poc: #6b45b8; --buy: #15804c; --sell: #c03a2f;
+  color-scheme: light; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--font);
+  padding: env(safe-area-inset-top, 0px) 16px calc(env(safe-area-inset-bottom, 0px) + 28px); }
+.wrap { max-width: 540px; margin: 0 auto; display: grid; gap: 14px; padding-block: 16px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { margin: 0; font: 700 1.3rem/1.2 var(--font); }
+h1 small { display: block; font: 400 .76rem var(--font); color: var(--muted); margin-top: 3px; }
+.chip { font-size: .76rem; font-weight: 500; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.on { color: var(--buy); border-color: currentColor; }
+.chip.closed { color: var(--gold); border-color: currentColor; }
+
+.ticker { display: flex; justify-content: space-between; align-items: end; gap: 10px; flex-wrap: wrap; }
+.ticker .px { font: 700 2.1rem/1 var(--mono); }
+.ticker .meta { font-size: .78rem; color: var(--muted); text-align: start; }
+.trend { font-weight: 500; }
+.trend.up { color: var(--buy); } .trend.down { color: var(--sell); }
+
+#toggle { width: 100%; border: 0; border-radius: 12px; padding: 17px; cursor: pointer; font: 700 1.1rem var(--font);
+  background: var(--gold); color: #1a1406; }
+#toggle.running { background: transparent; color: var(--sell); border: 2px solid var(--sell); }
+button:focus-visible, input:focus-visible, .tabs button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+
+.engine { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.engine > .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.engine .name { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.engine .name i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); display: inline-block; }
+.engine.fvg { --c: var(--fvg); } .engine.poc { --c: var(--poc); }
+.engine .record { font-size: .74rem; color: var(--muted); }
+.engine .body { padding: 12px 14px; display: grid; gap: 10px; }
+.idle { color: var(--muted); font-size: .9rem; }
+.side { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.side .dir { font-weight: 700; font-size: 1.05rem; }
+.side .dir.buy { color: var(--buy); } .side .dir.sell { color: var(--sell); }
+.side .order { font-size: .76rem; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.cell { background: var(--raise); padding: 7px 10px; min-width: 0; }
+.cell span { display: block; font-size: .7rem; color: var(--muted); }
+.cell .num { font-size: 1rem; }
+.cell.entry .num { color: var(--c); } .cell.sl .num { color: var(--sell); } .cell.tp .num { color: var(--buy); }
+.extra { font-size: .76rem; color: var(--muted); }
+
+h2 { margin: 6px 0 0; font: 500 1rem var(--font); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tabs { display: flex; gap: 6px; }
+.tabs button { font: 500 .78rem var(--font); color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.tabs button[aria-pressed="true"] { color: var(--fg); border-color: var(--fg); }
+
+.log { display: grid; gap: 8px; }
+.item { background: var(--panel); border: 1px solid var(--line); border-inline-start: 4px solid var(--c); border-radius: 10px; padding: 9px 12px; display: grid; gap: 4px; }
+.item.fvg { --c: var(--fvg); } .item.poc { --c: var(--poc); }
+.item .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.item .what { font-weight: 500; font-size: .92rem; }
+.item .row2 { font-size: .78rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.state { font-size: .74rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; white-space: nowrap; border: 1px solid currentColor; }
+.state.pending { color: var(--gold); } .state.active { color: var(--fvg); }
+.state.win { color: var(--buy); } .state.loss { color: var(--sell); } .state.expired { color: var(--muted); }
+.item.example { opacity: .7; }
+.empty { border: 1px dashed var(--line); border-radius: 10px; padding: 14px; color: var(--muted); font-size: .86rem; text-align: center; }
+.linkbtn { font: 500 .76rem var(--font); color: var(--muted); background: none; border: 0; cursor: pointer; padding: 4px; }
+
+.settings { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 2px 14px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.row:last-child { border-bottom: 0; }
+.row small { display: block; color: var(--muted); font-size: .74rem; }
+.row input[type="number"] { width: 84px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); color: var(--fg); font: 500 .95rem var(--mono); text-align: center; }
+.switch { position: relative; flex: none; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { display: block; width: 44px; height: 26px; border-radius: 13px; background: var(--line); transition: background .2s; }
+.switch span::after { content: ""; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg); transition: transform .2s; }
+.switch input:checked + span { background: var(--gold); }
+.switch input:checked + span::after { transform: translateX(-18px); background: var(--bg); }
+
+.note { font-size: .78rem; color: var(--muted); line-height: 1.75; }
+.note p { margin: 0 0 6px; }
+.note b { color: var(--fg); font-weight: 500; }
+#toast { position: fixed; inset-inline: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); margin: 0 auto; max-width: 420px; background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-size: .88rem; text-align: center; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>رادار الذهب<small>محركان منفصلان: الفجوات FVG · نقطة التحكم POC</small></h1>
+    <span id="state" class="chip">متوقف</span>
+  </header>
+
+  <section class="ticker" aria-live="polite">
+    <div class="px num" id="price">—</div>
+    <div class="meta">XAU (PAXG/USD) · <span id="market">—</span><br>اتجاه 15 دقيقة: <span id="trend" class="trend">—</span></div>
+  </section>
+
+  <button id="toggle" type="button">▶ تشغيل</button>
+
+  <section class="engine fvg" aria-label="محرك الفجوات">
+    <div class="head"><span class="name"><i></i>محرك الفجوات FVG</span><span class="record" id="recFvg">—</span></div>
+    <div class="body" id="engFvg"><div class="idle">اضغط تشغيل ليبدأ البحث عن فجوة</div></div>
+  </section>
+
+  <section class="engine poc" aria-label="محرك نقطة التحكم">
+    <div class="head"><span class="name"><i></i>محرك نقطة التحكم POC</span><span class="record" id="recPoc">—</span></div>
+    <div class="body" id="engPoc"><div class="idle">اضغط تشغيل ليبدأ قياس آخر موجة</div></div>
+  </section>
+  <p class="extra" id="lastcheck" style="text-align:center;margin:0">يفحص السوق كل دقيقة بعد التشغيل</p>
+
+  <h2>السجل والنتائج
+    <span class="tabs" role="group" aria-label="تصفية السجل">
+      <button type="button" data-f="all" aria-pressed="true">الكل</button>
+      <button type="button" data-f="fvg" aria-pressed="false">الفجوات</button>
+      <button type="button" data-f="poc" aria-pressed="false">POC</button>
+    </span>
+  </h2>
+  <section class="log" id="log"></section>
+  <button class="linkbtn" id="clear" type="button">مسح السجل</button>
+
+  <h2>الإعدادات</h2>
+  <section class="settings">
+    <label class="row" for="optFvg"><span>محرك الفجوات</span><span class="switch"><input type="checkbox" id="optFvg" checked><span></span></span></label>
+    <label class="row" for="optPoc"><span>محرك POC</span><span class="switch"><input type="checkbox" id="optPoc" checked><span></span></span></label>
+    <label class="row" for="optSl"><span>وقف خسارة ثابت ($)<small>0 = الوقف الهيكلي لكل محرك</small></span><input type="number" id="optSl" min="0" step="0.5" value="0" inputmode="decimal"></label>
+    <label class="row" for="optTp"><span>جني أرباح ثابت ($)<small>0 = الهدف الهيكلي · الهدف 1 = نصفه</small></span><input type="number" id="optTp" min="0" step="0.5" value="0" inputmode="decimal"></label>
+    <label class="row" for="optNotify"><span>إشعار على الهاتف<small>يطلب الإذن عند أول تفعيل</small></span><span class="switch"><input type="checkbox" id="optNotify"><span></span></span></label>
+    <label class="row" for="optSound"><span>صوت تنبيه</span><span class="switch"><input type="checkbox" id="optSound" checked><span></span></span></label>
+    <label class="row" for="optAwake"><span>إبقاء الشاشة شغالة<small>حتى لا يتوقف الفحص</small></span><span class="switch"><input type="checkbox" id="optAwake" checked><span></span></span></label>
+  </section>
+
+  <section class="note">
+    <p><b>على لوت 0.01:</b> كل 1$ حركة بسعر الذهب = 1$ ربح أو خسارة. الخسارة المتوقعة لكل إشارة مكتوبة تحتها.</p>
+    <p><b>نتيجة الاختبار:</b> جرّبت المحركين على 39 يوم (26 آب – 4 تشرين الأول). بالإعدادات الحالية كان محرك الفجوات قريباً من التعادل ومحرك POC خاسراً قليلاً. التطبيق يتابع كل إشارة ويبين نتيجتها الحقيقية، فاحكم من أرقامه وليس من الوعود.</p>
+    <p>يعمل الفحص ما دام التطبيق مفتوحاً. السعر من PAXG وقد يختلف بضعة دولارات عن XAUUSD عند وسيطك.</p>
+  </section>
+</div>
+<div id="toast" hidden></div>
+<script src="engines.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

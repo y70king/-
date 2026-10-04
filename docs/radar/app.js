@@ -36,7 +36,7 @@ async function klines(interval, limit) {
 }
 
 function cfg() {
-  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0) };
+  return { fixedSl: Math.max(0, parseFloat($("optSl").value) || 0), fixedTp: Math.max(0, parseFloat($("optTp").value) || 0), mtf: $("optMtf").value };
 }
 
 function signalBlock(s) {
@@ -129,15 +129,15 @@ async function notify(title, body, tag) {
 async function check() {
   if (busy) return; busy = true;
   try {
-    const [m5, m15] = await Promise.all([klines("5m", 600), klines("15m", 300)]);
+    const [m5, m15, h1, h4] = await Promise.all([klines("5m", 600), klines("15m", 300), klines("1h", 300), klines("4h", 300)]);
     const price = m5[m5.length - 1].close, open = marketOpen();
     $("price").textContent = px(price);
     $("market").textContent = open ? "السوق مفتوح" : "السوق مغلق (عطلة)";
 
-    const r = Radar.analyze(m5, m15, cfg());
-    const tr = $("trend");
-    tr.textContent = r.trend === 1 ? "صاعد ▲" : r.trend === -1 ? "هابط ▼" : "بدون اتجاه";
-    tr.className = "trend " + (r.trend === 1 ? "up" : r.trend === -1 ? "down" : "");
+    const r = Radar.analyze(m5, { m15, h1, h4 }, cfg());
+    const show = (id, d, none) => { const el = $(id); el.textContent = d === 1 ? "صاعد ▲" : d === -1 ? "هابط ▼" : none; el.className = "trend " + (d === 1 ? "up" : d === -1 ? "down" : ""); };
+    show("tfH4", r.trends.h4, "محايد"); show("tfH1", r.trends.h1, "محايد"); show("tfM15", r.trends.m15, "محايد");
+    show("tfBias", r.bias, "انتظار");
     renderEngine("fvg", r.fvg); renderEngine("poc", r.poc);
 
     // إشارات جديدة
@@ -216,9 +216,9 @@ $("optNotify").addEventListener("change", async e => {
   if (id === "optAwake") e.target.checked ? keepAwake() : (wakeLock?.release().catch(() => {}), wakeLock = null);
   if ((id === "optFvg" || id === "optPoc") && running) check();
 }));
-["optSl", "optTp"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) check(); }));
+["optSl", "optTp", "optMtf"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) check(); }));
 ["optFvg", "optPoc", "optNotify", "optSound", "optAwake"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).checked = v; });
-["optSl", "optTp"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
+["optSl", "optTp", "optMtf"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
 if ($("optNotify").checked && (!("Notification" in window) || Notification.permission !== "granted")) $("optNotify").checked = false;
 
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && running) { keepAwake(); check(); } });

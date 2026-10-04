@@ -1,5 +1,5 @@
 // يخزّن واجهة التطبيق للعمل كتطبيق مثبّت؛ أسعار الذهب تُجلب دائماً من الشبكة.
-const CACHE = "gold-radar-v3";
+const CACHE = "gold-radar-v4";
 const SHELL = ["./", "index.html", "app.js", "engines.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

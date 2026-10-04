@@ -1,5 +1,6 @@
 /*
- * رادار الذهب — محركان مستقلان على فريم 5 دقائق مع اتجاه من فريم 15 دقيقة:
+ * رادار الذهب — يقرأ الاتجاه من الفريمات العالية (4 ساعات، ساعة، 15 دقيقة) ويعطي الإشارة على فريم 5 دقائق.
+ * محركان مستقلان:
  *   1) محرك الفجوات (FVG): آخر فجوة سعرية غير مملوءة باتجاه الترند ← أمر معلق على حافتها.
  *   2) محرك نقطة التحكم (POC): آخر موجة اندفاع ← أعلى سعر تداولاً (Volume Profile) ← أمر معلق عليه.
  * كل محرك يعطي إشارته على حدة. يعمل في المتصفح (window.Radar) وفي Node للاختبار.
@@ -8,7 +9,8 @@
   "use strict";
 
   const Defaults = {
-    trendEma: 50,          // اتجاه 15 دقيقة: الإغلاق فوق/تحت EMA50 مع ميلها
+    trendEma: 50,          // اتجاه كل فريم: الإغلاق فوق/تحت EMA50 مع ميلها
+    mtf: "all",            // all = 4س + ساعة + 15د متفقة · h1 = ساعة + 15د · m15 = 15د فقط
     trendSlopeBars: 4,
     atrPeriod: 14,
     // الفجوات
@@ -48,9 +50,9 @@
     return out;
   }
 
-  function trend15(bars15, cfg) {
-    if (bars15.length < cfg.trendEma + cfg.trendSlopeBars + 2) return 0;
-    const closed = bars15.slice(0, -1);                       // الشمعة الحالية لم تُغلق بعد
+  function trendOf(bars, cfg) {
+    if (!bars || bars.length < cfg.trendEma + cfg.trendSlopeBars + 2) return 0;
+    const closed = bars.slice(0, -1);                         // الشمعة الحالية لم تُغلق بعد
     const e = ema(closed.map(b => b.close), cfg.trendEma);
     const n = closed.length - 1, c = closed[n].close;
     const slope = e[n] - e[n - cfg.trendSlopeBars];
@@ -68,9 +70,16 @@
   }
 
   // ───────── محرك الفجوات ─────────
-  function fvgEngine(bars5, bars15, cfg = Defaults) {
-    const dir = trend15(bars15, cfg);
-    if (!dir) return { has: false, reason: "لا يوجد اتجاه واضح على 15 دقيقة" };
+  // الاتجاه المعتمد: الفريمات العالية لازم تتفق حسب الوضع المختار
+  function bias(t, mode) {
+    if (mode === "m15") return t.m15;
+    if (mode === "h1") return t.h1 && t.m15 === t.h1 ? t.h1 : 0;
+    return t.h4 && t.h1 === t.h4 && t.m15 === t.h4 ? t.h4 : 0;
+  }
+  const NO_BIAS = "الفريمات العالية غير متفقة على اتجاه واحد";
+
+  function fvgEngine(bars5, dir, cfg = Defaults) {
+    if (!dir) return { has: false, reason: NO_BIAS };
     const a = atr(bars5, cfg.atrPeriod);
     const n = bars5.length - 1;                    // الشمعة الحالية (قيد التكوين)
     const price = bars5[n].close, A = a[n - 1];
@@ -136,9 +145,8 @@
     return base + (best + 0.5) * bin;
   }
 
-  function pocEngine(bars5, bars15, cfg = Defaults) {
-    const dir = trend15(bars15, cfg);
-    if (!dir) return { has: false, reason: "لا يوجد اتجاه واضح على 15 دقيقة" };
+  function pocEngine(bars5, dir, cfg = Defaults) {
+    if (!dir) return { has: false, reason: NO_BIAS };
     const a = atr(bars5, cfg.atrPeriod);
     const n = bars5.length - 1, price = bars5[n].close, A = a[n - 1];
     const { hi, lo } = swings(bars5.slice(0, n), cfg.swingN);   // قمم وقيعان مؤكدة من شموع مغلقة
@@ -178,12 +186,15 @@
     };
   }
 
-  function analyze(bars5, bars15, cfg) {
+  // frames = { m15, h1, h4 } شموع الفريمات العالية
+  function analyze(bars5, frames, cfg) {
     const c = Object.assign({}, Defaults, cfg || {});
-    const f = fvgEngine(bars5, bars15, c), p = pocEngine(bars5, bars15, c);
+    const trends = { h4: trendOf(frames.h4, c), h1: trendOf(frames.h1, c), m15: trendOf(frames.m15, c) };
+    const dir = bias(trends, c.mtf);
+    const f = fvgEngine(bars5, dir, c), p = pocEngine(bars5, dir, c);
     if (f.has) withFixed(f, c);
     if (p.has) withFixed(p, c);
-    return { trend: trend15(bars15, c), fvg: f, poc: p };
+    return { trends, bias: dir, fvg: f, poc: p };
   }
 
   // متابعة إشارة محفوظة على الشموع اللاحقة: انتظار الدخول ← دخلت ← هدف/وقف
@@ -210,7 +221,7 @@
     return Object.assign({}, sig, { state, enteredAt, closedAt, result });
   }
 
-  const api = { Defaults, ema, atr, trend15, swings, volumeProfilePoc, fvgEngine, pocEngine, analyze, track };
+  const api = { Defaults, ema, atr, trendOf, bias, swings, volumeProfilePoc, fvgEngine, pocEngine, analyze, track };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Radar = api;
 })(typeof self !== "undefined" ? self : this);

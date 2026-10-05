@@ -1,0 +1,3 @@
+MetaTrader5
+paho-mqtt>=2.0
+requests

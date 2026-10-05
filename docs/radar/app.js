@@ -17,6 +17,11 @@ const store = {
 };
 
 let running = false, timer = null, busy = false, audio = null, wakeLock = null, filter = "all";
+let pcClient = null, pcConnected = false, pcLast = null;   // وضع الحاسبة: التحليل يجي من برنامج MT5
+const PC_BROKER = store.get("radarBroker", "wss://broker.hivemq.com:8884/mqtt");
+const MQTT_LIB = "https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js";
+const src = () => $("optSrc").value;
+const pcCode = () => $("optCode").value.trim().toLowerCase();
 let log = store.get("radarLog", []);
 const seen = new Set(store.get("radarSeen", []));
 
@@ -236,6 +241,15 @@ function analyzeNow() {
 // سطر الحالة: كم ثانية مرّت على آخر سعر
 function tickClock() {
   if (!running) return;
+  if (src() === "pc") {
+    if (!pcConnected) { $("lastcheck").textContent = "🟡 يحاول يتصل بالحاسبة..."; return; }
+    if (!pcLast) { $("lastcheck").textContent = "🟡 متصل، ينتظر أول تحليل من الحاسبة. تأكد إن برنامج الرادار شغال"; return; }
+    const age = Math.round((Date.now() - pcLast.t) / 1000);
+    $("lastcheck").textContent = age > 90
+      ? `🟡 الحاسبة ما أرسلت من ${Math.round(age / 60)} دقيقة. تأكد إن برنامج الرادار وMT5 شغالين`
+      : `🟢 متصل بالحاسبة · ${pcLast.src} · آخر تحليل قبل ${age} ثانية`;
+    return;
+  }
   const sec = Math.max(0, Math.round((Date.now() - lastAnalyze) / 1000));
   const next = Math.max(0, Math.round((INTERVAL_MS - (Date.now() - lastAnalyze)) / 1000));
   $("lastcheck").textContent = `${live ? "🟢 السعر مباشر" : "🟡 السعر كل نص دقيقة"} · آخر تحليل قبل ${sec} ثانية · التالي بعد ${next} ثانية`;
@@ -244,8 +258,9 @@ function tickClock() {
 function setStateChip() {
   const c = $("state");
   if (!running) { c.textContent = "متوقف"; c.className = "chip"; return; }
-  if (!marketOpen()) { c.textContent = "يعمل · السوق مغلق"; c.className = "chip closed"; return; }
-  c.textContent = live ? "مباشر" : "يعمل"; c.className = "chip on";
+  const isOpen = src() === "pc" ? (pcLast ? pcLast.open : true) : marketOpen();
+  if (!isOpen) { c.textContent = "يعمل · السوق مغلق"; c.className = "chip closed"; return; }
+  c.textContent = src() === "pc" ? (pcConnected ? "متصل بالحاسبة" : "يتصل...") : (live ? "مباشر" : "يعمل"); c.className = "chip on";
 }
 
 async function keepAwake() {
@@ -259,21 +274,91 @@ async function start() {
   try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume().catch(() => {}); } catch { audio = null; }   // بدون انتظار: الصوت يتفعّل مع أول لمسة
   $("toggle").textContent = "■ إيقاف"; $("toggle").classList.add("running");
   setStateChip(); keepAwake();
+  clockTimer = setInterval(tickClock, 1000);
+  if (src() === "pc") return startPc();
   await check();
   connect();
   timer = setInterval(check, INTERVAL_MS);                                // تحديث كامل مضمون كل نص دقيقة
   resyncTimer = setInterval(check, 10 * 60 * 1000);                       // مزامنة كاملة كل 10 دقائق
-  clockTimer = setInterval(tickClock, 1000);
 }
 
 function stop() {
   running = false; live = false; store.set("radarRunning", false);
   [timer, resyncTimer, clockTimer].forEach(clearInterval); timer = resyncTimer = clockTimer = null;
   if (ws) { ws.onclose = null; try { ws.close(); } catch { /* مغلق */ } ws = null; }
+  if (pcClient) { try { pcClient.end(true); } catch { /* مغلق */ } pcClient = null; pcConnected = false; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   $("toggle").textContent = "▶ تشغيل"; $("toggle").classList.remove("running");
   setStateChip(); $("lastcheck").textContent = "متوقف. اضغط تشغيل لبدء المتابعة المباشرة";
 }
+
+// ───────── وضع الحاسبة: يستلم تحليل MT5 من برنامج الرادار عن طريق MQTT ─────────
+function loadMqtt() {
+  if (window.mqtt) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const sc = document.createElement("script"); sc.src = MQTT_LIB; sc.onload = ok; sc.onerror = () => fail(new Error("mqtt"));
+    document.head.append(sc);
+  });
+}
+
+async function startPc() {
+  if (!pcCode()) { $("lastcheck").textContent = "اكتب رمز الربط بالإعدادات (يطلع على شاشة برنامج الحاسبة)"; return; }
+  try { await loadMqtt(); } catch { $("lastcheck").textContent = "تعذر تحميل أداة الاتصال. تأكد من الإنترنت وافتح التطبيق مرة ثانية"; return; }
+  if (!running || src() !== "pc") return;
+  const topic = `goldradar/${pcCode()}/state`;
+  pcClient = window.mqtt.connect(PC_BROKER, { reconnectPeriod: 3000, connectTimeout: 15000, clientId: "radar-phone-" + Math.random().toString(16).slice(2, 10), clean: true });
+  pcClient.on("connect", () => { pcConnected = true; pcClient.subscribe(topic, { qos: 1 }); setStateChip(); tickClock(); });
+  pcClient.on("close", () => { pcConnected = false; setStateChip(); });
+  pcClient.on("message", (t, buf) => {
+    try { const p = JSON.parse(new TextDecoder().decode(buf)); if (p && p.v === 1) renderPc(p); } catch { /* رسالة غير مفهومة */ }
+  });
+}
+
+function renderPc(p) {
+  const prev = new Map(log.map(s => [s.id, s.state]));
+  pcLast = p;
+  $("price").textContent = px(p.price);
+  $("market").textContent = `${p.src} · ${p.open ? "السوق مفتوح" : "السوق مغلق"}`;
+  const show = (id, d, none) => { const el = $(id); el.textContent = d === 1 ? "صاعد ▲" : d === -1 ? "هابط ▼" : none; el.className = "trend " + (d === 1 ? "up" : d === -1 ? "down" : ""); };
+  show("tfH4", p.trends.h4, "محايد"); show("tfH1", p.trends.h1, "محايد"); show("tfM15", p.trends.m15, "محايد");
+  const gb = $("tfBias"); gb.textContent = p.grade ? GRADES[p.grade] : "ماكو اتجاه"; gb.className = p.grade ? "g" + p.grade : "";
+  const minG = parseInt($("optGrade").value, 10) || 1;
+  for (const key of ["fvg", "poc"]) {
+    const s = Object.assign({ engine: key }, p[key]);
+    if (s.has && s.grade < minG) Object.assign(s, { has: false, reason: "الإشارة أقل من الدرجة المختارة بالإعدادات" });
+    renderEngine(key, s);
+  }
+  // السجل يجي من الحاسبة (هي اللي تتابع النتائج على أسعار MT5)
+  log = p.log.map(e => Object.assign({}, e, { tp1: e.tp2 }));
+  for (const s of log) {
+    const was = prev.get(s.id);
+    const on = $(s.engine === "fvg" ? "optFvg" : "optPoc").checked && s.grade >= minG;
+    if (!on) continue;
+    if (was === undefined && !seen.has(s.id) && Date.now() - s.firedAt < 10 * 60e3) {
+      seen.add(s.id);
+      notify(`${GRADES[s.grade]} · ${NAMES[s.engine]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry)}`, `وقف ${px(s.sl)} · هدف ${px(s.tp2)} · خسارة محتملة ${px(s.risk)}$`, s.id);
+    } else if (was && was !== s.state && (s.state === "win" || s.state === "loss")) {
+      notify(`${NAMES[s.engine]}: ${s.state === "win" ? "ضربت الهدف ✅" : "ضربت الوقف ❌"}`, `${usdText(s.result)} على لوت 0.01`, s.id + "-r");
+    }
+  }
+  store.set("radarLog", log); store.set("radarSeen", [...seen].slice(-300));
+  renderLog(); renderRecord(); renderGrades(); setStateChip(); tickClock();
+}
+
+function applySource() {
+  const pc = src() === "pc";
+  $("codeRow").hidden = !pc;
+  document.querySelectorAll(".netOnly").forEach(el => { el.hidden = pc; });
+  $("codeHint").textContent = pcCode()
+    ? `للإشعارات والهاتف مقفول: اشترك بتطبيق ntfy بـ goldradar-${pcCode()}`
+    : "يطلع على شاشة برنامج الحاسبة";
+}
+["optSrc", "optCode"].forEach(id => $(id).addEventListener("change", () => {
+  store.set(id, $(id).value); applySource();
+  if (running) { stop(); start(); }          // نعيد التشغيل على المصدر الجديد
+}));
+["optSrc", "optCode"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
+applySource();
 
 $("toggle").addEventListener("click", () => (running ? stop() : start()));
 $("clear").addEventListener("click", () => { log = []; store.set("radarLog", []); renderLog(); renderRecord(); renderGrades(); toast("تم مسح السجل"); });
@@ -294,15 +379,15 @@ $("optNotify").addEventListener("change", async e => {
 ["optFvg", "optPoc", "optSound", "optAwake"].forEach(id => $(id).addEventListener("change", e => {
   store.set(id, e.target.checked);
   if (id === "optAwake") e.target.checked ? keepAwake() : (wakeLock?.release().catch(() => {}), wakeLock = null);
-  if ((id === "optFvg" || id === "optPoc") && running) analyzeNow();
+  if ((id === "optFvg" || id === "optPoc") && running) src() === "pc" ? (pcLast && renderPc(pcLast)) : analyzeNow();
 }));
-["optSl", "optTp", "optGrade"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) analyzeNow(); }));
+["optSl", "optTp", "optGrade"].forEach(id => $(id).addEventListener("change", e => { store.set(id, e.target.value); if (running) src() === "pc" ? (pcLast && renderPc(pcLast)) : analyzeNow(); }));
 ["optFvg", "optPoc", "optNotify", "optSound", "optAwake"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).checked = v; });
 ["optSl", "optTp", "optGrade"].forEach(id => { const v = store.get(id, null); if (v !== null) $(id).value = v; });
 if ($("optNotify").checked && (!("Notification" in window) || Notification.permission !== "granted")) $("optNotify").checked = false;
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && running) { keepAwake(); check(); if (!ws) connect(); }   // نعوّض أي شموع فاتت والهاتف مقفول
+  if (document.visibilityState === "visible" && running) { keepAwake(); if (src() !== "pc") { check(); if (!ws) connect(); } }   // نعوّض أي شموع فاتت والهاتف مقفول
 });
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 renderLog(); renderRecord(); renderGrades();

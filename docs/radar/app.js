@@ -17,7 +17,20 @@ const store = {
 };
 
 let running = false, timer = null, busy = false, audio = null, wakeLock = null, filter = "all";
-let pcClient = null, pcConnected = false, pcLast = null;   // وضع الحاسبة: التحليل يجي من برنامج MT5
+let pcClient = null, pcConnected = false, pcLast = null;
+// تصحيح الأسعار على سعر الذهب الفوري: الشموع من رمز PAXG، والفرق بينه وبين الذهب الفوري يتعدّل كل نص دقيقة
+const SPOT_URL = "https://api.gold-api.com/price/XAU";
+let spotOff = store.get("spotOff", 0);
+const SHIFT_KEYS = ["entry", "sl", "tp1", "tp2", "zoneTop", "zoneBottom", "legHi", "legLo"];
+const shift = (s, off) => { const o = Object.assign({}, s); for (const k of SHIFT_KEYS) if (typeof o[k] === "number") o[k] += off; return o; };
+async function updateSpot() {
+  try {
+    const r = await fetch(SPOT_URL, { cache: "no-store" });
+    const spot = (await r.json()).price;
+    const paxg = frames && frames.m5[frames.m5.length - 1].close;
+    if (spot > 0 && paxg > 0 && Math.abs(spot - paxg) < 60) { spotOff = spot - paxg; store.set("spotOff", spotOff); }
+  } catch { /* نبقى على آخر فرق معروف */ }
+}   // وضع الحاسبة: التحليل يجي من برنامج MT5
 const PC_BROKER = store.get("radarBroker", "wss://broker.hivemq.com:8884/mqtt");
 const MQTT_LIB = "https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js";
 const src = () => $("optSrc").value;
@@ -97,12 +110,12 @@ const STATE_TXT = { pending: "بانتظار الدخول", active: "الصفق�
 function logItem(s, example = false) {
   const el = document.createElement("article");
   el.className = `item ${s.engine}${example ? " example" : ""}`;
-  const st = s.state || "pending";
+  const st = s.state || "pending", o = s.off || 0;   // الأسعار المعروضة مصححة على الذهب الفوري وقت الإشارة
   const res = st === "win" || st === "loss" ? ` ${usd(s.result)}` : "";
   el.innerHTML = `
-    <div class="row1"><span class="what">${gradeBadge(s.grade)} ${NAMES[s.engine]} · ${s.dir === 1 ? "شراء" : "بيع"} عند <span class="num">${px(s.entry)}</span></span>
+    <div class="row1"><span class="what">${gradeBadge(s.grade)} ${NAMES[s.engine]} · ${s.dir === 1 ? "شراء" : "بيع"} عند <span class="num">${px(s.entry + o)}</span></span>
       <span class="state ${st}">${example ? "مثال" : STATE_TXT[st] + res}</span></div>
-    <div class="row2"><span>وقف <span class="num">${px(s.sl)}</span></span><span>هدف <span class="num">${px(s.tp2)}</span></span><span>${fmtTime(s.firedAt)}</span></div>`;
+    <div class="row2"><span>وقف <span class="num">${px(s.sl + o)}</span></span><span>هدف <span class="num">${px(s.tp2 + o)}</span></span><span>${fmtTime(s.firedAt)}</span></div>`;
   return el;
 }
 
@@ -161,7 +174,7 @@ async function loadHistory() {
 // تحديث كامل (عند التشغيل، بعد انقطاع، أو كل 10 دقائق للاحتياط)
 async function check() {
   if (busy) return; busy = true;
-  try { await loadHistory(); analyzeNow(); }
+  try { await loadHistory(); await updateSpot(); analyzeNow(); }
   catch (e) { showError(e); }
   finally { busy = false; }
 }
@@ -179,7 +192,7 @@ function onKline(k) {
   else if (bar.time > last.time) { arr.push(bar); if (arr.length > LIMITS[key]) arr.shift(); }
   else return;
   lastTick = Date.now();
-  if (key === "m5") $("price").textContent = px(bar.close);   // السعر يتحرك مباشرة
+  if (key === "m5") $("price").textContent = px(bar.close + spotOff);   // السعر يتحرك مباشرة (مصحح على الذهب الفوري)
   // التحليل: فوراً عند سكرة شمعة 5 دقائق (وقت تكوّن الإشارات)، وغير ذلك كل نص دقيقة
   if ((key === "m5" && k.x) || Date.now() - lastAnalyze >= INTERVAL_MS) analyzeNow();
 }
@@ -205,14 +218,14 @@ function analyzeNow() {
   const { m5, m15, h1, h4 } = frames;
   try {
     const price = m5[m5.length - 1].close, open = marketOpen();
-    $("price").textContent = px(price);
-    $("market").textContent = open ? "السوق مفتوح" : "السوق مغلق (عطلة)";
+    $("price").textContent = px(price + spotOff);
+    $("market").textContent = `الذهب الفوري · ${open ? "السوق مفتوح" : "السوق مغلق (عطلة)"}`;
 
     const r = Radar.analyze(m5, { m15, h1, h4 }, cfg());
     const show = (id, d, none) => { const el = $(id); el.textContent = d === 1 ? "صاعد ▲" : d === -1 ? "هابط ▼" : none; el.className = "trend " + (d === 1 ? "up" : d === -1 ? "down" : ""); };
     show("tfH4", r.trends.h4, "محايد"); show("tfH1", r.trends.h1, "محايد"); show("tfM15", r.trends.m15, "محايد");
     const gb = $("tfBias"); gb.textContent = r.grade ? GRADES[r.grade] : "ماكو اتجاه"; gb.className = r.grade ? "g" + r.grade : "";
-    renderEngine("fvg", r.fvg); renderEngine("poc", r.poc);
+    renderEngine("fvg", r.fvg.has ? shift(r.fvg, spotOff) : r.fvg); renderEngine("poc", r.poc.has ? shift(r.poc, spotOff) : r.poc);
 
     // إشارات جديدة
     for (const key of ["fvg", "poc"]) {
@@ -220,9 +233,9 @@ function analyzeNow() {
       if (!s.has || seen.has(s.id) || !$(key === "fvg" ? "optFvg" : "optPoc").checked) continue;
       seen.add(s.id);
       if (!open) continue;
-      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, grade: s.grade, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending" };
+      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, grade: s.grade, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending", off: spotOff };
       log.unshift(rec);
-      notify(`${GRADES[s.grade]} · ${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry)}`, `وقف ${px(s.sl)} · هدف ${px(s.tp2)} · خسارة محتملة ${px(s.risk)}$`, s.id);
+      notify(`${GRADES[s.grade]} · ${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry + spotOff)}`, `وقف ${px(s.sl + spotOff)} · هدف ${px(s.tp2 + spotOff)} · خسارة محتملة ${px(s.risk)}$`, s.id);
     }
 
     // متابعة نتائج الإشارات المفتوحة
@@ -392,7 +405,7 @@ document.addEventListener("visibilitychange", () => {
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 renderLog(); renderRecord(); renderGrades();
 $("market").textContent = marketOpen() ? "السوق مفتوح" : "السوق مغلق (عطلة)";
-klines("5m", 1).then(k => { if (!running) $("price").textContent = px(k[0].close); }).catch(() => {});
+klines("5m", 1).then(k => { if (!running) $("price").textContent = px(k[0].close + spotOff); }).catch(() => {});
 
 // إذا جان شغال قبل ما ينسكر أو تتحدث الصفحة، يرجع يشتغل لوحده
 if (store.get("radarRunning", false)) start();

@@ -197,6 +197,16 @@ def compact(sig):
 def run(source, pub, s):
     store = load_log()
     log, seen = store["log"], set(store["seen"])
+    frozen = store.get("frozen", {})      # كل إشارة تنقفل أول ما تطلع: مستوياتها ما تتغير إلا بفجوة أو موجة جديدة
+
+    def freeze(sig):
+        if not sig["has"]:
+            return sig
+        if sig["id"] not in frozen:
+            frozen[sig["id"]] = {k: sig[k] for k in ("entry", "sl", "tp1", "tp2", "risk", "zoneTop", "zoneBottom", "legHi", "legLo") if k in sig}
+            for old in list(frozen)[:-200]:
+                del frozen[old]
+        return dict(sig, **frozen[sig["id"]])
     cfg = {"fixedSl": float(s.get("fixedSl") or 0), "fixedTp": float(s.get("fixedTp") or 0)}
     last_analyze, last_bar = 0, 0
     print("\n  المصدر:", source.name)
@@ -216,6 +226,7 @@ def run(source, pub, s):
             fr = source.frames()
             m5 = fr["m5"]
             r = R.analyze(m5, fr, cfg)
+            r["fvg"], r["poc"] = freeze(r["fvg"]), freeze(r["poc"])
             is_open = source.market_open()
 
             # إشارات جديدة
@@ -251,7 +262,7 @@ def run(source, pub, s):
                                "%+.2f$ على لوت 0.01" % t["result"], ["chart_with_upwards_trend" if t["state"] == "win" else "x"], 3)
                 new_log.append(t)
             log = new_log[:LOG_KEEP]
-            save_json(LOG_FILE, {"log": log, "seen": list(seen)[-300:]})
+            save_json(LOG_FILE, {"log": log, "seen": list(seen)[-300:], "frozen": frozen})
 
             payload = {"v": 1, "t": int(time.time() * 1000), "src": source.name, "sym": source.symbol,
                        "price": round(m5[-1]["close"], 2), "open": is_open, "trends": r["trends"],

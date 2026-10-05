@@ -20,15 +20,34 @@ let running = false, timer = null, busy = false, audio = null, wakeLock = null, 
 let pcClient = null, pcConnected = false, pcLast = null;
 // تصحيح الأسعار على سعر الذهب الفوري: الشموع من رمز PAXG، والفرق بينه وبين الذهب الفوري يتعدّل كل نص دقيقة
 const SPOT_URL = "https://api.gold-api.com/price/XAU";
-let spotOff = store.get("spotOff", 0);
+let spotOff = store.get("spotOff", 0), spotHist = store.get("spotHist", []);
 const SHIFT_KEYS = ["entry", "sl", "tp1", "tp2", "zoneTop", "zoneBottom", "legHi", "legLo"];
+// كل إشارة تنقفل أول ما تطلع: الدخول والوقف والأهداف والمنطقة والتصحيح ما يتغيرون إلا بفجوة أو موجة جديدة
+let frozen = store.get("radarFrozen", {});
+function freeze(s) {
+  if (!s.has) return s;
+  if (!frozen[s.id]) {
+    const keep = { off: spotOff };
+    for (const k of ["entry", "sl", "tp1", "tp2", "risk", ...SHIFT_KEYS]) if (typeof s[k] === "number") keep[k] = s[k];
+    frozen[s.id] = keep;
+    const ids = Object.keys(frozen); if (ids.length > 200) for (const id of ids.slice(0, ids.length - 200)) delete frozen[id];
+    store.set("radarFrozen", frozen);
+  }
+  return Object.assign({}, s, frozen[s.id]);
+}
 const shift = (s, off) => { const o = Object.assign({}, s); for (const k of SHIFT_KEYS) if (typeof o[k] === "number") o[k] += off; return o; };
 async function updateSpot() {
   try {
     const r = await fetch(SPOT_URL, { cache: "no-store" });
     const spot = (await r.json()).price;
     const paxg = frames && frames.m5[frames.m5.length - 1].close;
-    if (spot > 0 && paxg > 0 && Math.abs(spot - paxg) < 60) { spotOff = spot - paxg; store.set("spotOff", spotOff); }
+    if (spot > 0 && paxg > 0 && Math.abs(spot - paxg) < 60) {
+      // وسيط آخر 20 قراءة (حوالي 10 دقائق) حتى ما يرجف التصحيح مع كل تحديث
+      spotHist = spotHist.concat(spot - paxg).slice(-20);
+      const sorted = [...spotHist].sort((a, b) => a - b), m = sorted.length >> 1;
+      spotOff = sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+      store.set("spotOff", spotOff); store.set("spotHist", spotHist);
+    }
   } catch { /* نبقى على آخر فرق معروف */ }
 }   // وضع الحاسبة: التحليل يجي من برنامج MT5
 const PC_BROKER = store.get("radarBroker", "wss://broker.hivemq.com:8884/mqtt");
@@ -225,7 +244,8 @@ function analyzeNow() {
     const show = (id, d, none) => { const el = $(id); el.textContent = d === 1 ? "صاعد ▲" : d === -1 ? "هابط ▼" : none; el.className = "trend " + (d === 1 ? "up" : d === -1 ? "down" : ""); };
     show("tfH4", r.trends.h4, "محايد"); show("tfH1", r.trends.h1, "محايد"); show("tfM15", r.trends.m15, "محايد");
     const gb = $("tfBias"); gb.textContent = r.grade ? GRADES[r.grade] : "ماكو اتجاه"; gb.className = r.grade ? "g" + r.grade : "";
-    renderEngine("fvg", r.fvg.has ? shift(r.fvg, spotOff) : r.fvg); renderEngine("poc", r.poc.has ? shift(r.poc, spotOff) : r.poc);
+    r.fvg = freeze(r.fvg); r.poc = freeze(r.poc);
+    renderEngine("fvg", r.fvg.has ? shift(r.fvg, r.fvg.off) : r.fvg); renderEngine("poc", r.poc.has ? shift(r.poc, r.poc.off) : r.poc);
 
     // إشارات جديدة
     for (const key of ["fvg", "poc"]) {
@@ -233,9 +253,9 @@ function analyzeNow() {
       if (!s.has || seen.has(s.id) || !$(key === "fvg" ? "optFvg" : "optPoc").checked) continue;
       seen.add(s.id);
       if (!open) continue;
-      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, grade: s.grade, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending", off: spotOff };
+      const rec = { id: s.id, engine: key, dir: s.dir, entry: s.entry, sl: s.sl, tp1: s.tp1, tp2: s.tp2, risk: s.risk, grade: s.grade, time: m5[m5.length - 2].time, firedAt: Date.now(), state: "pending", off: s.off };
       log.unshift(rec);
-      notify(`${GRADES[s.grade]} · ${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry + spotOff)}`, `وقف ${px(s.sl + spotOff)} · هدف ${px(s.tp2 + spotOff)} · خسارة محتملة ${px(s.risk)}$`, s.id);
+      notify(`${GRADES[s.grade]} · ${NAMES[key]}: ${s.dir === 1 ? "شراء ▲" : "بيع ▼"} عند ${px(s.entry + s.off)}`, `وقف ${px(s.sl + s.off)} · هدف ${px(s.tp2 + s.off)} · خسارة محتملة ${px(s.risk)}$`, s.id);
     }
 
     // متابعة نتائج الإشارات المفتوحة

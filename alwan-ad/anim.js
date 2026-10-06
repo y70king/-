@@ -1,11 +1,12 @@
 /* مطبعة ألوان — motion graphics ad (1080x1920, deterministic: render(t) draws frame at time t seconds) */
 'use strict';
 const cv = document.getElementById('c');
-const ctx = cv.getContext('2d');
+let ctx = cv.getContext('2d'); // swapped temporarily by offscreen()
 const W = 1080, H = 1920;
 const COL = { C: '#00AEEF', M: '#EC008C', Y: '#FFE100', K: '#15151C', W: '#FFFFFF' };
 const CMYK = [COL.C, COL.M, COL.Y, COL.K];
 const PHONE = '07719287567';
+const ADDRESS = 'بيجي – الشارع العام – عمارة وطبان';
 
 /* ---------------------------------------------------------------- utils */
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -49,6 +50,16 @@ function glow(x, y, r, c, a = 1) {
   ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.restore();
 }
 function withT(x, y, s, rot, fn, sy) { ctx.save(); ctx.translate(x, y); if (rot) ctx.rotate(rot); ctx.scale(s, sy ?? s); fn(); ctx.restore(); }
+/* draw fn() into a cleared full-frame layer (all helpers draw to it) and return that canvas */
+const OFF = document.createElement('canvas'); OFF.width = W; OFF.height = H;
+const OFFCTX = OFF.getContext('2d');
+function offscreen(fn) {
+  const main = ctx; ctx = OFFCTX;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, W, H);
+  try { fn(); } finally { ctx = main; }
+  return OFF;
+}
 
 /* ---------------------------------------------------------------- text */
 function font(size, fam = 'Lalezar', weight = '') { return `${weight} ${size}px ${fam === 'Lalezar' ? 'Lalezar' : fam === 'Kufi' ? "'Reem Kufi'" : 'Cairo'}`; }
@@ -916,7 +927,9 @@ function scene4(t) {
 }
 
 /* ================================================================ SCENE 5 : products orbit → logo */
-const LOGO = [540, 1000];
+const LOGO5 = [540, 1000];
+// end-card lockup sits higher so the tagline, phone and address clear the TikTok/Reels UI
+const LOGO = [540, 780], LOGO_S = 0.9, EMBLEM_Y = LOGO[1] - 300 * LOGO_S;
 function bgMagenta(t, spin = 1) {
   const g = ctx.createRadialGradient(540, 900, 50, 540, 900, 1300); g.addColorStop(0, '#FF2FA6'); g.addColorStop(1, '#8A0057');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
@@ -951,16 +964,15 @@ function scene5(t) {
       const intro = E.out(P(t, 24.0, 24.45));
       const rx = 400 * (1 - E.inBack(merge)) * lerp(1.6, 1, intro), ry = 230 * (1 - E.inBack(merge)) * lerp(1.6, 1, intro);
       const z = Math.sin(a);
-      items.push({ i, a, x: LOGO[0] + Math.cos(a) * rx, y: 900 + Math.sin(a) * ry, z, s: (0.5 + 0.18 * z) * (1 - merge * 0.85) });
+      items.push({ i, a, x: LOGO5[0] + Math.cos(a) * rx, y: 900 + Math.sin(a) * ry, z, s: (0.5 + 0.18 * z) * (1 - merge * 0.85) });
     }
     items.sort((p, q) => p.z - q.z);
     for (const it of items) {
       // motion trail
       for (let g = 3; g >= 1; g--) {
         const a2 = it.a - g * 0.09 * spinSpeed / 3;
-        const rx = Math.hypot(it.x - LOGO[0], 0) / Math.max(Math.abs(Math.cos(it.a)), 0.001);
-        ctx.globalAlpha = 0.12 * (4 - g) / 3;
-        const ex = LOGO[0] + Math.cos(a2) * 400 * (1 - E.inBack(merge)), ey = 900 + Math.sin(a2) * 230 * (1 - E.inBack(merge));
+                ctx.globalAlpha = 0.12 * (4 - g) / 3;
+        const ex = LOGO5[0] + Math.cos(a2) * 400 * (1 - E.inBack(merge)), ey = 900 + Math.sin(a2) * 230 * (1 - E.inBack(merge));
         fillC(ex, ey, 90 * it.s, '#fff');
       }
       ctx.globalAlpha = 1;
@@ -969,12 +981,12 @@ function scene5(t) {
   }
   // flash + logo pop
   const lp = P(t, 26.55, 27.1);
-  inkBurst(LOGO[0], 700, P(t, 26.55, 27.2), 4, 0.95, 26.6);
+  inkBurst(LOGO5[0], 700, P(t, 26.55, 27.2), 4, 0.95, 26.6);
   if (lp > 0) {
     glow(540, 760, 700, 'rgba(255,255,255,.35)');
     const k = E.back(lp);
-    ctx.save(); ctx.translate(LOGO[0], LOGO[1]); ctx.scale(k, k); ctx.translate(-LOGO[0], -LOGO[1]);
-    logo(LOGO[0], LOGO[1], 1, { c1: COL.K, c2: COL.C });
+    ctx.save(); ctx.translate(LOGO5[0], LOGO5[1]); ctx.scale(k, k); ctx.translate(-LOGO5[0], -LOGO5[1]);
+    logo(LOGO5[0], LOGO5[1], 1, { c1: COL.K, c2: COL.C });
     ctx.restore();
   }
   const fl = 1 - P(t, 26.55, 26.8); if (fl > 0 && fl < 1) { ctx.fillStyle = `rgba(255,255,255,${fl})`; ctx.fillRect(0, 0, W, H); }
@@ -987,44 +999,87 @@ function scene5(t) {
 }
 
 /* ================================================================ SCENE 6 : freeze → hero end card */
+function pinGlyph(x, y, s, col, hole) { // map pin, tip at (x, y + 44s)
+  withT(x, y, s, 0, () => {
+    ctx.beginPath(); ctx.moveTo(0, 44); ctx.bezierCurveTo(-8, 28, -32, 6, -32, -14); ctx.arc(0, -14, 32, Math.PI, 0); ctx.bezierCurveTo(32, 6, 8, 28, 0, 44); ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    circle(0, -14, 12); ctx.fillStyle = hole; ctx.fill();
+  });
+}
+function addressChip(t, y) {
+  const ap = E.back(P(t, 31.5, 31.9));
+  if (ap <= 0) return;
+  const fs = Math.min(50, 50 * 680 / measure(ADDRESS, 50, 'Cairo', '800'));
+  const tw = measure(ADDRESS, fs, 'Cairo', '800');
+  const aw = tw + 160, ah = 116, right = 540 + aw / 2;
+  // chip
+  ctx.save(); ctx.translate(540, y); ctx.scale(ap, ap);
+  rr(-aw / 2, -ah / 2, aw, ah, ah / 2); ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.stroke();
+  ctx.restore();
+  if (ap < 0.7) return;
+  // pin bubble at the start of the (RTL) line; the pin drops in and bounces
+  const ik = E.back(P(t, 31.6, 31.95));
+  const drop = 1 - E.bounce(P(t, 31.65, 32.15));
+  withT(right - 62, y, ik, 0, () => {
+    circle(0, 0, 44); ctx.fillStyle = COL.M; ctx.fill();
+    ctx.save(); circle(0, 0, 44); ctx.clip();
+    pinGlyph(0, -4 - drop * 70, 0.72, '#fff', COL.M);
+    ctx.restore();
+  });
+  // address reveals right → left, the Arabic reading direction
+  const rv = E.io(P(t, 31.75, 32.3));
+  if (rv > 0) {
+    const tr = right - 118;
+    ctx.save(); ctx.beginPath(); ctx.rect(tr - tw * rv - 4, y - ah / 2, tw * rv + 8, ah); ctx.clip();
+    txt(ADDRESS, tr, y + 3, fs, { fam: 'Cairo', weight: '800', color: '#fff', align: 'right' });
+    ctx.restore();
+  }
+}
 function scene6(t) {
   ctx.fillStyle = '#0B0B10'; ctx.fillRect(0, 0, W, H);
-  glow(540, 760, 800, 'rgba(236,0,140,.22)');
-  glow(540, 1500, 700, 'rgba(0,174,239,.14)');
+  glow(540, EMBLEM_Y + 120, 800, 'rgba(236,0,140,.22)');
+  glow(540, 1380, 700, 'rgba(0,174,239,.14)');
   halftone('#ffffff', 38, 3.2, t, 0.07, () => 1);
   cropMarks(E.out(P(t, 29.25, 29.8)), 'rgba(255,255,255,.5)');
   // CMYK registration swatches on the edge
   const sw = E.out(P(t, 29.4, 29.9));
-  CMYK.forEach((c, i) => { rr(70, 820 + i * 70 - (1 - sw) * 60, 26, 50, 6); ctx.globalAlpha = sw; ctx.fillStyle = c === COL.K ? '#fff' : c; ctx.fill(); ctx.globalAlpha = 1; });
+  CMYK.forEach((c, i) => { rr(70, 640 + i * 70 - (1 - sw) * 60, 26, 50, 6); ctx.globalAlpha = sw; ctx.fillStyle = c === COL.K ? '#fff' : c; ctx.fill(); ctx.globalAlpha = 1; });
   // final ink burst from behind the logo
   const bp = P(t, 33.55, 34.25);
   const [shx, shy] = shake(t, 33.55, .45, 18);
   ctx.save(); ctx.translate(shx, shy);
   if (bp > 0) {
-    inkBurst(540, 760, bp, 9, 1.25, 33.55 + bp * 0.2);
-    inkBurst(540, 760, P(t, 33.62, 34.35), 12, 0.85, 33.6);
+    const layer = offscreen(() => {
+      inkBurst(540, EMBLEM_Y + 60, bp, 9, 1.25, 33.55 + bp * 0.2);
+      inkBurst(540, EMBLEM_Y + 60, P(t, 33.62, 34.35), 12, 0.85, 33.6);
+      // ink fades out under the wordmark so the tagline, phone and address stay readable
+      ctx.globalCompositeOperation = 'destination-out';
+      const g = ctx.createLinearGradient(0, 960, 0, 1060); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+      ctx.fillStyle = g; ctx.fillRect(0, 960, W, H - 960);
+    });
+    ctx.drawImage(layer, 0, 0);
   }
-  logo(LOGO[0], LOGO[1], 1, { c1: COL.M, c2: COL.C, ringCol: 'rgba(255,255,255,.4)' });
+  logo(LOGO[0], LOGO[1], LOGO_S, { c1: COL.M, c2: COL.C, ringCol: 'rgba(255,255,255,.4)' });
   // shine across the wordmark
   const sh = P(t, 34.05, 34.6);
   if (sh > 0 && sh < 1) {
-    ctx.save(); ctx.globalCompositeOperation = 'source-atop';
-    ctx.restore();
-    const sx = lerp(150, 930, sh); sparkle(sx, 1080, 40 * Math.sin(sh * Math.PI), '#fff');
+    const sx = lerp(260, 820, sh); sparkle(sx, LOGO[1] + 120 * LOGO_S, 40 * Math.sin(sh * Math.PI), '#fff');
   }
   ctx.restore();
   // tagline
   const tw = [{ w: 'نطبع' }, { w: 'فكرتك...' }, { w: 'ونخليها' }, { w: 'تنشاف.', color: COL.Y }];
-  wordsRTL(tw, 540, 1345, 70, { fam: 'Cairo', weight: '800', color: '#fff' }, i => {
+  wordsRTL(tw, 540, 1100, 70, { fam: 'Cairo', weight: '800', color: '#fff' }, i => {
     const k = E.out(P(t, 29.55 + i * 0.16, 29.95 + i * 0.16)); return { dy: (1 - k) * 50, a: k };
   });
   // underline in CMYK
   const ul = E.io(P(t, 30.2, 30.7));
-  if (ul > 0) CMYK.forEach((c, i) => { ctx.fillStyle = c === COL.K ? '#fff' : c; ctx.fillRect(540 - 220 + i * 110, 1405, 110 * clamp(ul * 4 - i), 8); });
+  if (ul > 0) CMYK.forEach((c, i) => { ctx.fillStyle = c === COL.K ? '#fff' : c; ctx.fillRect(540 - 220 + i * 110, 1158, 110 * clamp(ul * 4 - i), 8); });
+  addressChip(t, 1495);
   // phone pill
   const pp = E.back(P(t, 30.5, 30.95));
   if (pp > 0) {
-    const pw = 860, ph = 190, py = 1610;
+    const pw = 860, ph = 190, py = 1295;
     ctx.save(); ctx.translate(540, py); ctx.scale(pp, 1);
     rr(-pw / 2 + 12, -ph / 2 + 14, pw, ph, ph / 2); ctx.fillStyle = COL.M; ctx.fill();
     rr(-pw / 2, -ph / 2, pw, ph, ph / 2); ctx.fillStyle = '#fff'; ctx.fill();
@@ -1084,7 +1139,7 @@ function render(t) {
     const p = P(t, 23.8, 24.15);
     if (t >= 24.05) scene5(t);
     ctx.save(); ctx.globalCompositeOperation = 'source-over';
-    const r = 1400 * E.in(p);
+    const r = 1500 * E.out(P(t, 23.84, 24.2));
     CMYK.forEach((c, i) => { if (r - i * 110 < 60) return; ctx.lineWidth = 120; circle(540, 1000, r - i * 110); ctx.strokeStyle = c === COL.K ? '#fff' : c; ctx.globalAlpha = 1 - P(t, 24.05, 24.25); ctx.stroke(); });
     ctx.restore();
   } else if (t >= 24.05 && t < 29.0) scene5(t);
@@ -1096,6 +1151,7 @@ window.ready = (async () => {
     document.fonts.load(`900 50px ${f}`, 'ألوان مطبعة تحچي 0123456789'),
     document.fonts.load(`800 50px ${f}`, 'ألوان'), document.fonts.load(`50px ${f}`, 'ألوان ABC 07719287567'),
   ]));
+  await document.fonts.load('800 50px Cairo', ADDRESS + ' 0123');
   await document.fonts.ready;
   return true;
 })();

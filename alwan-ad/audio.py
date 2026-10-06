@@ -384,6 +384,12 @@ S(whoosh(0.35, 1000, 8000, 0.3), 30.45)
 S(pop(900, 300, 0.1, 0.5), 30.75)
 for i in range(11):
     S(tick(2200 + i * 60, 0.22), 30.8 + i * 0.07)
+# address chip: whoosh in, pin drops and bounces (matches E.bounce contacts), text reveal
+S(whoosh(0.35, 900, 7000, 0.28), 31.45)
+S(pop(1000, 380, 0.1), 31.62, 0.4)
+for t0, g in ((31.83, 0.45), (32.01, 0.22), (32.1, 0.1)):
+    S(pop(700, 300, 0.07), t0, g)
+S(shimmer(0.55, 0.12, 3200), 31.75)
 S(impact(1.2, 2.4, 38), 33.55)
 S(splat(0.8), 33.57, pan=-0.6); S(splat(0.8), 33.62, pan=0.6); S(splat(0.6), 33.7)
 S(shimmer(1.0, 0.3, 2800), 34.0)

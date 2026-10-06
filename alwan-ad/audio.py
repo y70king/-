@@ -391,28 +391,38 @@ sfx = reverb(sfx, 0.9, 0.12)
 
 # ------------------------------------------------------------------ VO
 vo = np.zeros(N)
-VO_AT = [0.3, 7.3, 10.45, 18.6, 24.75, 30.0]
+VO_AT = [0.12, 6.0, 10.45, 18.4, 24.2, 29.9]
 vodir = sys.argv[1]
 import wave
 for k, t0 in enumerate(VO_AT, 1):
     with wave.open(f'{vodir}/l{k}.wav') as w:
         x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
-    x = x / (np.abs(x).max() + 1e-9) * 0.9
-    # presence + warmth
-    x = x + 0.25 * lp(x, 220) + 0.15 * hp(x, 3500)
-    x = np.tanh(x * 1.5) / np.tanh(1.5)
+    x = hp(x, 90)
+    x = x / (np.abs(x).max() + 1e-9)
+    # warmth + presence, then gentle compression so every syllable is clear
+    x = x + 0.2 * lp(x, 250) + 0.25 * bp(x, 2000, 5000)
+    x = np.tanh(x * 2.2) / np.tanh(2.2)
     place(vo, x, t0)
-vo_env = np.convolve(np.abs(vo), np.ones(int(0.12 * SR)) / int(0.12 * SR), 'same')
-vo_env = np.clip(vo_env * 8, 0, 1)
-music *= (1 - 0.55 * vo_env)[:, None]
-vo_st = reverb(np.stack([vo, vo], 1), 0.7, 0.08)
+# smooth speech envelope (fast attack, slow release) for ducking the bed
+lvl = np.abs(vo)
+lvl = np.convolve(lvl, np.ones(int(0.03 * SR)) / int(0.03 * SR), 'same')
+gate = (lvl > 0.02).astype(float)
+k = int(0.35 * SR)
+gate = np.convolve(gate, np.ones(k) / k, 'same')
+vo_env = np.clip(gate * 3, 0, 1)
+music *= (1 - 0.76 * vo_env)[:, None]   # bed drops ~15 dB under speech
+sfx *= (1 - 0.6 * vo_env)[:, None]
+vo_st = reverb(np.stack([vo, vo], 1), 0.5, 0.035)
 
-mix = music * 0.62 + sfx * 0.55 + vo_st * 1.0
-# fade tail
+bed = music * 0.42 + sfx * 0.4
+voice = vo_st * 1.35
+spk = vo_env > 0.9
+def db(x): return 10 * np.log10(np.mean(x ** 2) + 1e-12)
+print('voice vs bed during speech: %.1f dB' % (db(voice[spk]) - db(bed[spk])))
+mix = bed + voice
 fade = np.clip((DUR - T(DUR)[:N]) / 0.5, 0, 1)
 mix *= fade[:, None]
-# master: soft clip + normalize
-mix = np.tanh(mix * 1.3)
+mix = np.tanh(mix * 1.1)
 mix = mix / np.abs(mix).max() * 0.93
 out = sys.argv[2]
 with wave.open(out, 'wb') as w:

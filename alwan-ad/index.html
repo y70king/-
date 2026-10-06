@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>مطبعة ألوان</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  /* force font downloads for every glyph range we use */
+  .preload { position: absolute; left: -9999px; top: 0; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div class="preload">
+  <span style="font-family:Lalezar">ألوان مطبعة فكرتك تستاهل تنشاف تحچي 0123</span>
+  <span style="font-family:Cairo;font-weight:900">ألوان مطبعة 07719287567 تحچي</span>
+  <span style="font-family:Cairo;font-weight:800">ألوان مطبعة 07719287567</span>
+  <span style="font-family:Cairo;font-weight:600">ألوان مطبعة 07719287567</span>
+  <span style="font-family:'Reem Kufi';font-weight:700">ألوان مطبعة</span>
+</div>
+<script src="anim.js"></script>
+</body>
+</html>

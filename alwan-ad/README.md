@@ -8,6 +8,14 @@
 | `render.js` | يصدّر الإطارات عن طريق Chromium (Playwright) |
 | `audio.py` | يولّد الموسيقى الإلكترونية والمؤثرات الصوتية ويمزجها مع التعليق الصوتي |
 | `tts.py`, `vo/` | التعليق الصوتي العراقي (صوت `ar-IQ-BasselNeural`) |
-| `build.sh` | يعيد بناء الفيديو كاملاً من المصدر |
+| `build.sh` | يعيد بناء الفيديو كاملاً من المصدر (`VO=vo_kw OUT=alwan_ad_kw.mp4 ./build.sh`) |
+
+## نسخ الصوت
+
+| الفيديو | الصوت | الملفات |
+|---|---|---|
+| `alwan_ad.mp4` | عراقي (`ar-IQ-BasselNeural`) | `vo/` |
+| `alwan_ad_kw.mp4` | كويتي (`ar-KW-FahedNeural`) | `vo_kw/` |
+| `alwan_ad_bh.mp4` | بحريني (`ar-BH-AliNeural`) | `vo_bh/` |
 
 رقم الهاتف الوحيد في الإعلان: **07719287567**

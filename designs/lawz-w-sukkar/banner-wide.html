@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@page{size:90cm 15cm;margin:0}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1800px;height:300px;overflow:hidden;background:#0a0b0e}
+.c{position:relative;width:1800px;height:300px;overflow:hidden;
+  background:radial-gradient(ellipse 520px 200px at 50% 40%,#2b2c31,#15161a 60%,#0a0b0e)}
+.tex{position:absolute;inset:0;opacity:.5;mix-blend-mode:screen}
+.p{position:absolute;background-image:url(img/ref.jpg);background-repeat:no-repeat;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 var(--l),#000 calc(100% - var(--r)),transparent),
+               linear-gradient(180deg,transparent,#000 var(--t),#000 calc(100% - var(--b)),transparent);
+  -webkit-mask-composite:source-in}
+svg.deco{position:absolute;inset:0;z-index:1}
+</style></head><body><div class="c">
+<svg class="tex" width="1800" height="300"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="3" seed="7"/>
+<feColorMatrix values="0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .55 0 0 0 1.1 -.55"/></filter><rect width="1800" height="300" filter="url(#n)"/></svg>
+<svg class="deco" viewBox="0 0 1800 300" preserveAspectRatio="none">
+  <!-- yellow swooshes like the ones framing the original title -->
+  <path d="M250 14 Q420 -10 560 40" stroke="#ffd400" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <path d="M1550 14 Q1380 -10 1240 40" stroke="#ffd400" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <!-- bottom band: same yellow line / red / dark red as the original edges -->
+  <path d="M0 242 Q900 300 1800 238 V300 H0Z" fill="#ffd400"/>
+  <path d="M0 252 Q900 310 1800 248 V300 H0Z" fill="#f50000"/>
+  <path d="M0 261 Q900 318 1800 257 V300 H0Z" fill="#6b0101"/>
+</svg>
+<div class="p" data-n="left-col" style="left:0.00px;top:0.00px;width:168.86px;height:300.00px;z-index:3;background-size:900.56px 300.00px;background-position:0.00px 0.00px;--l:0%;--r:22%;--t:0%;--b:0%"></div><div class="p" data-n="right-col" style="left:1631.14px;top:0.00px;width:168.86px;height:300.00px;z-index:3;background-size:900.56px 300.00px;background-position:-731.71px 0.00px;--l:22%;--r:0%;--t:0%;--b:0%"></div><div class="p" data-n="pizza" style="left:147.47px;top:120.45px;width:432.69px;height:147.69px;z-index:2;background-size:1846.15px 615.00px;background-position:-196.15px -406.15px;--l:12%;--r:10%;--t:16%;--b:6%"></div><div class="p" data-n="manakish" style="left:185.74px;top:15.76px;width:286.04px;height:112.29px;z-index:2;background-size:1891.18px 630.00px;background-position:-647.73px -416.06px;--l:14%;--r:14%;--t:18%;--b:16%"></div><div class="p" data-n="olives" style="left:1229.83px;top:37.15px;width:350.77px;height:76.15px;z-index:2;background-size:1846.15px 615.00px;background-position:-909.23px -406.15px;--l:10%;--r:10%;--t:20%;--b:18%"></div><div class="p" data-n="fries" style="left:1350.84px;top:120.45px;width:281.31px;height:163.11px;z-index:2;background-size:1891.18px 630.00px;background-position:-1290.73px -416.06px;--l:12%;--r:12%;--t:16%;--b:6%"></div><div class="p" data-n="title" style="left:557.22px;top:0.00px;width:684.82px;height:163.11px;z-index:4;background-size:1035.65px 345.00px;background-position:-189.01px 0.00px;--l:5%;--r:5%;--t:0%;--b:8%"></div><div class="p" data-n="chips" style="left:581.43px;top:157.60px;width:637.57px;height:67.32px;z-index:4;background-size:1035.65px 345.00px;background-position:-205.83px -167.00px;--l:2%;--r:2%;--t:6%;--b:6%"></div><div class="p" data-n="phone" style="left:688.37px;top:227.39px;width:429.39px;height:53.31px;z-index:5;background-size:1152.72px 384.00px;background-position:-368.87px -317.00px;--l:3%;--r:3%;--t:6%;--b:6%"></div>
+</div></body></html>

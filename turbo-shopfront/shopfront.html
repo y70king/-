@@ -1,0 +1,1260 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<title>واجهة محل تيربو</title>
+<style>
+@font-face{font-family:Cairo;src:url(fonts/Cairo.ttf);font-weight:200 1000;}
+@font-face{font-family:Reem;src:url(fonts/ReemKufi.ttf);font-weight:400 700;}
+html,body{margin:0;padding:0;background:#000;overflow:hidden}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// =====================================================================
+//  «مطبعة ألوان» — deterministic motion-graphics engine.
+//  render(t) draws the frame at time t (seconds). Logical canvas 1080x1920,
+//  rendered at S× (S=2 → 2160x3840 / 4K UHD vertical).
+// =====================================================================
+const W = 1920, H = 1080;
+const S = +(new URLSearchParams(location.search).get('s') || 2);
+const cv = document.getElementById('c');
+cv.width = W * S; cv.height = H * S;
+cv.style.width = (W * S) + 'px'; cv.style.height = (H * S) + 'px';
+const ctx = cv.getContext('2d');
+const DURATION = 89.5;
+
+// ---------- palette ----------
+const C = '#00AEEF', M = '#EC008C', Y = '#FFE11A', K = '#1a1c24';
+const VIO = '#6C4DFF', NAVY = '#060814', INK = '#0b0e1c', PAPER = '#f5f4f0';
+const CMYK = [C, M, Y, K];
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const eio = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const eo3 = t => 1 - Math.pow(1 - t, 3);
+const ei3 = t => t * t * t;
+const eo5 = t => 1 - Math.pow(1 - t, 5);
+const eoE = t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const eiE = t => t <= 0 ? 0 : Math.pow(2, 10 * t - 10);
+const eioE = t => t <= 0 ? 0 : t >= 1 ? 1 : t < .5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2;
+const eoB = (t, s = 1.7) => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+const eoEl = t => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - .75) * (2 * Math.PI) / 3) + 1;
+const TAU = Math.PI * 2;
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hx(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+function rgba(c, a = 1) { return `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
+function mixc(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
+
+// CA = colour amount for products (0 = grey mock-up, 1 = full colour)
+let CA = 1;
+function col(h, a = 1) {
+  const c = hx(h); const l = .3 * c[0] + .59 * c[1] + .11 * c[2];
+  const g = 62 + l * .44;
+  return `rgba(${lerp(g, c[0], CA) | 0},${lerp(g, c[1], CA) | 0},${lerp(g, c[2], CA) | 0},${a})`;
+}
+
+// ---------- drawing helpers ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function glow(x, y, r, c, a) {
+  r = Math.max(r, .01);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  const cc = typeof c === 'string' ? hx(c) : c;
+  g.addColorStop(0, rgba(cc, a)); g.addColorStop(.4, rgba(cc, a * .35)); g.addColorStop(1, rgba(cc, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+}
+function softShadow(x, y, rx, ry, a = .45) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(1, ry / rx);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.fill(); ctx.restore();
+}
+function font(size, weight = 800, fam = 'Cairo') { return `${weight} ${size}px ${fam}`; }
+function txt(s, x, y, size, weight, fill, align = 'center', fam = 'Cairo') {
+  ctx.font = font(size, weight, fam); ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.direction = 'rtl'; ctx.fillStyle = fill; ctx.fillText(s, x, y);
+}
+function bars(x, y, ws, gap, h, c) { ctx.fillStyle = c; ws.forEach((w, i) => { rr(x - w, y + i * gap, w, h, h / 2); ctx.fill(); }); }
+
+// Ink-drop brand mark (four CMYK quadrants)
+function dropPath(r) {
+  ctx.beginPath();
+  ctx.moveTo(0, -1.55 * r);
+  ctx.bezierCurveTo(.48 * r, -.95 * r, r, -.42 * r, r, .15 * r);
+  ctx.arc(0, .15 * r, r, 0, Math.PI, false);
+  ctx.bezierCurveTo(-r, -.42 * r, -.48 * r, -.95 * r, 0, -1.55 * r);
+  ctx.closePath();
+}
+function drawMark(r, rot = 0, opts = {}) {
+  ctx.save();
+  dropPath(r); ctx.save(); ctx.clip();
+  const cg = ctx.createConicGradient(-Math.PI / 2 + rot, 0, .15 * r);
+  const cs = [col(C), col(M), col(Y), col('#23252f')];
+  for (let i = 0; i < 4; i++) { cg.addColorStop(i / 4, cs[i]); cg.addColorStop((i + 1) / 4 - .0001, cs[i]); }
+  ctx.fillStyle = cg; ctx.fillRect(-2 * r, -2 * r, 4 * r, 4 * r);
+  // separators
+  ctx.strokeStyle = opts.sep || 'rgba(255,255,255,.95)'; ctx.lineWidth = r * .07;
+  for (let i = 0; i < 4; i++) {
+    const a = -Math.PI / 2 + rot + i * TAU / 4;
+    ctx.beginPath(); ctx.moveTo(0, .15 * r); ctx.lineTo(Math.cos(a) * 3 * r, .15 * r + Math.sin(a) * 3 * r); ctx.stroke();
+  }
+  // gloss
+  const gg = ctx.createLinearGradient(-r, -1.5 * r, r, r);
+  gg.addColorStop(0, 'rgba(255,255,255,.45)'); gg.addColorStop(.45, 'rgba(255,255,255,0)');
+  gg.addColorStop(1, 'rgba(0,0,0,.25)');
+  ctx.fillStyle = gg; ctx.fillRect(-2 * r, -2 * r, 4 * r, 4 * r);
+  ctx.restore();
+  ctx.beginPath(); ctx.ellipse(-.42 * r, -.25 * r, .13 * r, .3 * r, .5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fill();
+  ctx.restore();
+}
+
+let grainCv, halftoneCv;
+function buildGrain() {
+  grainCv = document.createElement('canvas'); grainCv.width = 540; grainCv.height = 960;
+  const g = grainCv.getContext('2d'); const id = g.createImageData(540, 960); const r = rng(7);
+  for (let i = 0; i < id.data.length; i += 4) { const v = 128 + (r() - .5) * 120; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  g.putImageData(id, 0, 0);
+}
+function buildHalftone() {
+  halftoneCv = document.createElement('canvas'); halftoneCv.width = W * S; halftoneCv.height = H * S;
+  const g = halftoneCv.getContext('2d'); g.scale(S, S);
+  const step = 22; g.fillStyle = '#fff';
+  for (let y = 0; y < H + step; y += step) for (let x = 0; x < W + step; x += step) {
+    const ox = (Math.floor(y / step) % 2) * step / 2;
+    const d = Math.hypot(x + ox - W * .5, y - H * .45) / 1100;
+    const r = clamp(1 - d) * 4.2 + .6;
+    g.beginPath(); g.arc(x + ox, y, r, 0, TAU); g.fill();
+  }
+}
+function halftoneOverlay(a, ox = 0, oy = 0) { if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.setTransform(1, 0, 0, 1, ox * S, oy * S); ctx.drawImage(halftoneCv, 0, 0); ctx.restore(); }
+function overlays(t) {
+  // paper grain
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = .07;
+  const f = Math.floor(t * 24), ox = (f * 137) % 400, oy = (f * 251) % 700;
+  ctx.drawImage(grainCv, ox / 2, oy / 2, 540 - ox / 2, 960 - oy / 2, 0, 0, cv.width * (1 - ox / 1080), cv.height * (1 - oy / 1920));
+  ctx.drawImage(grainCv, 0, 0, 540, 960, 0, 0, cv.width, cv.height);
+  ctx.restore();
+  // vignette
+  ctx.save(); ctx.setTransform(S, 0, 0, S, 0, 0);
+  const g = ctx.createRadialGradient(540, 960, 500, 540, 960, 1250);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function flash(a, c = '#ffffff') { if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+
+function speedLines(a, seed = 77) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; const r = rng(seed);
+  for (let i = 0; i < 60; i++) { const an = r() * TAU, r0 = 200 + r() * 300; ctx.strokeStyle = rgba(hx(CMYK[i % 3]), .6); ctx.lineWidth = 2 + r() * 4; ctx.beginPath(); ctx.moveTo(540 + Math.cos(an) * r0, 960 + Math.sin(an) * r0); ctx.lineTo(540 + Math.cos(an) * (r0 + 900 * a), 960 + Math.sin(an) * (r0 + 900 * a)); ctx.stroke(); }
+  ctx.restore();
+}
+
+function icon(kind, s = 1, col1 = '#ffffff', col2 = '#ffd23f') {
+  ctx.save(); ctx.scale(s, s); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const F = c => { ctx.fillStyle = c; ctx.fill(); };
+  switch (kind) {
+    case 'food':
+      ctx.beginPath(); ctx.moveTo(-80, -10); ctx.quadraticCurveTo(-80, -80, 0, -80); ctx.quadraticCurveTo(80, -80, 80, -10); ctx.closePath(); F('#f4a442');
+      ctx.fillStyle = '#fff3d6'; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(-45 + i * 18, -50 + (i % 2) * 10, 4, 2.5, .3, 0, TAU); ctx.fill(); }
+      ctx.beginPath(); for (let i = 0; i <= 8; i++) ctx.lineTo(-86 + i * 21.5, -6 + (i % 2) * 12); ctx.lineTo(86, 8); ctx.lineTo(-86, 8); F('#4cd964');
+      rr(-82, 6, 164, 30, 14); F('#6b3a22');
+      ctx.beginPath(); ctx.moveTo(-82, 8); ctx.lineTo(82, 8); ctx.lineTo(60, 24); ctx.lineTo(-60, 24); F('#ffd23f');
+      rr(-80, 36, 160, 34, 16); F('#f4a442'); break;
+    case 'phone':
+      rr(-55, -95, 110, 190, 20); F('#1b1f2e'); rr(-47, -82, 94, 160, 10);
+      { const g = ctx.createLinearGradient(0, -82, 0, 78); g.addColorStop(0, col1); g.addColorStop(1, col2); ctx.fillStyle = g; ctx.fill(); }
+      rr(-14, -91, 28, 6, 3); F('#000'); ctx.beginPath(); ctx.arc(0, 0, 18, 0, TAU); F('rgba(255,255,255,.85)');
+      ctx.beginPath(); ctx.moveTo(-6, -9); ctx.lineTo(10, 0); ctx.lineTo(-6, 9); F(col2); break;
+    case 'shirt':
+      ctx.beginPath(); ctx.moveTo(-30, -80); ctx.quadraticCurveTo(0, -60, 30, -80); ctx.lineTo(90, -50); ctx.lineTo(70, -10); ctx.lineTo(50, -20); ctx.lineTo(50, 80); ctx.lineTo(-50, 80); ctx.lineTo(-50, -20); ctx.lineTo(-70, -10); ctx.lineTo(-90, -50); ctx.closePath(); F(col1);
+      ctx.beginPath(); ctx.moveTo(-30, -80); ctx.quadraticCurveTo(0, -50, 30, -80); ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.stroke(); break;
+    case 'scissors':
+      ctx.lineWidth = 12; ctx.strokeStyle = col1;
+      ctx.beginPath(); ctx.arc(-34, 50, 24, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.arc(34, 50, 24, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(-20, 30); ctx.lineTo(40, -85); ctx.moveTo(20, 30); ctx.lineTo(-40, -85); ctx.strokeStyle = '#e9edf5'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, -6, 7, 0, TAU); F(col2); break;
+    case 'bread':
+      ctx.beginPath(); ctx.ellipse(0, 10, 95, 55, 0, 0, TAU); F('#d98b3a'); ctx.beginPath(); ctx.ellipse(0, -2, 88, 46, 0, 0, TAU); F('#f2b45c');
+      ctx.strokeStyle = '#c2702a'; ctx.lineWidth = 7; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * 38 - 14, -26); ctx.quadraticCurveTo(i * 38, -6, i * 38 + 14, 16); ctx.stroke(); } break;
+    case 'building':
+      rr(-60, -95, 120, 190, 6); F(col1); ctx.fillStyle = 'rgba(10,14,30,.55)';
+      for (let r = 0; r < 6; r++) for (let c = 0; c < 3; c++) { rr(-44 + c * 32, -80 + r * 26, 22, 16, 3); ctx.fill(); }
+      rr(-16, 60, 32, 35, 4); F(col2); break;
+    case 'home':
+      ctx.beginPath(); ctx.moveTo(-85, -5); ctx.lineTo(0, -85); ctx.lineTo(85, -5); ctx.lineTo(65, -5); ctx.lineTo(65, 80); ctx.lineTo(-65, 80); ctx.lineTo(-65, -5); ctx.closePath(); F(col1);
+      ctx.beginPath(); ctx.moveTo(0, 50); ctx.bezierCurveTo(-40, 20, -30, -15, 0, 5); ctx.bezierCurveTo(30, -15, 40, 20, 0, 50); F(col2); break;
+    case 'cart':
+      ctx.lineWidth = 12; ctx.strokeStyle = col1; ctx.beginPath(); ctx.moveTo(-95, -70); ctx.lineTo(-70, -70); ctx.lineTo(-45, 40); ctx.lineTo(70, 40); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-62, -40); ctx.lineTo(90, -40); ctx.lineTo(75, 15); ctx.lineTo(-50, 15); ctx.closePath(); F(col2);
+      ctx.beginPath(); ctx.arc(-30, 70, 14, 0, TAU); ctx.arc(55, 70, 14, 0, TAU); F(col1); break;
+    case 'bulb':
+      ctx.beginPath(); ctx.arc(0, -25, 62, Math.PI * .8, Math.PI * .2); ctx.lineTo(24, 45); ctx.lineTo(-24, 45); ctx.closePath(); F(col2);
+      rr(-26, 48, 52, 14, 5); F('#a9b0c2'); rr(-22, 64, 44, 12, 5); F('#8a91a6');
+      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(-6, -30, 34, Math.PI * 1.1, Math.PI * 1.5); ctx.stroke(); break;
+    case 'note':
+      ctx.fillStyle = col1; ctx.beginPath(); ctx.ellipse(-40, 50, 26, 19, -.3, 0, TAU); ctx.ellipse(45, 30, 26, 19, -.3, 0, TAU); ctx.fill();
+      ctx.fillRect(-18, -70, 10, 120); ctx.fillRect(67, -90, 10, 120); ctx.beginPath(); ctx.moveTo(-18, -70); ctx.lineTo(77, -90); ctx.lineTo(77, -60); ctx.lineTo(-18, -40); ctx.fill(); break;
+    case 'eye':
+      ctx.beginPath(); ctx.moveTo(-90, 0); ctx.quadraticCurveTo(0, -80, 90, 0); ctx.quadraticCurveTo(0, 80, -90, 0); F(col1);
+      ctx.beginPath(); ctx.arc(0, 0, 32, 0, TAU); F(col2); ctx.beginPath(); ctx.arc(0, 0, 14, 0, TAU); F(DARK); break;
+    case 'heart':
+      ctx.beginPath(); ctx.moveTo(0, 70); ctx.bezierCurveTo(-110, 0, -60, -90, 0, -35); ctx.bezierCurveTo(60, -90, 110, 0, 0, 70); F(col1); break;
+    case 'share':
+      ctx.beginPath(); ctx.moveTo(10, -70); ctx.lineTo(90, 0); ctx.lineTo(10, 70); ctx.lineTo(10, 30); ctx.quadraticCurveTo(-60, 30, -90, 75); ctx.quadraticCurveTo(-80, -25, 10, -30); ctx.closePath(); F(col1); break;
+    case 'comment':
+      ctx.beginPath(); ctx.ellipse(0, -10, 90, 65, 0, 0, TAU); ctx.moveTo(-40, 40); ctx.lineTo(-60, 85); ctx.lineTo(0, 50); F(col1);
+      ctx.fillStyle = DARK; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(i * 32, -10, 9, 0, TAU); ctx.fill(); } break;
+    case 'magnet':
+      ctx.lineWidth = 46; ctx.strokeStyle = '#ff3b5c'; ctx.lineCap = 'butt'; ctx.beginPath(); ctx.arc(0, -10, 55, Math.PI, 0, true); ctx.stroke();
+      ctx.fillStyle = '#e9edf5'; ctx.fillRect(-78, -12, 46, 36); ctx.fillRect(32, -12, 46, 36);
+      ctx.fillStyle = '#ff3b5c'; ctx.fillRect(-78, -60, 46, 50); ctx.fillRect(32, -60, 46, 50); break;
+    case 'lens':
+      ctx.lineWidth = 16; ctx.strokeStyle = col1; ctx.beginPath(); ctx.arc(-15, -15, 55, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(25, 25); ctx.lineTo(80, 80); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-15, -15, 40, 0, TAU); F('rgba(0,174,239,.35)'); break;
+    case 'bookmark':
+      ctx.beginPath(); ctx.moveTo(-55, -85); ctx.lineTo(55, -85); ctx.lineTo(55, 85); ctx.lineTo(0, 45); ctx.lineTo(-55, 85); ctx.closePath(); F(col1);
+      ctx.fillStyle = col2; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i * TAU / 10 - Math.PI / 2, r = i % 2 ? 12 : 28; ctx.lineTo(Math.cos(a) * r, -25 + Math.sin(a) * r); } ctx.fill(); break;
+    case 'coin':
+      ctx.beginPath(); ctx.arc(0, 0, 70, 0, TAU); F('#d9a520'); ctx.beginPath(); ctx.arc(-4, -4, 64, 0, TAU); F('#ffd23f');
+      ctx.lineWidth = 6; ctx.strokeStyle = '#d9a520'; ctx.beginPath(); ctx.arc(-4, -4, 46, 0, TAU); ctx.stroke(); break;
+    case 'star':
+      ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i * TAU / 10 - Math.PI / 2, r = i % 2 ? 38 : 85; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); F(col2); break;
+    case 'play':
+      ctx.beginPath(); ctx.arc(0, 0, 80, 0, TAU); F(col1); ctx.beginPath(); ctx.moveTo(-22, -38); ctx.lineTo(42, 0); ctx.lineTo(-22, 38); ctx.closePath(); F(col2); break;
+    case 'call':
+      ctx.beginPath(); ctx.arc(0, 0, 85, 0, TAU); F('#25c766');
+      ctx.save(); ctx.rotate(-.7); ctx.fillStyle = '#ffffff'; rr(-14, -48, 28, 96, 12); ctx.fill(); rr(-30, -54, 60, 26, 12); ctx.fill(); rr(-30, 28, 60, 26, 12); ctx.fill(); ctx.restore(); break;
+    case 'bag':
+      rr(-70, -40, 140, 120, 14); F(col2); ctx.lineWidth = 10; ctx.strokeStyle = col1; ctx.beginPath(); ctx.arc(0, -40, 36, Math.PI, 0); ctx.stroke(); break;
+    case 'moneybag':
+      ctx.beginPath(); ctx.moveTo(-30, -70); ctx.lineTo(30, -70); ctx.lineTo(18, -45); ctx.bezierCurveTo(110, -10, 110, 90, 0, 90); ctx.bezierCurveTo(-110, 90, -110, -10, -18, -45); ctx.closePath(); F('#b8862f');
+      ctx.fillStyle = '#7a5518'; ctx.fillRect(-24, -52, 48, 10); txt('$', 0, 26, 80, 900, '#ffe08a'); break;
+  }
+  ctx.restore();
+}
+
+function drawPhone(x, y, s, screenFn, o = {}) {
+  if (s <= 0.01) return;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(o.rot || 0); ctx.scale(s * (o.sx ?? 1), s);
+  ctx.globalAlpha *= o.alpha ?? 1;
+  softShadow(0, 450, 260, 40, .5);
+  if (o.glow) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 640, o.glowC || '#7b5cff', .35 * o.glow); ctx.restore(); }
+  const bg = ctx.createLinearGradient(-210, -430, 210, 430); bg.addColorStop(0, '#5a6070'); bg.addColorStop(.5, '#1b1e28'); bg.addColorStop(1, '#3e4352');
+  rr(-212, -432, 424, 864, 58); ctx.fillStyle = bg; ctx.fill();
+  rr(-204, -424, 408, 848, 52); ctx.fillStyle = '#07080d'; ctx.fill();
+  ctx.save(); rr(-192, -412, 384, 824, 42); ctx.clip();
+  ctx.fillStyle = '#000'; ctx.fillRect(-192, -412, 384, 824);
+  if (screenFn) screenFn();
+  // glass reflection
+  const rg = ctx.createLinearGradient(-192, -412, 192, 412); rg.addColorStop(0, 'rgba(255,255,255,.10)'); rg.addColorStop(.35, 'rgba(255,255,255,0)'); rg.addColorStop(1, 'rgba(255,255,255,.03)');
+  ctx.fillStyle = rg; ctx.fillRect(-192, -412, 384, 824);
+  ctx.restore();
+  rr(-52, -400, 104, 28, 14); ctx.fillStyle = '#000'; ctx.fill();
+  ctx.fillStyle = '#2a2e3a'; ctx.fillRect(210, -260, 5, 70); ctx.fillRect(-215, -300, 5, 50); ctx.fillRect(-215, -230, 5, 50);
+  ctx.restore();
+}
+function chip(label, x, y, size, a, iconK, iconC) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(a); const s = lerp(.7, 1, eoB(clamp(a)));
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.font = font(size, 800); const tw = ctx.measureText(label).width, iw = iconK ? size * 1.4 : 0, w = tw + size * 1.6 + iw, h = size * 1.9;
+  rr(-w / 2, -h / 2, w, h, h / 2); ctx.fillStyle = 'rgba(10,12,28,.72)'; ctx.fill();
+  const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0); g.addColorStop(0, C); g.addColorStop(.5, M); g.addColorStop(1, Y);
+  ctx.lineWidth = 3; ctx.strokeStyle = g; ctx.stroke();
+  txt(label, -iw / 2, 3, size, 800, '#ffffff');
+  if (iconK) { ctx.save(); ctx.translate(w / 2 - size * 1.05, 0); icon(iconK, size / 190, iconC || '#ffffff', Y); ctx.restore(); }
+  ctx.restore();
+}
+function headline(s, y, size, a, col = '#ffffff', fam = 'Cairo') {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(a); ctx.translate(540, y + (1 - eo5(clamp(a))) * 40);
+  ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 20 * S; txt(s, 0, 0, size, fam === 'Reem' ? 700 : 900, col, 'center', fam); ctx.restore();
+}
+
+// =====================================================================
+//  «تيربو للتوصيل السريع» — voice-led motion graphics (89.5 s)
+// =====================================================================
+const DARK = '#0b0e1c';
+const OR = '#e8262d', AMB = '#ffd84a', CY = '#22d3ff', ASP = '#070912', HOT = '#b3121b';
+const PHONES = ['0778963999', '0787022626']; // company numbers (as supplied)
+const VO = { 1: 3.0, 2: 8.0, 3: 15.6, 4: 28.9, 5: 36.2, 6: 45.6, 7: 53.7, 8: 60.6, 9: 67.0, 10: 74.0, 11: 82.5 };
+const CUE = {
+  speed: 4.3, wait: 6.4,
+  order: 8.7, got: 9.2, journey: 10.05, fast: 11.99, precise: 12.82, care: 13.67,
+  turbo3: 15.7, reach: 18.27, baiji3: 19.94,
+  areas: [20.84, 21.83, 22.8, 23.98, 24.93, 26.08],
+  obstacle: 31.15, extend: 32.7, tikrit4: 34.49,
+  time5: 37.56, designed: 39.48, w1: 42.03, w2: 42.85, w3: 43.75,
+  order6: 46.4, start6: 48.1, arrive6: 50.7, best6: 51.5,
+  heart7: 54.45, regions7: 56.56, tikrit7: 59.2,
+  you8: 62.09, road8: 63.35, onus8: 65.15,
+  turbo9: 67.1, time9: 72.2,
+  ask10: 74.1, turbo10: 76.66,
+  turbo11: 82.6, baiji11: 85.54, want11: 86.55
+};
+const AREAS = [
+  { n: 'الحجاج', x: 250, z: -520 },
+  { n: 'المزرعة', x: -390, z: 330 },
+  { n: 'الـ600', x: -330, z: -260 },
+  { n: 'المصافي', x: 80, z: 560 },
+  { n: 'ساحات المصافي', x: 360, z: 380 },
+  { n: 'الصينية', x: -620, z: 40 }];
+const TIKRIT = { x: 330, z: -1700 };
+
+// ---------- brand ----------
+function turboWord(x, y, size, a = 1, shine = -1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.transform(1, 0, -.22, 1, 0, 0);
+  ctx.font = font(size, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr';
+  const g = ctx.createLinearGradient(0, -size / 2, 0, size / 2); g.addColorStop(0, '#fff3d6'); g.addColorStop(.45, AMB); g.addColorStop(.55, OR); g.addColorStop(1, HOT);
+  ctx.shadowColor = OR; ctx.shadowBlur = 40 * S; ctx.fillStyle = g; ctx.fillText('TURBO', 0, 0); ctx.shadowBlur = 0;
+  ctx.lineWidth = size * .02; ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.strokeText('TURBO', 0, 0);
+  if (shine >= 0 && shine <= 1) { const sx = lerp(-size * 2, size * 2, shine); const sg = ctx.createLinearGradient(sx - 80, 0, sx + 80, 0); sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(.5, 'rgba(255,255,255,.95)'); sg.addColorStop(1, 'rgba(255,255,255,0)'); ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = sg; ctx.fillText('TURBO', 0, 0); }
+  ctx.restore();
+}
+function tchip(label, x, y, size, a, ik) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(a); const s = lerp(.7, 1, eoB(clamp(a))); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.font = font(size, 800); const tw = ctx.measureText(label).width, iw = ik ? size * 1.3 : 0, w = tw + size * 1.6 + iw, h = size * 1.9;
+  rr(-w / 2, -h / 2, w, h, h / 2); ctx.fillStyle = 'rgba(8,10,22,.78)'; ctx.fill();
+  const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0); g.addColorStop(0, AMB); g.addColorStop(1, HOT); ctx.lineWidth = 3; ctx.strokeStyle = g; ctx.stroke();
+  txt(label, -iw / 2, 3, size, 800, '#ffffff');
+  if (ik) { ctx.save(); ctx.translate(w / 2 - size * 1.0, 0); ik(size); ctx.restore(); }
+  ctx.restore();
+}
+function bolt(s, c = AMB) { ctx.save(); ctx.scale(s / 100, s / 100); ctx.beginPath(); ctx.moveTo(10, -50); ctx.lineTo(-30, 8); ctx.lineTo(0, 8); ctx.lineTo(-10, 50); ctx.lineTo(30, -10); ctx.lineTo(0, -10); ctx.closePath(); ctx.fillStyle = c; ctx.fill(); ctx.restore(); }
+function pinIcon(s, c = OR) { ctx.save(); ctx.scale(s / 100, s / 100); ctx.beginPath(); ctx.moveTo(0, 50); ctx.bezierCurveTo(-10, 30, -40, 10, -40, -12); ctx.arc(0, -12, 40, Math.PI, 0); ctx.bezierCurveTo(40, 10, 10, 30, 0, 50); ctx.fillStyle = c; ctx.fill(); ctx.beginPath(); ctx.arc(0, -12, 15, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore(); }
+function clockIcon(s, t, spin = 1, c = '#ffffff') {
+  ctx.save(); ctx.scale(s / 100, s / 100); ctx.lineWidth = 8; ctx.strokeStyle = c; ctx.beginPath(); ctx.arc(0, 0, 44, 0, TAU); ctx.stroke();
+  ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t * spin - Math.PI / 2) * 30, Math.sin(t * spin - Math.PI / 2) * 30); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t * spin / 12 - Math.PI / 2) * 20, Math.sin(t * spin / 12 - Math.PI / 2) * 20); ctx.stroke(); ctx.restore();
+}
+
+// ---------- the delivery van (side view, facing left) ----------
+function vanStreaks(x, y, s, a, t) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; const r = rng(11);
+  for (let i = 0; i < 22; i++) { const yy = y + (r() - .5) * 220 * s, len = (200 + r() * 600) * s, off = ((t * 900 + r() * 1000) % 1400); const x0 = x + 260 * s + off * .2; const g = ctx.createLinearGradient(x0, 0, x0 + len, 0); g.addColorStop(0, i % 3 ? 'rgba(255,179,0,.8)' : 'rgba(34,211,255,.8)'); g.addColorStop(1, 'rgba(255,179,0,0)'); ctx.fillStyle = g; ctx.fillRect(x0, yy, len, 3 + r() * 4); }
+  ctx.restore();
+}
+
+// ---------- brand (redrawn from the company's logo) ----------
+const BR = '#d4202a', BRD = '#7a0d14', NV = '#1b1f3e', YL = '#ffd84a';
+function logoT(s = 1, lines = true) { // yellow speed-"T"
+  ctx.save(); ctx.scale(s, s);
+  ctx.fillStyle = YL; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(-150, -150); ctx.lineTo(90, -150); ctx.lineTo(70, -100); ctx.lineTo(-40, -100);
+  ctx.bezierCurveTo(-60, -40, -70, 20, -40, 90); ctx.bezierCurveTo(-100, 40, -110, -40, -92, -100); ctx.lineTo(-170, -100); ctx.closePath(); ctx.fill(); ctx.stroke();
+  if (lines) [[-330, -146, 150], [-300, -120, 130], [-320, -92, 140], [-280, -64, 110], [-250, -36, 90]].forEach(([x, y, w]) => { ctx.beginPath(); ctx.roundRect(x, y, w, 12, 6); ctx.fill(); ctx.stroke(); });
+  ctx.restore();
+}
+function riderScooter(s = 1, col = NV, t = 0, spin = false, lid = 0) { // silhouette rider + scooter + box (logo style)
+  ctx.save(); ctx.scale(s, s); ctx.fillStyle = col; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  const wheel = (x) => { ctx.beginPath(); ctx.arc(x, 92, 40, 0, TAU); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(x, 92, 15, 0, TAU); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.fillStyle = col; };
+  wheel(-40); wheel(165);
+  // scooter body
+  ctx.beginPath(); ctx.moveTo(-95, 70); ctx.quadraticCurveTo(-100, 20, -40, 18); ctx.lineTo(60, 22); ctx.lineTo(95, 60); ctx.lineTo(140, 60); ctx.lineTo(135, -20); ctx.lineTo(160, -60); ctx.lineTo(175, -55); ctx.lineTo(160, -15); ctx.quadraticCurveTo(205, 30, 200, 80); ctx.lineTo(120, 80); ctx.lineTo(90, 75); ctx.lineTo(10, 80); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // handlebar
+  ctx.beginPath(); ctx.moveTo(150, -60); ctx.lineTo(120, -70); ctx.lineWidth = 10; ctx.strokeStyle = col; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff';
+  // delivery box
+  ctx.save(); ctx.translate(-80, -40);
+  ctx.beginPath(); ctx.roundRect(-75, -70, 130, 120, 10); ctx.fill(); ctx.stroke();
+  if (lid > 0) { ctx.save(); ctx.translate(-75, -70); ctx.rotate(-lid * 1.9); ctx.beginPath(); ctx.roundRect(0, -14, 130, 14, 5); ctx.fill(); ctx.stroke(); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(-10, -70, 110, YL, .6 * lid); ctx.restore(); }
+  // cube icon
+  ctx.translate(-10, -10); ctx.fillStyle = YL;
+  ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(28, -16); ctx.lineTo(28, 18); ctx.lineTo(0, 34); ctx.lineTo(-28, 18); ctx.lineTo(-28, -16); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-28, -16); ctx.lineTo(0, 0); ctx.lineTo(28, -16); ctx.moveTo(0, 0); ctx.lineTo(0, 34); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = col; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+  // speed ticks behind the box
+  ctx.fillStyle = YL; [[-200, -90, 40], [-215, -66, 52], [-200, -42, 40]].forEach(([x, y, w]) => { ctx.beginPath(); ctx.roundRect(x, y, w, 9, 4); ctx.fill(); });
+  ctx.fillStyle = col;
+  // rider
+  ctx.beginPath(); ctx.moveTo(-20, 22); ctx.lineTo(-10, -40); ctx.quadraticCurveTo(0, -120, 40, -130); ctx.quadraticCurveTo(80, -128, 85, -95); ctx.lineTo(120, -75); ctx.lineTo(130, -60); ctx.lineTo(80, -70); ctx.lineTo(55, -40); ctx.lineTo(70, 10); ctx.lineTo(110, 40); ctx.lineTo(100, 58); ctx.lineTo(45, 30); ctx.lineTo(30, 22); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // helmet
+  ctx.beginPath(); ctx.arc(55, -175, 40, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(62, -190); ctx.quadraticCurveTo(100, -190, 92, -160); ctx.lineTo(70, -160); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawLogo(s = 1, o = {}) { // full lock-up, centred
+  ctx.save(); ctx.scale(s, s);
+  const a = o.parts ?? 1;
+  // swoosh arc
+  ctx.save(); ctx.globalAlpha *= clamp(a * 3);
+  ctx.beginPath(); ctx.arc(40, -40, 250, Math.PI * 1.08, Math.PI * 2.05); ctx.arc(60, -30, 225, Math.PI * 2.02, Math.PI * 1.12, true); ctx.closePath();
+  ctx.fillStyle = NV; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(60, -30, 205, Math.PI * 1.2, Math.PI * 1.75); ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= clamp(a * 3 - .5); ctx.translate(-30, -20); logoT(1); ctx.restore();
+  ctx.save(); ctx.globalAlpha *= clamp(a * 3 - 1); ctx.translate(80, 10); riderScooter(.85, NV, 0); ctx.restore();
+  // wordmark «تيربو»
+  ctx.save(); ctx.globalAlpha *= clamp(a * 3 - 1.5); ctx.translate(0, 235); ctx.transform(1, 0, -.12, 1, 0, 0);
+  ctx.font = font(230, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl';
+  ctx.lineWidth = 14; ctx.strokeStyle = '#ffffff'; ctx.lineJoin = 'round'; ctx.strokeText('تيربو', 0, 0);
+  ctx.fillStyle = NV; ctx.fillText('تيربو', 0, 0);
+  const w = ctx.measureText('تيربو').width;
+  ctx.save(); ctx.beginPath(); ctx.rect(w / 2 - w * .26, -200, w * .4, 400); ctx.clip(); ctx.fillStyle = YL; ctx.fillText('تيربو', 0, 0); ctx.restore();
+  ctx.fillStyle = NV; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+  [[-w / 2 - 170, -40, 150], [-w / 2 - 210, 0, 190], [-w / 2 - 150, 40, 130]].forEach(([x, y, l]) => { ctx.beginPath(); ctx.roundRect(x, y, l, 14, 7); ctx.fill(); ctx.stroke(); });
+  ctx.restore();
+  // banner «خدمات توصيل»
+  ctx.save(); ctx.globalAlpha *= clamp(a * 3 - 2); ctx.translate(0, 400);
+  ctx.beginPath(); ctx.moveTo(-300, -40); ctx.lineTo(320, -40); ctx.lineTo(300, 40); ctx.lineTo(-320, 40); ctx.closePath(); ctx.fillStyle = NV; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = YL; ctx.beginPath(); ctx.roundRect(-270, -6, 70, 12, 6); ctx.roundRect(200, -6, 70, 12, 6); ctx.fill();
+  txt('خدمات توصيل', 0, 4, 52, 800, '#ffffff');
+  ctx.restore();
+  ctx.restore();
+}
+function turboMark(r, glowA = 1) { // compact badge: red disc + yellow T
+  ctx.save();
+  if (glowA > 0) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, r * 2.6, BR, .5 * glowA); ctx.restore(); }
+  const g = ctx.createLinearGradient(-r, -r, r, r); g.addColorStop(0, '#f0353e'); g.addColorStop(1, BRD);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = r * .06; ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.stroke();
+  ctx.save(); ctx.translate(r * .12, r * .1); logoT(r / 260, true); ctx.restore();
+  ctx.restore();
+}
+// ---------- the delivery scooter (side view, facing left; drawn at van scale) ----------
+function drawVan(x, y, s, t, o = {}) {
+  const wa = o.wheel ?? t * 18;
+  ctx.save(); ctx.translate(x, y); ctx.scale(-s, s);
+  softShadow(0, 98, 230, 22, .6);
+  if (o.under !== false) { ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.translate(0, 96); ctx.scale(1, .12); glow(0, 0, 260, YL, .5); ctx.restore(); }
+  const wheel = (wx) => { ctx.save(); ctx.translate(wx, 50);
+    ctx.fillStyle = '#0e1018'; ctx.beginPath(); ctx.arc(0, 0, 48, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#c9ced8'; ctx.beginPath(); ctx.arc(0, 0, 26, 0, TAU); ctx.fill();
+    ctx.rotate(-wa); ctx.strokeStyle = '#5a606e'; ctx.lineWidth = 5; for (let i = 0; i < 5; i++) { ctx.rotate(TAU / 5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -22); ctx.stroke(); }
+    ctx.fillStyle = BR; ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill(); ctx.restore(); };
+  wheel(150); wheel(-150);
+  // body
+  const g = ctx.createLinearGradient(0, -80, 0, 60); g.addColorStop(0, '#f0353e'); g.addColorStop(1, '#a30f18');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-210, 30); ctx.quadraticCurveTo(-215, -40, -150, -48); ctx.lineTo(-40, -44); ctx.lineTo(10, 10); ctx.lineTo(90, 10); ctx.lineTo(110, -110); ctx.lineTo(150, -120); ctx.lineTo(140, -40); ctx.quadraticCurveTo(200, -10, 205, 40); ctx.lineTo(110, 40); ctx.lineTo(70, 34); ctx.lineTo(-100, 40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.beginPath(); ctx.moveTo(-190, -10); ctx.quadraticCurveTo(-180, -38, -140, -40); ctx.lineTo(-60, -38); ctx.lineTo(-70, -26); ctx.lineTo(-150, -28); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#111'; rr(-150, -64, 130, 20, 10); ctx.fill(); // seat
+  ctx.strokeStyle = '#2a2e3a'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(140, -118); ctx.lineTo(104, -134); ctx.stroke(); // handlebar
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(160, -110, 110, '#fff6d8', .8); glow(-212, 0, 50, '#ff2a2a', .7); ctx.restore();
+  ctx.fillStyle = '#fff6d8'; rr(148, -124, 20, 16, 6); ctx.fill();
+  // delivery box (brand)
+  ctx.save(); ctx.translate(-150, -150);
+  rr(-70, -70, 150, 130, 14); ctx.fillStyle = NV; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+  ctx.fillStyle = YL; ctx.fillRect(-70, 34, 150, 12);
+  ctx.save(); ctx.translate(5, -14); ctx.scale(-1, 1); logoT(.24, false); ctx.restore();
+  ctx.save(); ctx.scale(-1, 1); txt('تيربو', -5, 14, 30, 900, '#ffffff'); ctx.restore();
+  if (o.door) { ctx.save(); ctx.translate(-70, -70); ctx.rotate(-o.door * 1.8); rr(0, -16, 150, 16, 6); ctx.fillStyle = NV; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore(); ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(5, -70, 140, YL, .6 * o.door); ctx.restore(); }
+  ctx.restore();
+  // rider
+  ctx.fillStyle = NV; ctx.beginPath(); ctx.moveTo(-90, -60); ctx.lineTo(-70, -150); ctx.quadraticCurveTo(-50, -230, 0, -232); ctx.quadraticCurveTo(40, -228, 46, -196); ctx.lineTo(100, -150); ctx.lineTo(112, -130); ctx.lineTo(50, -150); ctx.lineTo(10, -120); ctx.lineTo(30, -60); ctx.lineTo(80, -20); ctx.lineTo(70, 4); ctx.lineTo(0, -30); ctx.lineTo(-30, -50); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = YL; ctx.beginPath(); ctx.moveTo(-74, -140); ctx.lineTo(-64, -180); ctx.lineTo(-56, -178); ctx.lineTo(-66, -138); ctx.fill(); // jacket stripe
+  ctx.fillStyle = '#111'; rr(64, -10, 30, 14, 6); ctx.fill(); // boot
+  // helmet
+  const hg = ctx.createRadialGradient(0, -290, 4, 10, -278, 52); hg.addColorStop(0, '#ff5a62'); hg.addColorStop(1, BRD);
+  ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(10, -278, 48, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#10131f'; ctx.beginPath(); ctx.moveTo(18, -296); ctx.quadraticCurveTo(66, -296, 56, -258); ctx.lineTo(24, -258); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = YL; ctx.fillRect(-36, -284, 40, 8);
+  ctx.restore();
+}
+function carTop(x, z, ang, s = 1) {
+  const q = P3(x, 0, z), q2 = P3(x + Math.cos(ang) * 10, 0, z + Math.sin(ang) * 10);
+  const a2 = Math.atan2(q2[1] - q[1], q2[0] - q[0]), sc = s * 1300 / q[2];
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(q[0], q[1], 70 * sc, YL, .85); ctx.restore();
+  ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(a2); ctx.scale(sc, sc);
+  rr(-26, -6, 52, 12, 6); ctx.fillStyle = BR; ctx.fill();
+  rr(-30, -13, 22, 26, 4); ctx.fillStyle = NV; ctx.fill(); ctx.strokeStyle = YL; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(2, 0, 9, 0, TAU); ctx.fillStyle = BRD; ctx.fill();
+  ctx.fillStyle = '#2a2e3a'; ctx.fillRect(18, -11, 4, 22); ctx.fillStyle = '#fff6d8'; ctx.fillRect(24, -3, 5, 6);
+  ctx.restore();
+}
+
+// ---------- generic 3-D camera ----------
+let CM;
+function cam(o) { CM = Object.assign({ cx: 540, cy: 960, F: 1300, tx: 0, ty: 0, tz: 0 }, o); CM.cy_ = Math.cos(o.yaw); CM.sy_ = Math.sin(o.yaw); CM.cp = Math.cos(o.pitch); CM.sp = Math.sin(o.pitch); }
+function P3(x, y, z) {
+  const X = x - CM.tx, Y = y - CM.ty, Z = z - CM.tz;
+  const x1 = X * CM.cy_ - Z * CM.sy_, z1 = X * CM.sy_ + Z * CM.cy_;
+  const zv = -Y * CM.sp + z1 * CM.cp + CM.D, yv = Y * CM.cp + z1 * CM.sp;
+  return [CM.cx + CM.F * x1 / zv, CM.cy - CM.F * yv / zv, zv];
+}
+function poly3(pts) { ctx.beginPath(); pts.forEach((p, i) => { const q = P3(p[0], p[1], p[2]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); }
+const BLOCKS = (() => { const r = rng(42), a = []; for (let i = 0; i < 150; i++) { const an = r() * TAU, d = Math.sqrt(r()) * 300; const x = Math.cos(an) * d, z = Math.sin(an) * d; if (Math.abs(x) < 40 && Math.abs(z) < 40) continue; a.push({ x, z, w: 22 + r() * 30, d: 22 + r() * 30, h: 14 + r() * (90 - d * .2), lit: r() }); }
+  AREAS.forEach((A, k) => { for (let i = 0; i < 16; i++) { const an = r() * TAU, d = 30 + r() * 90; a.push({ x: A.x + Math.cos(an) * d, z: A.z + Math.sin(an) * d, w: 16 + r() * 20, d: 16 + r() * 20, h: 10 + r() * 40, lit: r(), area: k }); } });
+  return a; })();
+function roadPts(ax, az, bx, bz, n = 24, bend = .18) {
+  const mx = (ax + bx) / 2 - (bz - az) * bend, mz = (az + bz) / 2 + (bx - ax) * bend, out = [];
+  for (let i = 0; i <= n; i++) { const u = i / n; out.push([lerp(lerp(ax, mx, u), lerp(mx, bx, u), u), lerp(lerp(az, mz, u), lerp(mz, bz, u), u)]); }
+  return out;
+}
+const ROADS = AREAS.map((A, k) => roadPts(0, 0, A.x, A.z, 24, k % 2 ? .16 : -.16));
+const TK_ROAD = (() => { const p = []; for (let i = 0; i <= 60; i++) { const u = i / 60; p.push([lerp(0, TIKRIT.x, u) + Math.sin(u * Math.PI * 2) * 90, lerp(0, TIKRIT.z, u)]); } return p; })();
+function riverPts(z0, z1) { const p = []; for (let z = z0; z <= z1; z += 40) p.push([560 + Math.sin(z / 260) * 70 + (z < -900 ? (z + 900) * -.1 : 0), z]); return p; }
+const RIVER = riverPts(-2200, 1000);
+function along(pts, u) { u = clamp(u); const f = u * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), k = f - i; return [lerp(pts[i][0], pts[i + 1][0], k), lerp(pts[i][1], pts[i + 1][1], k)]; }
+function drawPath3(pts, prog, width, color, glowC, dash) {
+  if (prog <= 0) return;
+  const n = Math.max(2, Math.floor(pts.length * prog));
+  ctx.beginPath(); for (let i = 0; i < n; i++) { const q = P3(pts[i][0], 0, pts[i][1]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+  const end = along(pts, prog), qe = P3(end[0], 0, end[1]); ctx.lineTo(qe[0], qe[1]);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (glowC) { ctx.save(); ctx.shadowColor = glowC; ctx.shadowBlur = 18 * S; ctx.strokeStyle = color; ctx.lineWidth = width; if (dash) ctx.setLineDash(dash); ctx.stroke(); ctx.restore(); }
+  else { ctx.strokeStyle = color; ctx.lineWidth = width; if (dash) ctx.setLineDash(dash); ctx.stroke(); ctx.setLineDash([]); }
+}
+function cityMap(t, o = {}) {
+  // ground
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#04050c'); g.addColorStop(1, '#0a0e22'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // grid
+  ctx.save(); ctx.lineWidth = 1;
+  for (let i = -24; i <= 24; i++) {
+    const v = i * 100; [[[v, -2400], [v, 1400]], [[-1400, v - 500], [1400, v - 500]]].forEach(([a, b]) => {
+      const pa = P3(a[0], 0, a[1]), pb = P3(b[0], 0, b[1]); if (pa[2] < 50 || pb[2] < 50) return;
+      ctx.strokeStyle = `rgba(80,110,200,${.10 * (o.gridA ?? 1)})`; ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke(); });
+  }
+  ctx.restore();
+  // river (Tigris)
+  ctx.save(); poly3(RIVER.map(p => [p[0], 0, p[1]])); ctx.strokeStyle = 'rgba(34,140,255,.35)'; ctx.lineWidth = 60 * 1300 / (CM.D + 200); ctx.lineJoin = 'round'; ctx.stroke(); ctx.strokeStyle = 'rgba(120,200,255,.25)'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+  // roads (base)
+  ROADS.forEach(p => drawPath3(p, 1, 10 * 1300 / CM.D, 'rgba(120,130,170,.35)'));
+  if (o.tikrit) drawPath3(TK_ROAD, 1, 12 * 1300 / CM.D, 'rgba(120,130,170,.35)');
+  // district pads
+  AREAS.forEach((A, k) => {
+    const lit = o.lit ? o.lit[k] : 0;
+    ctx.save(); poly3([...Array(25).keys()].map(i => [A.x + Math.cos(i / 24 * TAU) * 120, 0, A.z + Math.sin(i / 24 * TAU) * 120]));
+    ctx.fillStyle = `rgba(255,106,0,${.06 + .22 * lit})`; ctx.fill(); ctx.strokeStyle = `rgba(255,179,0,${.25 + .6 * lit})`; ctx.lineWidth = 2 + 3 * lit; ctx.stroke(); ctx.restore();
+    if (lit > 0) { const q = P3(A.x, 0, A.z); ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(q[0], q[1], 260 * 1300 / q[2], OR, .55 * lit); ctx.restore(); }
+  });
+  // buildings, painter-sorted
+  const list = BLOCKS.map(b => ({ b, d: P3(b.x, 0, b.z)[2] })).sort((a, b) => b.d - a.d);
+  for (const { b } of list) {
+    const lit = b.area != null ? (o.lit ? o.lit[b.area] : 0) : (o.center ?? .4);
+    const x0 = b.x - b.w / 2, x1 = b.x + b.w / 2, z0 = b.z - b.d / 2, z1 = b.z + b.d / 2, h = b.h * (o.hScale ?? 1);
+    const faces = [
+      [[x0, 0, z0], [x1, 0, z0], [x1, h, z0], [x0, h, z0], .55],
+      [[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0], .4],
+      [[x0, 0, z1], [x0, 0, z0], [x0, h, z0], [x0, h, z1], .45],
+      [[x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1], .8]];
+    faces.forEach(([a, b2, c, d, k]) => {
+      const pa = P3(...a), pb = P3(...b2), pc = P3(...c), pd = P3(...d);
+      const cross = (pb[0] - pa[0]) * (pd[1] - pa[1]) - (pb[1] - pa[1]) * (pd[0] - pa[0]);
+      if (k !== .8 && cross > 0) return;
+      ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.lineTo(pc[0], pc[1]); ctx.lineTo(pd[0], pd[1]); ctx.closePath();
+      const base = [22 + 40 * k, 26 + 44 * k, 48 + 70 * k];
+      const warm = lit * (b.lit > .5 ? 1 : .5);
+      ctx.fillStyle = rgba(mixc(base, [255, 150, 60], warm * .45 * k)); ctx.fill();
+      if (k === .8 && warm > 0) { ctx.strokeStyle = `rgba(255,179,0,${.5 * warm})`; ctx.lineWidth = 1.2; ctx.stroke(); }
+    });
+  }
+  // hub glow
+  const hq = P3(0, 0, 0); ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(hq[0], hq[1], (o.hub ?? 1) * 300 * 1300 / hq[2], OR, .45 * (o.hub ?? 1)); ctx.restore();
+}
+function areaLabel(A, a, big = 1) {
+  if (a <= 0) return;
+  const q = P3(A.x, 0, A.z); const s = clamp(1300 / q[2], .5, 1.6) * big;
+  ctx.save(); ctx.globalAlpha *= clamp(a * 2); ctx.translate(q[0], q[1]);
+  const k = eoB(clamp(a), 2);
+  ctx.save(); ctx.translate(0, -10 * s); ctx.scale(k * s, k * s); pinIcon(70, OR); ctx.restore();
+  ctx.translate(0, -105 * s); ctx.scale(k * s, k * s);
+  ctx.font = font(46, 900); const w = ctx.measureText(A.n).width + 56;
+  rr(-w / 2, -38, w, 76, 38); ctx.fillStyle = 'rgba(8,10,22,.85)'; ctx.fill(); ctx.strokeStyle = AMB; ctx.lineWidth = 3; ctx.stroke();
+  txt(A.n, 0, 3, 46, 900, '#ffffff');
+  ctx.restore();
+}
+
+// =====================================================================
+//  S1  0 – 7.6   engine roar → light streaks → TURBO → the van launches
+// =====================================================================
+function scene1(t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  // tunnel light streaks
+  const st = P(t, 1.3, 2.4), conv = eio(P(t, 1.9, 2.3));
+  if (st > 0) {
+    const r = rng(3);
+    for (let i = 0; i < 90; i++) {
+      const an = r() * TAU, sp = .6 + r() * .9, ph = r();
+      const k = ((t * sp * 1.6 + ph) % 1), d0 = 40 + k * k * 1300, len = 80 + k * 500;
+      const cx = 540, cy = 860;
+      const a = st * (1 - conv * .9) * (1 - P(t, 6.8, 7.6) * .5);
+      ctx.strokeStyle = i % 4 === 0 ? `rgba(34,211,255,${a * .8})` : `rgba(255,${120 + (i % 3) * 40},0,${a * .9})`;
+      ctx.lineWidth = 1 + k * 5; ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * d0, cy + Math.sin(an) * d0); ctx.lineTo(cx + Math.cos(an) * (d0 + len), cy + Math.sin(an) * (d0 + len)); ctx.stroke();
+    }
+  }
+  const tw = eoE(P(t, 2.0, 2.45));
+  const up = eio(P(t, 5.4, 6.2));
+  if (tw > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(540, lerp(860, 560, up), 600, OR, .35 * tw); ctx.restore();
+    const sc = lerp(2.6, 1, tw) * lerp(1, .75, up);
+    ctx.save(); ctx.translate(540, lerp(860, 560, up)); ctx.scale(sc, sc); turboWord(0, 0, 210, clamp(tw * 1.5), P(t, 2.6, 3.4)); ctx.restore();
+    const ar = eo5(P(t, 2.65, 3.15));
+    ctx.save(); ctx.globalAlpha *= ar; ctx.translate(0, lerp(0, -300, up) + (1 - ar) * 30);
+    txt('تيربو للتوصيل السريع', 540, 1040, 70, 900, '#ffffff');
+    ctx.fillStyle = OR; ctx.fillRect(540 - 220 * ar, 1100, 440 * ar, 6); ctx.restore();
+  }
+  // the van bursts through
+  const vk = P(t, 5.6, 7.4);
+  if (vk > 0) {
+    const x = lerp(1500, -500, eio(vk)), y = 1350;
+    vanStreaks(x, y, 1, 1 - P(t, 7.0, 7.5), t);
+    drawVan(x, y, 1.15, t, {});
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(x - 300, y, 260, '#fff6d8', .3); ctx.restore();
+  }
+  flash(.6 * (1 - P(t, 2.0, 2.35)) * P(t, 1.95, 2.0), OR);
+}
+
+// =====================================================================
+//  S2  7.6 – 15.3   the order: tap → confirmed → the clock starts
+// =====================================================================
+function scene2(t) {
+  const g = ctx.createRadialGradient(540, 820, 50, 540, 900, 1300); g.addColorStop(0, '#1a1430'); g.addColorStop(.6, '#0a0b18'); g.addColorStop(1, '#030409'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  halftoneOverlay(.03);
+  const pin = eo5(P(t, 7.6, 8.3)), ex = eiE(P(t, 14.9, 15.3));
+  const conf = P(t, CUE.got - .1, CUE.got + .3);
+  const rot = Math.sin(t * .8) * .06;
+  ctx.save(); ctx.translate(540, 960); ctx.scale(1 + ex * .6, 1 + ex * .6); ctx.translate(-540, -960);
+  drawPhone(540, 860 + (1 - pin) * 1200, .95, () => {
+    const bg = ctx.createLinearGradient(0, -412, 0, 412); bg.addColorStop(0, '#14182c'); bg.addColorStop(1, '#0a0c18'); ctx.fillStyle = bg; ctx.fillRect(-192, -412, 384, 824);
+    // app header
+    ctx.fillStyle = OR; ctx.fillRect(-192, -412, 384, 120);
+    ctx.save(); ctx.translate(-120, -350); turboMark(26, 0); ctx.restore();
+    ctx.save(); ctx.translate(40, -352); ctx.transform(1, 0, -.22, 1, 0, 0); ctx.font = font(44, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillStyle = '#fff'; ctx.fillText('TURBO', 0, 0); ctx.restore();
+    // order items
+    [['bag', -200], ['food', -60]].forEach(([k, y], i) => {
+      rr(-170, y - 50, 340, 110, 20); ctx.fillStyle = '#1d2238'; ctx.fill();
+      ctx.save(); ctx.translate(115, y + 5); icon(k, .35, '#ffffff', AMB); ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; rr(-130, y - 15, 170, 16, 8); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.4)'; rr(-130, y + 15, 110, 12, 6); ctx.fill();
+    });
+    // destination row
+    rr(-170, 70, 340, 90, 20); ctx.fillStyle = '#1d2238'; ctx.fill(); ctx.save(); ctx.translate(120, 115); pinIcon(46); ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.7)'; rr(-130, 105, 200, 16, 8); ctx.fill();
+    // button
+    const press = t > CUE.order - .1 && t < CUE.order + .15;
+    ctx.save(); ctx.translate(0, 260); if (press) ctx.scale(.94, .94);
+    rr(-160, -48, 320, 96, 48); const bgB = ctx.createLinearGradient(-160, 0, 160, 0); bgB.addColorStop(0, AMB); bgB.addColorStop(1, HOT); ctx.fillStyle = bgB; ctx.fill();
+    txt(conf > 0 ? 'تم الطلب ✓' : 'اطلب الآن', 0, 3, 44, 900, '#ffffff'); ctx.restore();
+    // tap ripple
+    const tp = P(t, CUE.order - .1, CUE.order + .5); if (tp > 0 && tp < 1) { ctx.strokeStyle = `rgba(255,255,255,${1 - tp})`; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(30, 270, 20 + tp * 90, 0, TAU); ctx.stroke(); }
+    if (conf > 0) { ctx.fillStyle = `rgba(10,12,24,${.75 * clamp(conf * 2)})`; ctx.fillRect(-192, -412, 384, 824);
+      ctx.save(); ctx.translate(0, -60); const s = eoB(conf, 2.2); ctx.scale(s, s); ctx.beginPath(); ctx.arc(0, 0, 90, 0, TAU); ctx.fillStyle = '#22c55e'; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-38, 0); ctx.lineTo(-10, 30); ctx.lineTo(42, -30); ctx.stroke(); ctx.restore(); }
+  }, { glow: 1, glowC: OR, rot });
+  // burst + confirmation label outside the phone
+  if (conf > 0) {
+    const b = P(t, CUE.got, CUE.got + .8); if (b < 1) for (let i = 0; i < 3; i++) { const k = clamp(b * 1.4 - i * .2); ctx.strokeStyle = `rgba(255,179,0,${.8 * (1 - k)})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(540, 800, 200 + 700 * eo3(k), 0, TAU); ctx.stroke(); }
+    const la = P(t, CUE.got + .05, CUE.got + .4);
+    ctx.save(); ctx.globalAlpha *= clamp(la * 2); const s = eoB(la, 2); ctx.translate(540, 230); ctx.scale(s, s);
+    ctx.shadowColor = '#22c55e'; ctx.shadowBlur = 30 * S; txt('تم استلام الطلب', 0, 0, 92, 900, '#ffffff'); ctx.restore();
+  }
+  // running timer
+  const tk = eo5(P(t, CUE.journey - .2, CUE.journey + .3));
+  if (tk > 0) {
+    const el = Math.max(0, t - CUE.journey), mm = Math.floor(el / 60), ss = Math.floor(el % 60), cs = Math.floor((el * 100) % 100);
+    ctx.save(); ctx.globalAlpha *= tk; ctx.translate(540, 1530 + (1 - tk) * 60);
+    rr(-300, -80, 600, 160, 40); ctx.fillStyle = 'rgba(8,10,22,.85)'; ctx.fill(); ctx.strokeStyle = OR; ctx.lineWidth = 4; ctx.stroke();
+    ctx.save(); ctx.translate(-215, 0); clockIcon(90, t, 8, AMB); ctx.restore();
+    ctx.font = font(96, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${String(cs).padStart(2, '0')}`, 60, 6);
+    ctx.restore();
+  }
+  // speed • precision • care icons, on the words
+  [[CUE.fast, s => bolt(s * 1.4)], [CUE.precise, s => { ctx.strokeStyle = CY; ctx.lineWidth = s * .08; for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(0, 0, s * .17 * i, 0, TAU); ctx.stroke(); } }], [CUE.care, s => icon('heart', s / 190, '#ff4d6d')]].forEach(([ct, fn], i) => {
+    const a = P(t, ct - .1, ct + .3); if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha *= clamp(a * 2) * (1 - ex); ctx.translate(250 + (2 - i) * 290, 1760); const s = eoB(a, 2); ctx.scale(s, s);
+    ctx.beginPath(); ctx.arc(0, 0, 70, 0, TAU); ctx.fillStyle = 'rgba(8,10,22,.8)'; ctx.fill(); ctx.strokeStyle = AMB; ctx.lineWidth = 3; ctx.stroke(); fn(100); ctx.restore();
+  });
+  ctx.restore();
+}
+
+// =====================================================================
+//  S3  15.3 – 28.6   Baiji 3-D map: every district
+// =====================================================================
+function scene3(t) {
+  const k0 = eio(P(t, 15.3, 17.5)), ex = eiE(P(t, 28.2, 28.6));
+  cam({ yaw: lerp(.5, -.15, eio(P(t, 15.3, 28.6))), pitch: lerp(1.25, .78, k0), D: lerp(2600, 1700, k0) + ex * 400, ty: 0, tz: lerp(0, 40, k0), F: 1300, cy: 980 });
+  const lit = AREAS.map((A, k) => eo5(P(t, CUE.areas[k] - .15, CUE.areas[k] + .35)));
+  cityMap(t, { lit, center: .3 + .7 * P(t, CUE.reach, CUE.reach + 1), hub: .4 + .6 * P(t, 15.8, 16.8) });
+  // branches of light from the centre
+  ROADS.forEach((p, k) => {
+    const pr = eio(P(t, CUE.reach + k * .12, CUE.reach + 1.1 + k * .12));
+    drawPath3(p, pr, 4, `rgba(34,211,255,${.7})`, CY);
+  });
+  // the van visits each district in turn
+  for (let k = 0; k < 6; k++) {
+    const t0 = CUE.areas[k] - .75, t1 = CUE.areas[k] - .1;
+    if (t >= t0 && t < t1 + .55) {
+      const u = eio(P(t, t0, t1)); const back = k > 0 ? 0 : 0;
+      const pts = ROADS[k]; drawPath3(pts, u, 7, OR, OR);
+      const pp = along(pts, u), pq = along(pts, Math.max(0, u - .02));
+      carTop(pp[0], pp[1], Math.atan2(pp[1] - pq[1], pp[0] - pq[0]) || 0, 1.2);
+    }
+  }
+  AREAS.forEach((A, k) => areaLabel(A, P(t, CUE.areas[k] - .1, CUE.areas[k] + .35)));
+  // «بيجي» in the centre
+  const ba = P(t, CUE.baiji3 - .5, CUE.baiji3);
+  if (ba > 0) { const q = P3(0, 0, 0); ctx.save(); ctx.globalAlpha *= clamp(ba * 2) * (1 - ex); ctx.translate(q[0], q[1] + 90); const s = eoB(ba, 2); ctx.scale(s, s); ctx.shadowColor = OR; ctx.shadowBlur = 30 * S; txt('بيجي', 0, 0, 110, 900, '#ffffff'); ctx.restore(); }
+  // heading
+  const ha = P(t, CUE.turbo3 - .2, CUE.turbo3 + .4) * (1 - P(t, CUE.reach, CUE.reach + .5));
+  if (ha > 0) { ctx.save(); ctx.globalAlpha *= ha; turboWord(540, 260, 120, 1); ctx.restore(); }
+  headline('جميع مناطق بيجي', 220, 76, P(t, CUE.reach + .2, CUE.reach + .7) * (1 - ex), '#ffffff');
+}
+
+// =====================================================================
+//  S4  28.6 – 36   wider map: Baiji ↔ Tikrit
+// =====================================================================
+function cityLabelBig(x, z, name, a, col = '#ffffff') {
+  if (a <= 0) return; const q = P3(x, 0, z);
+  ctx.save(); ctx.globalAlpha *= clamp(a * 2); ctx.translate(q[0], q[1]); const s = eoB(clamp(a), 2); ctx.scale(s, s);
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 260, OR, .5); ctx.restore();
+  ctx.beginPath(); ctx.arc(0, 0, 18, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OR; ctx.lineWidth = 6; ctx.stroke();
+  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 20 * S; txt(name, 0, -90, 96, 900, col); ctx.restore();
+}
+function scene4(t, mode = 4) {
+  const k0 = eio(P(t, 28.6, 30.4)), ex = eiE(P(t, 35.6, 36.0));
+  cam({ yaw: .12, pitch: lerp(.78, .95, k0), D: lerp(1900, 2650, k0), tz: lerp(0, -850, k0), F: 1350, cy: 1000 });
+  cityMap(t, { lit: AREAS.map(() => .5), center: .7, tikrit: true, hScale: lerp(1, .7, k0), gridA: .7 });
+  // Tikrit cluster
+  const tq = P3(TIKRIT.x, 0, TIKRIT.z); ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(tq[0], tq[1], 240, AMB, .5 * P(t, 30.5, 31.5)); ctx.restore();
+  const road = eio(P(t, CUE.obstacle, CUE.extend + .3));
+  drawPath3(TK_ROAD, road, 6, CY, CY);
+  const vk = eio(P(t, CUE.extend, CUE.tikrit4 + .1));
+  if (vk > 0) { drawPath3(TK_ROAD, vk, 9, OR, OR); const p = along(TK_ROAD, vk), p2 = along(TK_ROAD, Math.max(0, vk - .01)); carTop(p[0], p[1], Math.atan2(p[1] - p2[1], p[0] - p2[0]), 2.2); }
+  cityLabelBig(0, 0, 'بيجي', P(t, 29.6, 30.1));
+  cityLabelBig(TIKRIT.x, TIKRIT.z, 'تكريت', P(t, CUE.tikrit4 - .2, CUE.tikrit4 + .3), AMB);
+  const ba = P(t, CUE.tikrit4 + .2, CUE.tikrit4 + .6);
+  if (ba > 0) { ctx.save(); ctx.globalAlpha *= clamp(ba * 2) * (1 - ex); ctx.translate(540, 250); const s = eoB(ba, 2); ctx.scale(s, s);
+    rr(-400, -85, 800, 170, 85); ctx.fillStyle = 'rgba(8,10,22,.85)'; ctx.fill(); const gg = ctx.createLinearGradient(-400, 0, 400, 0); gg.addColorStop(0, AMB); gg.addColorStop(1, HOT); ctx.strokeStyle = gg; ctx.lineWidth = 5; ctx.stroke();
+    txt('بيجي ↔ تكريت', 0, 5, 96, 900, '#ffffff'); ctx.restore(); }
+}
+
+// =====================================================================
+//  S5  36 – 45.4   the speed pipeline: order → … → delivered
+// =====================================================================
+const PIPE = [['طلب يدخل', 'bag'], ['تأكيد', 'check'], ['تجهيز', 'box'], ['استلام', 'hand'], ['انطلاق', 'bolt'], ['وصول', 'pin']];
+function pipeIcon(k, s) {
+  if (k === 'bag') icon('bag', s / 190, '#ffffff', OR);
+  else if (k === 'check') { ctx.strokeStyle = '#22c55e'; ctx.lineWidth = s * .12; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-s * .3, 0); ctx.lineTo(-s * .08, s * .22); ctx.lineTo(s * .32, -s * .22); ctx.stroke(); }
+  else if (k === 'box') parcel(0, 0, s * .45, 0);
+  else if (k === 'hand') { ctx.fillStyle = AMB; rr(-s * .3, -s * .1, s * .6, s * .3, s * .1); ctx.fill(); parcel(0, -s * .2, s * .25, 0); }
+  else if (k === 'bolt') bolt(s * .8);
+  else pinIcon(s * .8);
+}
+function parcel(x, y, s, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); const h = s;
+  ctx.fillStyle = '#c98a4b'; ctx.beginPath(); ctx.moveTo(-h, -h * .4); ctx.lineTo(0, -h * .9); ctx.lineTo(h, -h * .4); ctx.lineTo(0, h * .1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#a86e35'; ctx.beginPath(); ctx.moveTo(-h, -h * .4); ctx.lineTo(0, h * .1); ctx.lineTo(0, h); ctx.lineTo(-h, h * .5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8c5a2a'; ctx.beginPath(); ctx.moveTo(h, -h * .4); ctx.lineTo(0, h * .1); ctx.lineTo(0, h); ctx.lineTo(h, h * .5); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = OR; ctx.lineWidth = h * .12; ctx.beginPath(); ctx.moveTo(-h * .5, -h * .65); ctx.lineTo(h * .5, -h * .15); ctx.stroke();
+  ctx.restore();
+}
+function scene5(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b0e22'); g.addColorStop(1, '#04050b'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  halftoneOverlay(.03);
+  const ex = eiE(P(t, 45.0, 45.4));
+  // road scrolling under a steady van
+  ctx.fillStyle = '#101426'; ctx.fillRect(0, 1640, W, 280); ctx.fillStyle = AMB; for (let x = -200; x < 1300; x += 140) ctx.fillRect(((x + t * 600) % 1400) - 200, 1760, 70, 8);
+  drawVan(560, 1560, .78, t, {}); vanStreaks(560, 1560, .78, .7, t);
+  // fast clock
+  const cl = eo5(P(t, 36.0, 36.6)), cs = 1 - .35 * eio(P(t, 41.6, 42.1));
+  ctx.save(); ctx.translate(540, lerp(330, 260, eio(P(t, 41.6, 42.1)))); ctx.scale(cl * cs, cl * cs);
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 260, OR, .35); ctx.restore();
+  ctx.beginPath(); ctx.arc(0, 0, 150, 0, TAU); ctx.fillStyle = 'rgba(8,10,22,.9)'; ctx.fill(); ctx.strokeStyle = AMB; ctx.lineWidth = 8; ctx.stroke();
+  for (let i = 0; i < 12; i++) { const a = i * TAU / 12; ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.cos(a) * 122 - 3, Math.sin(a) * 122 - 3, 6, 6); }
+  clockIcon(220, t, 14, '#ffffff');
+  ctx.restore();
+  // pipeline steps
+  const sa = 1 - P(t, 41.5, 41.9);
+  if (sa > 0) {
+    ctx.save(); ctx.globalAlpha *= sa;
+    const y0 = 600, gap = 160;
+    const prog = clamp((t - 36.4) / 3.1);
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(538, y0, 4, gap * 5); ctx.fillStyle = OR; ctx.fillRect(538, y0, 4, gap * 5 * prog);
+    PIPE.forEach(([lab, k], i) => {
+      const on = P(t, 36.4 + i * .52, 36.6 + i * .52), y = y0 + i * gap;
+      ctx.save(); ctx.translate(540, y); ctx.scale(1 + .15 * Math.sin(on * Math.PI), 1 + .15 * Math.sin(on * Math.PI));
+      ctx.beginPath(); ctx.arc(0, 0, 56, 0, TAU); ctx.fillStyle = on > 0 ? '#1d1426' : '#12152a'; ctx.fill(); ctx.strokeStyle = on > 0 ? OR : 'rgba(255,255,255,.2)'; ctx.lineWidth = 5; ctx.stroke();
+      if (on > 0) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 120, OR, .5 * on); ctx.restore(); }
+      ctx.globalAlpha *= .35 + .65 * on; pipeIcon(k, 70); ctx.restore();
+      ctx.save(); ctx.globalAlpha *= .35 + .65 * on; txt(lab, i % 2 ? 420 : 660, y + 2, 44, 800, '#ffffff', i % 2 ? 'right' : 'left'); ctx.restore();
+    });
+    ctx.restore();
+  }
+  // three words
+  [['سرعة', CUE.w1, s => bolt(s)], ['دقة', CUE.w2, s => { ctx.strokeStyle = CY; ctx.lineWidth = s * .08; for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(0, 0, s * .15 * i, 0, TAU); ctx.stroke(); } ctx.fillStyle = CY; ctx.beginPath(); ctx.arc(0, 0, s * .07, 0, TAU); ctx.fill(); }], ['موثوقية', CUE.w3, s => { ctx.beginPath(); ctx.moveTo(0, -s * .45); ctx.lineTo(s * .4, -s * .28); ctx.lineTo(s * .35, s * .15); ctx.quadraticCurveTo(0, s * .48, -s * .35, s * .15); ctx.lineTo(-s * .4, -s * .28); ctx.closePath(); ctx.fillStyle = '#22c55e'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = s * .08; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-s * .15, 0); ctx.lineTo(-s * .02, s * .12); ctx.lineTo(s * .18, -s * .12); ctx.stroke(); }]].forEach(([w, ct, fn], i) => {
+    const a = P(t, ct - .1, ct + .3); if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha *= clamp(a * 2) * (1 - ex); const y = 640 + i * 250; ctx.translate(540, y); const s = eoB(a, 2.2); ctx.scale(s, s);
+    rr(-360, -95, 720, 190, 40); ctx.fillStyle = 'rgba(8,10,22,.8)'; ctx.fill(); const gg = ctx.createLinearGradient(-360, 0, 360, 0); gg.addColorStop(0, AMB); gg.addColorStop(1, HOT); ctx.strokeStyle = gg; ctx.lineWidth = 4; ctx.stroke();
+    ctx.save(); ctx.translate(250, 0); fn(130); ctx.restore();
+    txt(w, -50, 6, 100, 900, '#ffffff'); ctx.restore();
+  });
+}
+
+// =====================================================================
+//  S6  45.4 – 53.5   whatever you order
+// =====================================================================
+const GOODS = [['shop', 230, 520], ['food', 840, 560], ['parcel', 260, 900], ['parcel2', 820, 940], ['misc', 540, 700], ['shop2', 540, 1080]];
+function good(k, s, t) {
+  ctx.save(); ctx.scale(s, s);
+  if (k === 'shop' || k === 'shop2') { // shopping bag
+    ctx.fillStyle = k === 'shop' ? OR : CY; rr(-80, -60, 160, 170, 14); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(40, -60, 40, 170);
+    ctx.strokeStyle = '#1b1f2e'; ctx.lineWidth = 9; ctx.beginPath(); ctx.arc(0, -60, 42, Math.PI, 0); ctx.stroke();
+    ctx.save(); ctx.translate(0, 30); turboMark(28, 0); ctx.restore();
+  } else if (k === 'food') { // restaurant order: box + cup
+    ctx.fillStyle = '#f4f1ea'; ctx.beginPath(); ctx.moveTo(-90, -20); ctx.lineTo(60, -20); ctx.lineTo(50, 90); ctx.lineTo(-80, 90); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = HOT; ctx.fillRect(-88, 10, 146, 20);
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(70, -60); ctx.lineTo(120, -60); ctx.lineTo(112, 90); ctx.lineTo(78, 90); ctx.closePath(); ctx.fill(); ctx.fillStyle = AMB; ctx.fillRect(70, -70, 50, 12);
+    for (let i = 0; i < 3; i++) { const k2 = ((t * .6 + i / 3) % 1); ctx.strokeStyle = `rgba(255,255,255,${.6 * (1 - k2)})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-40 + i * 35, -30 - k2 * 70); ctx.quadraticCurveTo(-30 + i * 35, -50 - k2 * 70, -40 + i * 35, -70 - k2 * 70); ctx.stroke(); }
+  } else if (k === 'parcel' || k === 'parcel2') parcel(0, 0, k === 'parcel' ? 90 : 70, 0);
+  else { // assorted supplies basket
+    ctx.fillStyle = '#7b5cff'; ctx.beginPath(); ctx.moveTo(-100, -10); ctx.lineTo(100, -10); ctx.lineTo(80, 90); ctx.lineTo(-80, 90); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 4; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * 36, -10); ctx.lineTo(i * 30, 90); ctx.stroke(); }
+    ctx.fillStyle = '#22c55e'; rr(-70, -80, 40, 80, 10); ctx.fill(); ctx.fillStyle = AMB; ctx.beginPath(); ctx.arc(10, -40, 36, 0, TAU); ctx.fill(); ctx.fillStyle = '#ff4d6d'; rr(45, -70, 36, 60, 8); ctx.fill();
+  }
+  ctx.restore();
+}
+function scene6(t) {
+  const g = ctx.createRadialGradient(540, 900, 50, 540, 900, 1300); g.addColorStop(0, '#20182f'); g.addColorStop(.6, '#0b0c19'); g.addColorStop(1, '#030409'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  halftoneOverlay(.03);
+  const ex = eiE(P(t, 53.1, 53.5));
+  const door = eio(P(t, 47.2, 47.8)) * (1 - eio(P(t, 51.0, 51.4)));
+  const vx = 540 + (t > 51.4 ? -eiE(P(t, 51.6, 52.6)) * 1300 : 0);
+  ctx.fillStyle = '#101426'; ctx.fillRect(0, 1580, W, 340);
+  if (t > 51.6) vanStreaks(vx, 1470, .9, P(t, 51.6, 52), t);
+  drawVan(vx, 1470, .9, t > 51.6 ? t : 0, { door });
+  GOODS.forEach(([k, x, y], i) => {
+    const a = eo5(P(t, CUE.order6 - .3 + i * .18, CUE.order6 + .3 + i * .18)); if (a <= 0) return;
+    const fly = eiE(P(t, CUE.start6 + i * .28, CUE.start6 + .7 + i * .28));
+    if (fly >= 1) return;
+    const tx = vx + 150 * .9, ty = 1470 - 150 * .9 - 70;
+    const bx = x, by = y + Math.sin(t * 1.6 + i) * 14;
+    const xx = lerp(bx, tx, fly), yy = lerp(by, ty, fly) - Math.sin(fly * Math.PI) * 160;
+    ctx.save(); ctx.globalAlpha *= a; ctx.translate(xx, yy); ctx.rotate(Math.sin(t + i) * .1 + fly * 1.5);
+    softShadow(0, 130 * (1 - fly), 90, 12, .4 * (1 - fly)); good(k, (1.05 - fly * .8) * a, t); ctx.restore();
+  });
+  // "arrives at its best": a check badge
+  const bk = P(t, CUE.best6 + .2, CUE.best6 + .6);
+  if (bk > 0) { ctx.save(); ctx.globalAlpha *= clamp(bk * 2) * (1 - ex); ctx.translate(540, 560); const s = eoB(bk, 2); ctx.scale(s, s);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 300, '#22c55e', .4); ctx.restore();
+    ctx.beginPath(); ctx.arc(0, 0, 120, 0, TAU); ctx.fillStyle = '#22c55e'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 20; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-52, 0); ctx.lineTo(-14, 40); ctx.lineTo(58, -40); ctx.stroke(); ctx.restore(); }
+}
+
+// =====================================================================
+//  S7  53.5 – 66.8   reach: dozens of routes → Tikrit → "your destination"
+// =====================================================================
+const RAYS = (() => { const r = rng(77), a = []; for (let i = 0; i < 46; i++) { const an = r() * TAU, d = 300 + r() * 450; a.push(roadPts(0, 0, Math.cos(an) * d, Math.sin(an) * d, 16, (r() - .5) * .4)); } return a; })();
+const DEST = { x: -470, z: -120 };
+function scene7(t) {
+  const wide = eio(P(t, 57.6, 59.2)), back = eio(P(t, 60.4, 61.4));
+  const D = lerp(lerp(2000, 3600, wide), 2100, back), tz = lerp(lerp(0, -850, wide), -60, back);
+  cam({ yaw: lerp(-.2, .1, P(t, 53.5, 66.8)), pitch: lerp(.9, 1.0, wide), D, tz, F: 1250, cy: 980 });
+  cityMap(t, { lit: AREAS.map((_, k) => P(t, 55.2 + k * .15, 55.8 + k * .15)), center: 1, tikrit: true, gridA: .8 });
+  RAYS.forEach((p, i) => drawPath3(p, eio(P(t, CUE.heart7 + (i % 12) * .05, CUE.heart7 + .9 + (i % 12) * .05)), 2.5, 'rgba(255,179,0,.75)', AMB));
+  const tk = eio(P(t, 58.4, CUE.tikrit7 + .2)); drawPath3(TK_ROAD, tk, 7, CY, CY);
+  cityLabelBig(0, 0, 'بيجي', P(t, CUE.heart7 - .2, CUE.heart7 + .2) * (1 - back));
+  cityLabelBig(TIKRIT.x, TIKRIT.z, 'تكريت', P(t, CUE.tikrit7 - .2, CUE.tikrit7 + .3) * (1 - back), AMB);
+  // "your destination is your choice": a pin drops
+  const pd = P(t, CUE.you8 - .9, CUE.you8 - .3);
+  if (pd > 0) {
+    const q = P3(DEST.x, 0, DEST.z);
+    ctx.save(); ctx.translate(q[0], q[1] - (1 - eoEl(pd)) * 400); const s = 1.2;
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 160, CY, .6); ctx.restore();
+    ctx.scale(s, s); pinIcon(130, CY);
+    ctx.fillStyle = '#0b0e1c'; ctx.beginPath(); ctx.arc(0, -12 * 1.3 - 4, 9, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(0, -2, 13, Math.PI, 0); ctx.fill();
+    ctx.restore();
+    const rp = P(t, CUE.you8 - .3, CUE.you8 + .6); if (rp > 0 && rp < 1) { ctx.strokeStyle = `rgba(34,211,255,${1 - rp})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(q[0], q[1], 40 + 200 * rp, (40 + 200 * rp) * .4, 0, 0, TAU); ctx.stroke(); }
+  }
+  // "...and leave the route to us"
+  const rt = roadPts(0, 0, DEST.x, DEST.z, 30, .3);
+  const rk = eio(P(t, CUE.road8, CUE.onus8 + .2));
+  if (rk > 0) { drawPath3(rt, rk, 9, OR, OR); const p = along(rt, rk), p2 = along(rt, Math.max(0, rk - .02)); carTop(p[0], p[1], Math.atan2(p[1] - p2[1], p[0] - p2[0]), 1.4); }
+  const ok = P(t, CUE.onus8 + .2, CUE.onus8 + .6);
+  if (ok > 0) { const q = P3(DEST.x, 0, DEST.z); ctx.save(); ctx.translate(q[0] + 90, q[1] - 170); const s = eoB(ok, 2); ctx.scale(s, s); ctx.beginPath(); ctx.arc(0, 0, 46, 0, TAU); ctx.fillStyle = '#22c55e'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-5, 16); ctx.lineTo(22, -14); ctx.stroke(); ctx.restore(); }
+}
+
+// =====================================================================
+//  S8  66.8 – 73.9   brand hero: the van, light rings, the logo
+// =====================================================================
+function scene8(t) {
+  const g = ctx.createRadialGradient(540, 1100, 50, 540, 1000, 1300); g.addColorStop(0, '#6e0c14'); g.addColorStop(.55, '#2a0509'); g.addColorStop(1, '#0a0204'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  halftoneOverlay(.03);
+  const ex = eiE(P(t, 73.5, 73.9));
+  // podium
+  ctx.save(); ctx.translate(540, 1420); ctx.scale(1, .22); ctx.beginPath(); ctx.arc(0, 0, 520, 0, TAU); ctx.fillStyle = '#12101c'; ctx.fill(); ctx.strokeStyle = OR; ctx.lineWidth = 10; ctx.stroke(); ctx.restore();
+  // orbiting light rings
+  for (let r = 0; r < 3; r++) {
+    ctx.save(); ctx.translate(540, 1300); ctx.scale(1, .3); ctx.rotate(t * (.8 + r * .3) * (r % 2 ? -1 : 1));
+    ctx.strokeStyle = [OR, AMB, CY][r]; ctx.lineWidth = 8; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 20 * S; ctx.setLineDash([200 + r * 80, 160]);
+    ctx.beginPath(); ctx.arc(0, 0, 470 + r * 60, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+  const vin = eo5(P(t, 66.8, 67.6));
+  drawVan(540 + (1 - vin) * 900, 1290, 1.25, t * (1 - vin) + 66.8 * vin, {});
+  // logo
+  const lk = P(t, CUE.turbo9 - .1, CUE.turbo9 + .5);
+  if (lk > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(540, 460, 600, YL, .25 * lk); ctx.restore();
+    ctx.save(); ctx.translate(540, 400); const s = lerp(.5, .6, eoB(lk, 1.6)); ctx.scale(s, s); drawLogo(1, { parts: P(t, CUE.turbo9 - .1, CUE.turbo9 + .9) }); ctx.restore();
+    const nk = eo5(P(t, CUE.turbo9 + .6, CUE.turbo9 + 1.1));
+    ctx.save(); ctx.globalAlpha *= nk; ctx.translate(0, (1 - nk) * 40); txt('تيربو للتوصيل السريع', 540, 840, 62, 900, '#ffffff'); ctx.restore();
+  }
+  // on time
+  const tm = P(t, CUE.time9 - .2, CUE.time9 + .3);
+  if (tm > 0) { ctx.save(); ctx.globalAlpha *= clamp(tm * 2) * (1 - ex); ctx.translate(540, 1720); const s = eoB(tm, 2); ctx.scale(s, s);
+    rr(-260, -60, 520, 120, 60); ctx.fillStyle = 'rgba(8,10,22,.85)'; ctx.fill(); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.save(); ctx.translate(-180, 0); clockIcon(70, 1.2, 0, '#22c55e'); ctx.restore(); txt('في الوقت المناسب', 30, 3, 46, 900, '#ffffff'); ctx.restore(); }
+}
+
+// =====================================================================
+//  S9  73.9 – 79.2   contact
+// =====================================================================
+function scene9(t) {
+  const g = ctx.createRadialGradient(540, 800, 50, 540, 900, 1300); g.addColorStop(0, '#1a1430'); g.addColorStop(.6, '#0a0b18'); g.addColorStop(1, '#030409'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  halftoneOverlay(.03);
+  const pin = eo5(P(t, 73.9, 74.6)), ex = eiE(P(t, 78.9, 79.2));
+  drawPhone(540, 860 + (1 - pin) * 1200, .9, () => {
+    // in-app live map
+    ctx.fillStyle = '#0d1226'; ctx.fillRect(-192, -412, 384, 824);
+    ctx.strokeStyle = 'rgba(120,140,200,.25)'; ctx.lineWidth = 8; [[-192, -200, 192, -120], [-192, 60, 192, 20], [-60, -412, -20, 412], [90, -412, 120, 412]].forEach(([a, b, c, d]) => { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); });
+    const route = [[-120, 300], [-40, 50], [100, 30], [110, -250]];
+    ctx.strokeStyle = OR; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); route.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+    const u = (t * .25) % 1, seg = Math.min(2, Math.floor(u * 3)), k = u * 3 - seg;
+    const cx = lerp(route[seg][0], route[seg + 1][0], k), cy = lerp(route[seg][1], route[seg + 1][1], k);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(cx, cy, 60, OR, .9); ctx.restore(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, 12, 0, TAU); ctx.fill();
+    ctx.save(); ctx.translate(110, -260); pinIcon(70, CY); ctx.restore();
+    // notification banner
+    const nb = eo5(P(t, 74.2, 74.7));
+    ctx.save(); ctx.translate(0, -340 - (1 - nb) * 200); rr(-176, -52, 352, 104, 22); ctx.fillStyle = 'rgba(30,34,52,.95)'; ctx.fill();
+    ctx.save(); ctx.translate(-130, 0); turboMark(26, 0); ctx.restore();
+    txt('طلبك جاهز للتوصيل', 30, -12, 30, 900, '#ffffff'); ctx.fillStyle = 'rgba(255,255,255,.4)'; rr(-60, 18, 160, 10, 5); ctx.fill(); ctx.restore();
+  }, { glow: 1, glowC: OR });
+  headline('للطلب والاستفسار', 230, 88, P(t, CUE.ask10 - .1, CUE.ask10 + .4) * (1 - ex), '#ffffff');
+  // contact slot (kept clear for the company's official number)
+  const cs = eo5(P(t, 75.0, 75.5));
+  if (cs > 0) {
+    ctx.save(); ctx.globalAlpha *= cs * (1 - ex); ctx.translate(540, 1560);
+    rr(-400, -110, 800, 220, 60); const cg = ctx.createLinearGradient(-400, 0, 400, 0); cg.addColorStop(0, HOT); cg.addColorStop(1, OR); ctx.fillStyle = cg; ctx.fill();
+    ctx.strokeStyle = AMB; ctx.lineWidth = 4; ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(-394, -104, 788, 90, 50); ctx.fill();
+    ctx.save(); ctx.translate(-320, 0); icon('call', .55); ctx.restore();
+    ctx.font = font(70, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillStyle = '#ffffff';
+    ctx.fillText(PHONES[0], 50, -36); ctx.fillText(PHONES[1], 50, 44);
+    ctx.restore();
+  }
+}
+
+// =====================================================================
+//  S10  79.2 – 89.5   night city, the light trail draws a "T", final card
+// =====================================================================
+const TPATH = (() => { const p = []; const add = (a, b, n) => { for (let i = 0; i <= n; i++) p.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]); }; add([0, -260], [0, 220], 20); add([0, 220], [-240, 220], 10); add([-240, 220], [240, 220], 20); return p; })();
+function scene10(t) {
+  const cityA = 1 - P(t, 82.4, 82.9);
+  if (cityA > 0) {
+    ctx.save(); ctx.globalAlpha *= cityA;
+    const wide = eio(P(t, 81.3, 82.4));
+    cam({ yaw: lerp(.35, .05, P(t, 79.2, 82.4)), pitch: lerp(.62, .95, wide), D: lerp(1500, 3500, wide), tz: lerp(0, -850, wide), F: 1300, cy: 1000 });
+    cityMap(t, { lit: AREAS.map(() => .8), center: 1, tikrit: true, gridA: .6 });
+    const tp = eio(P(t, 79.3, 81.2)); drawPath3(TPATH, tp, 12, OR, OR);
+    if (tp < 1) { const p = along(TPATH, tp), p2 = along(TPATH, Math.max(0, tp - .02)); carTop(p[0], p[1], Math.atan2(p[1] - p2[1], p[0] - p2[0]), 1.5); }
+    drawPath3(TK_ROAD, eio(P(t, 81.6, 82.4)), 8, CY, CY);
+    cityLabelBig(0, 0, 'بيجي', P(t, 81.5, 81.9)); cityLabelBig(TIKRIT.x, TIKRIT.z, 'تكريت', P(t, 82.0, 82.3), AMB);
+    ctx.restore();
+  }
+  const fa = P(t, 82.4, 82.9);
+  if (fa > 0) {
+    ctx.save(); ctx.globalAlpha *= fa;
+    const g = ctx.createRadialGradient(540, 760, 0, 540, 760, 1400); g.addColorStop(0, '#7a0d16'); g.addColorStop(.55, '#2e060b'); g.addColorStop(1, '#0a0204'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    halftoneOverlay(.035);
+    // a light streak from Baiji (top) to Tikrit (bottom)
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; const sg = ctx.createLinearGradient(0, 120, 0, 1800); sg.addColorStop(0, 'rgba(255,106,0,.0)'); sg.addColorStop(.5, 'rgba(255,106,0,.25)'); sg.addColorStop(1, 'rgba(34,211,255,0)'); ctx.fillStyle = sg; ctx.fillRect(536, 120, 8, 1680 * eio(P(t, 82.6, 83.6))); ctx.restore();
+    const lk = P(t, CUE.turbo11 - .1, CUE.turbo11 + .5);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(540, 560, 650, YL, .22 * clamp(lk * 2)); ctx.restore();
+    ctx.save(); ctx.translate(540, 520); const s = .78 * (1 + .04 * Math.sin(P(t, 87.2, 87.8) * Math.PI)); ctx.scale(s, s); drawLogo(1, { parts: P(t, CUE.turbo11 - .1, CUE.turbo11 + 1.0) }); ctx.restore();
+    const nk = eo5(P(t, 83.2, 83.7));
+    ctx.save(); ctx.globalAlpha *= nk; ctx.translate(0, (1 - nk) * 40); txt('تيربو للتوصيل السريع', 540, 1000, 78, 900, '#ffffff'); ctx.restore();
+    headline('«طلبك ينطلق... وتيربو يوصله.»', 1130, 58, P(t, 83.6, 84.1), AMB);
+    // coverage line
+    const cv = P(t, 84.4, 84.9);
+    if (cv > 0) { ctx.save(); ctx.globalAlpha *= clamp(cv * 2); ctx.translate(540, 1300); rr(-470, -60, 940, 120, 60); ctx.fillStyle = 'rgba(20,6,10,.75)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,179,0,.6)'; ctx.lineWidth = 3; ctx.stroke(); txt('بيجي | جميع مناطق بيجي | تكريت', 0, 3, 46, 900, '#ffffff'); ctx.restore(); }
+    // area names strip
+    const ar = P(t, 85.0, 85.6);
+    if (ar > 0) { ctx.save(); ctx.globalAlpha *= ar * .85; txt('الحجاج • المزرعة • الـ600 • المصافي • ساحات المصافي • الصينية', 540, 1420, 34, 700, 'rgba(255,255,255,.8)'); ctx.restore(); }
+    // phone numbers on the final card
+    const pn = eoB(P(t, 85.8, 86.3));
+    if (pn > 0) { ctx.save(); ctx.globalAlpha *= clamp(pn); ctx.translate(540, 1610); ctx.scale(lerp(.85, 1, pn), lerp(.85, 1, pn));
+      rr(-420, -120, 840, 240, 60); const pg = ctx.createLinearGradient(-420, 0, 420, 0); pg.addColorStop(0, '#f0353e'); pg.addColorStop(1, BRD); ctx.fillStyle = pg; ctx.fill(); ctx.strokeStyle = YL; ctx.lineWidth = 4; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(-414, -114, 828, 100, 50); ctx.fill();
+      ctx.save(); ctx.translate(-330, 0); icon('call', .6); ctx.restore();
+      ctx.font = font(84, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillStyle = '#ffffff';
+      ctx.fillText(PHONES[0], 60, -50); ctx.fillText(PHONES[1], 60, 54); ctx.restore(); }
+    // final launch streak
+    const fl = P(t, 86.9, 87.6);
+    if (fl > 0 && fl < 1) { const x = lerp(1400, -500, eio(fl)); vanStreaks(x, 1180, .55, 1, t); drawVan(x, 1180, .55, t, {}); }
+    const fh = P(t, 87.2, 87.9); if (fh > 0 && fh < 1) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(540, 700, 700 * eo3(fh) + 200, OR, .35 * (1 - fh)); ctx.restore(); }
+    ctx.restore();
+  }
+}
+
+// =====================================================================
+//  MASTER
+// =====================================================================
+function watermark(t) { // persistent phone-number watermark (hidden where the numbers are shown large)
+  const a = P(t, 2.6, 3.2) * (1 - P(t, 74.8, 75.1)) + P(t, 79.2, 79.6) * (1 - P(t, 82.3, 82.6));
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = .62 * a; ctx.translate(540, 108);
+  ctx.font = font(36, 800); const label = PHONES[0] + '   •   ' + PHONES[1]; ctx.direction = 'ltr'; const w = ctx.measureText(label).width + 110;
+  rr(-w / 2, -28, w, 56, 28); ctx.fillStyle = 'rgba(10,8,16,.55)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,216,74,.55)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.save(); ctx.translate(-w / 2 + 34, 0); icon('call', .2); ctx.restore();
+  ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, 22, 2);
+  ctx.restore();
+}
+function layer(a, fn) { if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; fn(); ctx.restore(); }
+function render(t) {
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.setLineDash([]);
+  ctx.fillStyle = ASP; ctx.fillRect(0, 0, W, H);
+  if (t < 7.7) scene1(t);
+  if (t >= 7.5 && t < 15.4) layer(P(t, 7.5, 7.75), () => scene2(t));
+  if (t >= 15.2 && t < 28.7) layer(P(t, 15.2, 15.5), () => scene3(t));
+  if (t >= 28.5 && t < 36.1) layer(P(t, 28.5, 28.75), () => scene4(t));
+  if (t >= 35.9 && t < 45.5) layer(P(t, 35.9, 36.1), () => scene5(t));
+  if (t >= 45.3 && t < 53.6) layer(P(t, 45.3, 45.5), () => scene6(t));
+  if (t >= 53.4 && t < 66.9) layer(P(t, 53.4, 53.7), () => scene7(t));
+  if (t >= 66.7 && t < 74.0) layer(P(t, 66.7, 66.95), () => scene8(t));
+  if (t >= 73.8 && t < 79.3) layer(P(t, 73.8, 74.0), () => scene9(t));
+  if (t >= 79.1) layer(P(t, 79.1, 79.4), () => scene10(t));
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.setLineDash([]);
+  watermark(t);
+  overlays(t);
+  if (t > DURATION - .5) flash(P(t, DURATION - .5, DURATION), '#000');
+}
+window.ready = (async () => {
+  await Promise.all([document.fonts.load('900 100px Cairo'), document.fonts.load('700 100px Cairo'), document.fonts.load('800 100px Cairo')]);
+  buildGrain(); buildHalftone();
+  window.render = render;
+  const q = new URLSearchParams(location.search);
+  if (q.has('t')) render(+q.get('t'));
+  else if (q.has('play')) { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); }; loop(); }
+  return true;
+})();
+</script>
+<script>
+// =====================================================================
+//  Turbo shop-front — elevation design (night / day / spec sheet)
+//  Logical canvas 1920×1080; facade is 600 cm wide → 2.5 px per cm.
+// =====================================================================
+const FX0 = 210, FX1 = 1710, FY_TOP = 220, FY_FASCIA = 470, FY_GROUND = 960;
+const PX_PER_CM = 2.5; // px per cm
+function stripes(x0, y0, x1, y1, night) {
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+  const bands = [[790, 62, YL], [866, 22, BR], [900, 12, YL], [924, 7, BR]];
+  bands.forEach(([x, w, c]) => {
+    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x + w, y0); ctx.lineTo(x + w - 120, y1); ctx.lineTo(x - 120, y1); ctx.closePath(); ctx.fill();
+  });
+  // thin speed lines running left from the stripes
+  ctx.fillStyle = night ? 'rgba(255,216,74,.55)' : 'rgba(255,216,74,.8)';
+  ctx.restore();
+}
+function channelText(s, x, y, size, night, face1 = '#fff3b0', face2 = YL, side = '#a30f18') {
+  ctx.save(); ctx.font = font(size, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl';
+  ctx.translate(x, y); ctx.transform(1, 0, -.1, 1, 0, 0);
+  for (let i = 10; i >= 1; i--) { ctx.fillStyle = i > 7 ? '#5e0a10' : side; ctx.fillText(s, i * .9, i * 1.1); } // 3-D returns
+  if (night) { ctx.shadowColor = YL; ctx.shadowBlur = 42 * S; }
+  const g = ctx.createLinearGradient(0, -size / 2, 0, size / 2); g.addColorStop(0, face1); g.addColorStop(1, face2);
+  ctx.fillStyle = g; ctx.fillText(s, 0, 0); ctx.shadowBlur = 0;
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.strokeText(s, 0, 0);
+  ctx.restore();
+}
+function fascia(night) {
+  const x0 = FX0, x1 = FX1, y0 = FY_TOP, y1 = FY_FASCIA;
+  // shadow + body (matte black ACP)
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 30 * S; ctx.shadowOffsetY = 12 * S;
+  ctx.fillStyle = '#121317'; ctx.fillRect(x0 - 20, y0 - 14, x1 - x0 + 40, y1 - y0 + 28); ctx.restore();
+  const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, '#1d1f26'); g.addColorStop(1, '#0d0e12');
+  ctx.fillStyle = g; ctx.fillRect(x0 - 20, y0 - 14, x1 - x0 + 40, y1 - y0 + 28);
+  ctx.fillStyle = 'rgba(255,255,255,.03)'; for (let x = x0; x < x1; x += 125) ctx.fillRect(x, y0 - 14, 2, y1 - y0 + 28); // panel joints
+  ctx.fillStyle = BR; ctx.fillRect(x0 - 20, y0 - 14, x1 - x0 + 40, 8); ctx.fillRect(x0 - 20, y1 + 6, x1 - x0 + 40, 8); // red edge trims
+  stripes(x0 - 20, y0 - 6, x1 + 20, y1 + 6, night);
+  // logo on a red illuminated disc (right side, RTL lead)
+  ctx.save(); ctx.translate(1525, 345);
+  if (night) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 260, BR, .55); ctx.restore(); }
+  const dg = ctx.createRadialGradient(-30, -40, 10, 0, 0, 150); dg.addColorStop(0, night ? '#ff4a52' : '#e3343c'); dg.addColorStop(1, BRD);
+  ctx.beginPath(); ctx.arc(0, 0, 140, 0, TAU); ctx.fillStyle = dg; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = YL; ctx.stroke();
+  ctx.translate(0, -18); drawLogo(.3); ctx.restore();
+  // name in channel letters
+  channelText('تيربو', 1110, 300, 176, night);
+  ctx.save(); if (night) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 16 * S; }
+  txt('للتوصيل السريع', 1110, 440, 50, 900, '#ffffff'); ctx.restore();
+  // phone tab (left)
+  ctx.save(); ctx.translate(450, 345);
+  ctx.beginPath(); ctx.moveTo(-210, -95); ctx.lineTo(230, -95); ctx.lineTo(190, 95); ctx.lineTo(-210, 95); ctx.closePath();
+  const pg = ctx.createLinearGradient(-210, 0, 230, 0); pg.addColorStop(0, BRD); pg.addColorStop(1, '#e3343c'); ctx.fillStyle = pg; ctx.fill();
+  ctx.strokeStyle = YL; ctx.lineWidth = 4; ctx.stroke();
+  txt('للطلب', 120, -60, 30, 900, YL);
+  ctx.font = font(54, 900); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillStyle = '#ffffff';
+  if (night) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12 * S; }
+  ctx.fillText(PHONES[0], 10, -6); ctx.fillText(PHONES[1], 10, 54); ctx.shadowBlur = 0;
+  ctx.save(); ctx.translate(-160, 24); icon('call', .38); ctx.restore();
+  ctx.restore();
+  // LED strip under the fascia
+  ctx.fillStyle = night ? '#fff3c4' : '#d9d3bf'; ctx.fillRect(x0 - 20, y1 + 14, x1 - x0 + 40, 8);
+  if (night) { ctx.save(); ctx.globalCompositeOperation = 'screen'; const lg = ctx.createLinearGradient(0, y1 + 18, 0, y1 + 180); lg.addColorStop(0, 'rgba(255,230,160,.45)'); lg.addColorStop(1, 'rgba(255,230,160,0)'); ctx.fillStyle = lg; ctx.fillRect(x0 - 20, y1 + 18, x1 - x0 + 40, 170); ctx.restore(); }
+}
+function glassPane(x0, y0, x1, y1, night, inner) {
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+  if (night) { const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, '#3a2a1a'); g.addColorStop(1, '#1a120c'); ctx.fillStyle = g; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; glow((x0 + x1) / 2, y0 + 60, (x1 - x0) * .8, '#ffcf8a', .35); ctx.restore(); }
+  else { const g = ctx.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, '#9fb7c9'); g.addColorStop(.5, '#5e7487'); g.addColorStop(1, '#30404f'); ctx.fillStyle = g; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); }
+  // interior hints: shelves with parcels
+  ctx.globalAlpha = night ? .55 : .25; ctx.fillStyle = '#0d0f16';
+  for (let y = y0 + 200; y < y1 - 40; y += 150) ctx.fillRect(x0, y, x1 - x0, 8);
+  ctx.globalAlpha = 1;
+  if (inner) inner();
+  // reflections
+  ctx.fillStyle = night ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.16)';
+  ctx.beginPath(); ctx.moveTo(x0 + (x1 - x0) * .15, y0); ctx.lineTo(x0 + (x1 - x0) * .35, y0); ctx.lineTo(x0 + (x1 - x0) * .05, y1); ctx.lineTo(x0 - (x1 - x0) * .15, y1); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = '#2b2e36'; ctx.lineWidth = 10; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+}
+function storefront(night) {
+  const y0 = FY_FASCIA + 22, y1 = FY_GROUND;
+  // frame
+  ctx.fillStyle = '#2b2e36'; ctx.fillRect(FX0, y0, FX1 - FX0, y1 - y0);
+  // red pillars with yellow LED lines
+  [[FX0, FX0 + 60], [FX1 - 60, FX1]].forEach(([a, b]) => {
+    const pg = ctx.createLinearGradient(a, 0, b, 0); pg.addColorStop(0, '#9e121a'); pg.addColorStop(.5, BR); pg.addColorStop(1, '#8a0f16'); ctx.fillStyle = pg; ctx.fillRect(a, y0, b - a, y1 - y0);
+    ctx.fillStyle = night ? '#fff0a0' : YL; ctx.fillRect((a + b) / 2 - 4, y0 + 20, 8, y1 - y0 - 40);
+    if (night) { ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.translate((a + b) / 2, (y0 + y1) / 2); ctx.scale(.12, 1); glow(0, 0, 300, YL, .5); ctx.restore(); }
+  });
+  // right window: rider vinyl + slogan
+  glassPane(1130, y0 + 10, 1650, y1 - 10, night, () => {
+    txt('طلبك ينطلق...', 1390, y0 + 70, 48, 900, '#ffffff');
+    txt('وتيربو يوصله!', 1390, y0 + 130, 54, 900, YL);
+    ctx.save(); ctx.translate(1405, y0 + 345); ctx.globalAlpha *= .92; riderScooter(.78, 'rgba(255,255,255,.9)', 0); ctx.restore();
+  });
+  // door
+  glassPane(890, y0 + 10, 1110, y1 - 10, night, () => {
+    ctx.save(); ctx.translate(1000, y0 + 110); turboMark(52, 0); ctx.restore();
+    txt('اطلب الآن', 1000, y0 + 205, 34, 900, '#ffffff');
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = font(24, 800); ctx.textAlign = 'center'; ctx.direction = 'ltr'; ctx.fillText(PHONES[0], 1000, y0 + 250); ctx.fillText(PHONES[1], 1000, y0 + 282);
+  });
+  ctx.fillStyle = '#c9ced8'; rr(1078, y0 + 250, 10, 150, 5); ctx.fill();
+  // left window: coverage
+  glassPane(270, y0 + 10, 870, y1 - 10, night, () => {
+    txt('توصيل سريع', 570, y0 + 90, 70, 900, '#ffffff');
+    txt('لجميع مناطق بيجي... وإلى تكريت', 570, y0 + 165, 36, 900, YL);
+    const names = ['الحجاج', 'المزرعة', 'الـ600', 'المصافي', 'ساحات المصافي', 'الصينية'];
+    names.forEach((n, i) => { const cx = 570 + (i % 2 ? -140 : 140), cy = y0 + 240 + Math.floor(i / 2) * 56;
+      ctx.font = font(30, 800); const w = ctx.measureText(n).width + 44; rr(cx - w / 2, cy - 22, w, 44, 22); ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2; ctx.stroke(); txt(n, cx, cy + 2, 30, 800, '#ffffff'); });
+  });
+  // frosted band with yellow dashes
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(270, y1 - 60, 1380, 26);
+  ctx.fillStyle = YL; for (let x = 290; x < 1640; x += 90) ctx.fillRect(x, y1 - 51, 46, 8);
+}
+function bladeSign(night) {
+  ctx.fillStyle = '#3a3e48'; ctx.fillRect(FX1 + 20, 300, 70, 12);
+  ctx.save(); ctx.translate(FX1 + 110, 380);
+  if (night) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(0, 0, 220, YL, .5); ctx.restore(); }
+  ctx.beginPath(); ctx.ellipse(0, 0, 70, 110, 0, 0, TAU); ctx.fillStyle = '#121317'; ctx.fill(); ctx.lineWidth = 8; ctx.strokeStyle = BR; ctx.stroke();
+  ctx.scale(.62, 1); ctx.beginPath(); ctx.arc(0, 0, 92, 0, TAU); ctx.fillStyle = night ? '#ffe680' : YL; ctx.fill();
+  ctx.translate(14, 4); logoT(.42, true); ctx.restore();
+}
+function buildingShell(night) {
+  // sky
+  const sk = ctx.createLinearGradient(0, 0, 0, H);
+  if (night) { sk.addColorStop(0, '#05070f'); sk.addColorStop(1, '#141a33'); } else { sk.addColorStop(0, '#8ec5ef'); sk.addColorStop(1, '#dff0fb'); }
+  ctx.fillStyle = sk; ctx.fillRect(0, 0, W, H);
+  if (night) { const r = rng(5); for (let i = 0; i < 80; i++) { ctx.fillStyle = `rgba(255,255,255,${.2 + r() * .5})`; ctx.beginPath(); ctx.arc(r() * W, r() * 200, r() * 1.5 + .3, 0, TAU); ctx.fill(); } }
+  // neighbouring walls + this building
+  ctx.fillStyle = night ? '#16182a' : '#c9bfae'; ctx.fillRect(0, 60, FX0 - 40, FY_GROUND - 60); ctx.fillRect(FX1 + 40, 80, W - FX1 - 40, FY_GROUND - 80);
+  const wg = ctx.createLinearGradient(0, 0, 0, FY_GROUND); wg.addColorStop(0, night ? '#22253a' : '#e7dfd0'); wg.addColorStop(1, night ? '#15172a' : '#d4c9b6');
+  ctx.fillStyle = wg; ctx.fillRect(FX0 - 60, 0, FX1 - FX0 + 120, FY_GROUND);
+  ctx.fillStyle = night ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.05)'; for (let y = 30; y < FY_TOP - 20; y += 46) ctx.fillRect(FX0 - 60, y, FX1 - FX0 + 120, 2);
+  // upper floor windows
+  [[420, 40], [860, 40], [1300, 40]].forEach(([x, y]) => { ctx.fillStyle = night ? '#0d0f1c' : '#7f93a6'; ctx.fillRect(x, y, 220, 120); ctx.fillStyle = night ? 'rgba(255,220,150,.15)' : 'rgba(255,255,255,.25)'; ctx.fillRect(x + 10, y + 10, 95, 100); ctx.strokeStyle = night ? '#2c2f45' : '#a99f8d'; ctx.lineWidth = 8; ctx.strokeRect(x, y, 220, 120); });
+  // sidewalk
+  const gg = ctx.createLinearGradient(0, FY_GROUND, 0, H); gg.addColorStop(0, night ? '#1b1d2a' : '#b9b3a6'); gg.addColorStop(1, night ? '#0a0b12' : '#8e887c');
+  ctx.fillStyle = gg; ctx.fillRect(0, FY_GROUND, W, H - FY_GROUND);
+  ctx.fillStyle = night ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; for (let x = 0; x < W; x += 120) ctx.fillRect(x, FY_GROUND, 2, H - FY_GROUND);
+  ctx.fillStyle = night ? '#2a2d3d' : '#d8d2c4'; ctx.fillRect(0, FY_GROUND, W, 10);
+}
+function reflections(night) {
+  if (!night) return;
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  ctx.translate(960, 1010); ctx.scale(1, .18); glow(0, 0, 900, YL, .35); glow(560, 0, 300, BR, .4); ctx.restore();
+}
+function facade(mode) {
+  const night = mode === 'night';
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.setLineDash([]);
+  buildingShell(night);
+  storefront(night);
+  fascia(night);
+  bladeSign(night);
+  reflections(night);
+  // a branded scooter parked in front
+  ctx.save(); drawVan(1815, 950, .4, 0, { under: night }); ctx.restore();
+  if (night) { ctx.save(); ctx.globalCompositeOperation = 'screen'; glow(960, 345, 900, YL, .08); ctx.restore(); }
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = 1;
+  if (night) overlays(0);
+}
+// ---------- technical elevation / spec sheet ----------
+function dimLine(x0, y0, x1, y1, label, side = -1) {
+  ctx.save(); ctx.strokeStyle = '#d4202a'; ctx.fillStyle = '#d4202a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  const a = Math.atan2(y1 - y0, x1 - x0);
+  [[x0, y0, a], [x1, y1, a + Math.PI]].forEach(([x, y, an]) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(an + .35) * 14, y + Math.sin(an + .35) * 14); ctx.lineTo(x + Math.cos(an - .35) * 14, y + Math.sin(an - .35) * 14); ctx.closePath(); ctx.fill(); });
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  ctx.save(); ctx.translate(mx, my); if (Math.abs(a) > 1) ctx.rotate(-Math.PI / 2);
+  ctx.font = font(24, 800); const w = ctx.measureText(label).width + 16; ctx.fillStyle = '#ffffff'; ctx.fillRect(-w / 2, -16 + side * 18, w, 30);
+  txt(label, 0, side * 18, 24, 800, '#d4202a'); ctx.restore();
+  ctx.restore();
+}
+function callout(n, x, y, tx, ty) {
+  ctx.save(); ctx.strokeStyle = '#1b1f3e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.beginPath(); ctx.arc(tx, ty, 20, 0, TAU); ctx.fillStyle = '#1b1f3e'; ctx.fill();
+  ctx.font = font(22, 900); ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillText(String(n), tx, ty + 1);
+  ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fillStyle = '#1b1f3e'; ctx.fill(); ctx.restore();
+}
+function spec() {
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = '#f4f2ee'; ctx.fillRect(0, 0, W, H);
+  // drawing area, scaled down to leave room for the legend
+  ctx.save(); ctx.translate(40, 120); ctx.scale(.66, .66);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(FX0 - 80, FY_TOP - 60, FX1 - FX0 + 300, FY_GROUND - FY_TOP + 100);
+  storefront(false); fascia(false); bladeSign(false);
+  ctx.fillStyle = '#9a9488'; ctx.fillRect(FX0 - 80, FY_GROUND, FX1 - FX0 + 300, 8);
+  // dimensions (suggested)
+  dimLine(FX0, FY_GROUND + 60, FX1, FY_GROUND + 60, 'العرض الكلي ≈ 600 سم', 1);
+  dimLine(FX0 - 50, FY_TOP - 14, FX0 - 50, FY_FASCIA + 14, '≈ 110 سم');
+  dimLine(FX0 - 50, FY_FASCIA + 22, FX0 - 50, FY_GROUND, '≈ 195 سم');
+  dimLine(970, FY_TOP - 40, 1250, FY_TOP - 40, 'حروف «تيربو» ≈ 110 سم', -1);
+  dimLine(1385, FY_TOP - 40, 1665, FY_TOP - 40, 'الشعار ⌀ ≈ 112 سم', -1);
+  // callouts
+  callout(1, 700, 260, 700, 150); callout(2, 1110, 300, 1110, 150); callout(3, 1525, 345, 1590, 150);
+  callout(4, 470, 345, 300, 150); callout(5, 860, 300, 880, 150); callout(6, 900, 488, 820, 560);
+  callout(7, FX1 - 30, 700, FX1 + 160, 700); callout(8, 1390, 760, 1450, 860); callout(9, FX1 + 110, 380, FX1 + 260, 260);
+  ctx.restore();
+  // title + legend
+  txt('واجهة محل «تيربو للتوصيل السريع» — مخطط تنفيذ مقترح', 1880, 60, 40, 900, '#1b1f3e', 'right');
+  txt('مقاسات مقترحة لواجهة بعرض 6 م تقريبًا — تُعدَّل حسب القياس الفعلي للمحل', 1880, 104, 24, 700, '#6b6b6b', 'right');
+  const items = [
+    'كلادينغ ألمنيوم مركّب (ACP) أسود مطفي للّوحة الرئيسية',
+    'حروف بارزة مضيئة LED: وجه أكريليك أصفر، جوانب حمراء',
+    'شعار تيربو على قرص مضيء أحمر بإطار أصفر',
+    'لوحة الأرقام: أكريليك أحمر مع أرقام بيضاء مضيئة',
+    'خطوط سرعة مائلة: ACP أصفر/أحمر مقصوص (CNC)',
+    'شريط إضاءة LED أبيض دافئ أسفل اللوحة',
+    'أعمدة جانبية بكلادينغ أحمر مع خط LED أصفر عمودي',
+    'ستيكر فينيل على الزجاج: أبيض/أصفر (مطبوع ومثلّج)',
+    'لوحة جانبية بارزة مضيئة (لايت بوكس) مزدوجة الوجه'];
+  ctx.fillStyle = '#ffffff'; rr(1340, 150, 540, 880, 24); ctx.fill(); ctx.strokeStyle = '#e1ddd5'; ctx.lineWidth = 2; ctx.stroke();
+  txt('المواد والتنفيذ', 1840, 195, 32, 900, '#d4202a', 'right');
+  items.forEach((s, i) => {
+    const y = 260 + i * 66;
+    ctx.beginPath(); ctx.arc(1830, y, 18, 0, TAU); ctx.fillStyle = '#1b1f3e'; ctx.fill();
+    ctx.font = font(20, 900); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr'; ctx.fillText(String(i + 1), 1830, y + 1);
+    txt(s, 1798, y + 2, 20, 700, '#2a2a2a', 'right');
+  });
+  // colour swatches
+  [['#1b1f3e', 'كحلي'], [BR, 'أحمر'], [YL, 'أصفر'], ['#121317', 'أسود']].forEach(([c, n], i) => {
+    const x = 1800 - i * 120; ctx.fillStyle = c; rr(x - 40, 880, 80, 60, 10); ctx.fill(); ctx.strokeStyle = '#ccc'; ctx.stroke(); txt(n, x, 965, 22, 800, '#333');
+  });
+}
+window.facade = facade; window.spec = spec;
+</script>
+</body>
+</html>

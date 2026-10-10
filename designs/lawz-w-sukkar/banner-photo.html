@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:Lalezar;src:url(fonts/lalezar.ttf)}
+@font-face{font-family:Cairo;font-weight:700;src:url(fonts/cairo700.ttf)}
+@font-face{font-family:Cairo;font-weight:900;src:url(fonts/cairo900.ttf)}
+@page{size:90cm 15cm;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1800px;height:300px;overflow:hidden;background:#111}
+:root{--red:#e3061b;--deep:#7a0010;--yel:#ffd100;--ink:#141414}
+
+.banner{position:relative;width:1800px;height:300px;overflow:hidden;
+  background:radial-gradient(ellipse 700px 260px at 50% 40%,#3a3a3a,#1b1b1b 60%,#0e0e0e)}
+.tex{position:absolute;inset:0;opacity:.55;mix-blend-mode:overlay}
+.deco{position:absolute;inset:0;z-index:1}
+
+/* photos */
+.ph{position:absolute;z-index:2;display:block}
+.ph{--l:0%;--r:0%;--t:0%;--b:0%;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 var(--l),#000 calc(100% - var(--r)),transparent),linear-gradient(180deg,transparent,#000 var(--t),#000 calc(100% - var(--b)),transparent);
+  -webkit-mask-composite:source-in;mask-composite:intersect}
+
+/* center */
+.center{position:absolute;z-index:4;left:470px;width:860px;top:0;bottom:0;display:flex;flex-direction:column;align-items:center}
+.title{position:relative;margin-top:10px;font:86px/1 Lalezar;white-space:nowrap;display:flex;gap:18px;direction:rtl}
+.title>span{display:inline-block;position:relative}
+.title .y{color:var(--yel);-webkit-text-stroke:3px var(--deep);paint-order:stroke fill;
+  text-shadow:0 5px 0 var(--deep),0 9px 0 #3d0008,0 14px 14px rgba(0,0,0,.6)}
+.title .r{color:var(--red);-webkit-text-stroke:3px #fff;paint-order:stroke fill;
+  text-shadow:0 5px 0 #b8b8b8,0 9px 0 #5a5a5a,0 14px 14px rgba(0,0,0,.6)}
+.hat{position:absolute;width:58px;top:-14px;left:-10px;transform:rotate(-12deg);filter:drop-shadow(0 4px 4px rgba(0,0,0,.5))}
+.swoosh{position:absolute;top:6px;height:30px}
+.ribbon{position:relative;margin-top:8px;display:flex;align-items:center;gap:16px}
+.ribbon .lbl{font:28px/1 Lalezar;color:#fff;padding:4px 40px 8px;background:var(--red);
+  clip-path:polygon(3% 8%,50% 0,97% 6%,100% 50%,97% 94%,50% 100%,2% 92%,0 50%);text-shadow:2px 2px 0 var(--deep)}
+.ribbon .rays{width:46px;height:30px}
+.grid{margin-top:8px;display:grid;grid-template-columns:repeat(7,108px);gap:7px 8px}
+.chip{font:23px/1 Lalezar;height:31px;display:grid;place-items:center;border-radius:9px;position:relative;
+  box-shadow:0 3px 0 rgba(0,0,0,.6)}
+.r1 .chip{background:linear-gradient(180deg,#ffe24a,#ffbf00);color:#141414;border:2px solid #fff3b0}
+.r2 .chip{background:#111;color:#fff;border:2.5px solid var(--yel)}
+.r2 .chip:nth-child(odd){background:linear-gradient(180deg,#ff2a2a,#c40012);border-color:#ffd100}
+.chip::before,.chip::after{content:"";position:absolute;top:8px;bottom:8px;width:3px;border-radius:2px;background:currentColor;opacity:.55}
+.chip::before{right:6px}.chip::after{left:6px}
+.grid>div{display:contents}
+
+/* right slogan */
+.slogan{position:absolute;z-index:4;right:16px;top:14px;padding:6px 22px 10px;transform:rotate(-4deg);
+  background:#0c0c0c;border:2px solid #333;clip-path:polygon(2% 10%,98% 0,100% 88%,4% 100%)}
+.slogan .a{font:26px/1 Lalezar;color:var(--yel)}
+.slogan .b{font:30px/1 Lalezar;color:#fff}
+
+/* contact */
+.contact{position:absolute;z-index:5;left:50%;transform:translateX(-50%);bottom:10px;display:flex;align-items:center;gap:18px}
+.deliv{display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,#ffe24a,#ffbf00);border-radius:30px;padding:3px 20px 5px 14px;
+  box-shadow:0 3px 0 rgba(0,0,0,.6)}
+.deliv span{font:26px/1 Lalezar;color:#141414}
+.deliv svg{width:48px;height:34px}
+.phone{display:flex;align-items:center;gap:8px;direction:ltr;background:linear-gradient(180deg,#ff2a2a,#c40012);
+  border:3px solid #fff;border-radius:40px;padding:3px 22px 5px 5px;box-shadow:0 0 0 3px var(--yel),0 6px 10px rgba(0,0,0,.6)}
+.phone .ic{width:34px;height:34px;border-radius:50%;background:#fff;display:grid;place-items:center}
+.phone b{font:900 32px/1 Cairo;color:#fff;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="banner">
+  <!-- dark grunge texture -->
+  <svg class="tex" width="1800" height="300"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" seed="4"/><feColorMatrix values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1.3 -.35"/></filter><rect width="1800" height="300" filter="url(#n)"/></svg>
+
+  <!-- red / yellow frame swooshes like the reference -->
+  <svg class="deco" viewBox="0 0 1800 300" preserveAspectRatio="none">
+    <!-- top-left yellow slash -->
+    <path d="M150 0 H300 L215 70 Z" fill="#ffd100"/>
+    <path d="M330 0 H360 L262 62 H240 Z" fill="#ffd100" opacity=".9"/>
+    <!-- top-right red corner -->
+    <path d="M1500 0 H1800 V120 Q1700 30 1500 0Z" fill="#c40012"/>
+    <path d="M1460 0 H1500 Q1700 30 1800 120 V140 Q1690 40 1460 0Z" fill="#ffd100"/>
+    <!-- bottom red band with yellow arc -->
+    <path d="M0 250 Q900 330 1800 250 V300 H0Z" fill="#c40012"/>
+    <path d="M0 244 Q900 324 1800 244 V256 Q900 336 0 256Z" fill="#ffd100"/>
+  </svg>
+
+  <!-- LEFT photos -->
+  <img class="ph" src="img/spit.jpg" style="--r:45%;--b:4%;left:0;top:0;height:300px">
+  <img class="ph" src="img/manak.jpg" style="--l:22%;--r:22%;--t:25%;--b:25%;left:200px;top:96px;height:84px">
+  <img class="ph" src="img/olives.jpg" style="--l:18%;--r:18%;--t:30%;--b:30%;left:310px;top:44px;height:44px;opacity:.95">
+  <img class="ph" src="img/chick.jpg" style="--l:12%;--r:22%;--t:28%;left:150px;bottom:0;height:126px">
+
+  <!-- RIGHT photos -->
+  <img class="ph" src="img/drinks.jpg" style="--l:22%;--t:20%;--b:28%;right:0;top:74px;height:128px">
+  <img class="ph" src="img/fries.jpg" style="--l:22%;--r:15%;--t:28%;left:1326px;bottom:0;height:136px">
+  <img class="ph" src="img/steak.jpg" style="--l:20%;--t:22%;right:0;bottom:0;height:150px">
+
+  <div class="slogan"><div class="a">الطعم</div><div class="b">اللي ما يتكرر</div></div>
+
+  <!-- CENTER -->
+  <div class="center">
+    <svg class="swoosh" style="right:150px;width:120px" viewBox="0 0 120 30"><path d="M4 26 Q60 -6 116 18" stroke="#ffd100" stroke-width="7" fill="none" stroke-linecap="round"/></svg>
+    <svg class="swoosh" style="left:150px;width:120px" viewBox="0 0 120 30"><path d="M4 18 Q60 -6 116 26" stroke="#ffd100" stroke-width="7" fill="none" stroke-linecap="round"/></svg>
+    <div class="title">
+      <span class="y">مأكولات</span><span class="r">لوز و
+      <svg class="hat" viewBox="0 0 100 90">
+        <g stroke="#222" stroke-width="3" stroke-linejoin="round">
+          <path d="M22 60 C4 58 4 30 22 30 C20 8 46 2 54 16 C64 4 90 10 84 32 C100 34 98 60 80 60 Z" fill="#fff"/>
+          <path d="M22 58 H80 V80 Q51 86 22 80 Z" fill="#f2f2f2"/>
+          <path d="M22 66 H80" stroke="#e3061b" stroke-width="5"/>
+        </g>
+      </svg></span><span class="y">سكر</span>
+    </div>
+    <div class="ribbon">
+      <svg class="rays" viewBox="0 0 46 30"><path d="M44 4 L8 0 M44 15 L2 15 M44 26 L8 30" stroke="#ffd100" stroke-width="5" stroke-linecap="round"/></svg>
+      <div class="lbl">للوجبات السريعة</div>
+      <svg class="rays" viewBox="0 0 46 30"><path d="M2 4 L38 0 M2 15 L44 15 M2 26 L38 30" stroke="#ffd100" stroke-width="5" stroke-linecap="round"/></svg>
+    </div>
+    <div class="grid">
+      <div class="r1"><div class="chip">شاورما</div><div class="chip">فنكر</div><div class="chip">بركر</div><div class="chip">بيتزا</div><div class="chip">ستيك</div><div class="chip">ريزو</div><div class="chip">زنكر</div></div>
+      <div class="r2"><div class="chip">سكالوب</div><div class="chip">كرسبي</div><div class="chip">صاج</div><div class="chip">إيطالي</div><div class="chip">مناقيش</div><div class="chip">مقبلات</div><div class="chip">مشروبات</div></div>
+    </div>
+  </div>
+
+  <!-- contact row -->
+  <div class="contact">
+    <div class="phone">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="#e3061b" d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg></div>
+      <b>07849690565</b>
+    </div>
+    <div class="deliv">
+      <span>للجلب والتوصيل</span>
+      <svg viewBox="0 0 60 42"><g fill="#141414"><rect x="2" y="6" width="16" height="14" rx="2"/><circle cx="34" cy="7" r="5"/><path d="M28 13 h10 l4 12 h8 l4 6 H24 l-4 -8 h10z"/><circle cx="16" cy="34" r="7"/><circle cx="48" cy="34" r="7"/></g><g fill="#ffd100"><circle cx="16" cy="34" r="3"/><circle cx="48" cy="34" r="3"/></g></svg>
+    </div>
+  </div>
+</div>
+</body>
+</html>

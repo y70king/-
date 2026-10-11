@@ -46,6 +46,32 @@
             android:singleLine="true"
             android:textDirection="ltr" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="عدد الأيام لاعتبار الدين مستحقاً" />
+
+        <EditText
+            android:id="@+id/etDays"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            android:singleLine="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="نص رسالة الواتساب ({الاسم} {المبلغ} {الأيام})" />
+
+        <EditText
+            android:id="@+id/etTemplate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="top|start"
+            android:inputType="textMultiLine"
+            android:maxLines="5"
+            android:minLines="3" />
+
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"
@@ -77,6 +103,34 @@
         android:textSize="15sp"
         android:textStyle="bold" />
 
+    <RadioGroup
+        android:id="@+id/rgFilter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/rbOverdue"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:checked="true"
+            android:text="واصلين 25 يوم فأكثر" />
+
+        <RadioButton
+            android:id="@+id/rbAll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="كل المستحقين" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="اضغط مطولاً على الاسم لتعديل تاريخ بداية الدين"
+        android:textSize="12sp" />
+
     <ListView
         android:id="@+id/list"
         android:layout_width="match_parent"
@@ -84,10 +138,25 @@
         android:layout_weight="1"
         android:choiceMode="multipleChoice" />
 
-    <Button
-        android:id="@+id/btnSend"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:enabled="false"
-        android:text="📨 إرسال المحددين إلى تيليغرام" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnSend"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="📨 تيليغرام" />
+
+        <Button
+            android:id="@+id/btnWhatsApp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="💬 واتساب" />
+    </LinearLayout>
 </LinearLayout>

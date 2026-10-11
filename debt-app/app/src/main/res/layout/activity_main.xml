@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layoutDirection="rtl"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <Button
+        android:id="@+id/btnToggleSettings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚙ إعدادات بوت تيليغرام" />
+
+    <LinearLayout
+        android:id="@+id/settingsBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="توكن البوت (Bot Token)" />
+
+        <EditText
+            android:id="@+id/etToken"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="123456789:ABC..."
+            android:inputType="textNoSuggestions|textVisiblePassword"
+            android:singleLine="true"
+            android:textDirection="ltr" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="الآيدي (Chat ID)" />
+
+        <EditText
+            android:id="@+id/etChatId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="مثال: 123456789 أو -100123..."
+            android:inputType="textNoSuggestions"
+            android:singleLine="true"
+            android:textDirection="ltr" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="حفظ الإعدادات" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnPick"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="📄 اختيار ملف PDF" />
+
+    <CheckBox
+        android:id="@+id/cbAmount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="إرسال المبلغ المتبقي مع الاسم" />
+
+    <TextView
+        android:id="@+id/tvSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="اختر ملف PDF لعرض المستحقين للتسديد"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <ListView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:choiceMode="multipleChoice" />
+
+    <Button
+        android:id="@+id/btnSend"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:text="📨 إرسال المحددين إلى تيليغرام" />
+</LinearLayout>

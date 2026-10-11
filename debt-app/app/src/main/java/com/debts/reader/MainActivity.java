@@ -10,7 +10,8 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
-import android.widget.ArrayAdapter;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -57,6 +58,10 @@ public class MainActivity extends Activity {
     private final List<KonnashParser.Customer> waQueue = new ArrayList<>();
     private int waIndex;
     private boolean waWaitingReturn;
+    /** رجوع من واتساب بعد تذكير فردي */
+    private boolean singleWaitingReturn;
+
+    private final CustomerAdapter adapter = new CustomerAdapter();
 
     private ProgressDialog progress;
 
@@ -100,10 +105,11 @@ public class MainActivity extends Activity {
         });
         findViewById(R.id.btnPick).setOnClickListener(v -> pickPdf());
         ((RadioGroup) findViewById(R.id.rgFilter)).setOnCheckedChangeListener((g, id) -> refreshList());
+        list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, pos, id) -> {
             String k = DebtStore.key(shown.get(pos));
-            if (list.isItemChecked(pos)) unchecked.remove(k);
-            else unchecked.add(k);
+            if (!unchecked.remove(k)) unchecked.add(k);
+            adapter.notifyDataSetChanged();
         });
         list.setOnItemLongClickListener((parent, view, pos, id) -> {
             editStartDate(shown.get(pos));
@@ -129,6 +135,9 @@ public class MainActivity extends Activity {
         if (waWaitingReturn) {
             waWaitingReturn = false;
             askNextWhatsApp();
+        } else if (singleWaitingReturn) {
+            singleWaitingReturn = false;
+            refreshList();
         }
     }
 
@@ -238,28 +247,14 @@ public class MainActivity extends Activity {
                 + "\nالمستحقين: " + owing.size() + "  —  المجموع: " + money(sumAll)
                 + "\nواصلين " + threshold + " يوم فأكثر: " + overdue + "  —  المجموع: " + money(sumOverdue));
 
-        List<String> rows = new ArrayList<>();
-        for (KonnashParser.Customer c : shown) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(c.name).append("  —  ").append(money(c.due()))
-                    .append("\n").append(store.days(c)).append(" يوم");
-            if (WhatsApp.normalizePhone(c.phone).isEmpty()) sb.append("  •  بدون رقم");
-            int r = store.daysSinceReminder(c);
-            if (r == 0) sb.append("  •  ✔ ذُكّر اليوم");
-            else if (r > 0) sb.append("  •  ✔ ذُكّر قبل ").append(r).append(" يوم");
-            rows.add(sb.toString());
-        }
-        list.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_multiple_choice, rows));
-        for (int i = 0; i < shown.size(); i++) {
-            list.setItemChecked(i, !unchecked.contains(DebtStore.key(shown.get(i))));
-        }
+        adapter.notifyDataSetChanged();
         btnSend.setEnabled(!shown.isEmpty());
         btnWhatsApp.setEnabled(!shown.isEmpty());
     }
 
     private List<KonnashParser.Customer> selected() {
         List<KonnashParser.Customer> out = new ArrayList<>();
-        for (int i = 0; i < shown.size(); i++) if (list.isItemChecked(i)) out.add(shown.get(i));
+        for (KonnashParser.Customer c : shown) if (!unchecked.contains(DebtStore.key(c))) out.add(c);
         return out;
     }
 
@@ -300,6 +295,67 @@ public class MainActivity extends Activity {
                 .setPositiveButton("ابدأ", (d, w) -> openNextWhatsApp())
                 .setNegativeButton("إلغاء", null)
                 .show();
+    }
+
+    /** زر "تذكير" بجانب اسم شخص واحد */
+    private void remindOne(KonnashParser.Customer c) {
+        saveSettings();
+        String phone = WhatsApp.normalizePhone(c.phone);
+        if (phone.isEmpty()) {
+            toast("لا يوجد رقم هاتف لـ " + c.name);
+            return;
+        }
+        String text = WhatsApp.message(etTemplate.getText().toString(), c, store.days(c));
+        try {
+            startActivity(WhatsApp.intent(phone, text));
+        } catch (ActivityNotFoundException e) {
+            toast("واتساب غير مثبت");
+            return;
+        }
+        store.markReminded(c);
+        unchecked.add(DebtStore.key(c));
+        singleWaitingReturn = true;
+    }
+
+    private String rowText(KonnashParser.Customer c) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(c.name).append("\n").append(money(c.due()))
+                .append("  •  ").append(store.days(c)).append(" يوم");
+        int r = store.daysSinceReminder(c);
+        if (r == 0) sb.append("\n✔ ذُكّر اليوم");
+        else if (r > 0) sb.append("\n✔ ذُكّر قبل ").append(r).append(" يوم");
+        return sb.toString();
+    }
+
+    private class CustomerAdapter extends BaseAdapter {
+        @Override
+        public int getCount() {
+            return shown.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return shown.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View view, ViewGroup parent) {
+            if (view == null) view = getLayoutInflater().inflate(R.layout.item_customer, parent, false);
+            final KonnashParser.Customer c = shown.get(position);
+            ((CheckBox) view.findViewById(R.id.cb)).setChecked(!unchecked.contains(DebtStore.key(c)));
+            ((TextView) view.findViewById(R.id.tv)).setText(rowText(c));
+            Button b = view.findViewById(R.id.btnRemind);
+            boolean hasPhone = !WhatsApp.normalizePhone(c.phone).isEmpty();
+            b.setEnabled(hasPhone);
+            b.setText(hasPhone ? "💬 تذكير" : "بدون رقم");
+            b.setOnClickListener(v -> remindOne(c));
+            return view;
+        }
     }
 
     private void openNextWhatsApp() {

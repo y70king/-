@@ -71,15 +71,19 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         store = new DebtStore(this);
 
-        etToken = findViewById(R.id.etToken);
-        etChatId = findViewById(R.id.etChatId);
-        etDays = findViewById(R.id.etDays);
-        etTemplate = findViewById(R.id.etTemplate);
-        settingsBox = findViewById(R.id.settingsBox);
-        cbAmount = findViewById(R.id.cbAmount);
-        tvSummary = findViewById(R.id.tvSummary);
-        rbOverdue = findViewById(R.id.rbOverdue);
+        // الإعدادات والملخص كرأس للقائمة حتى تتمرر الشاشة كلها مع الأسماء
         list = findViewById(R.id.list);
+        View header = getLayoutInflater().inflate(R.layout.header_main, list, false);
+        list.addHeaderView(header, null, false);
+
+        etToken = header.findViewById(R.id.etToken);
+        etChatId = header.findViewById(R.id.etChatId);
+        etDays = header.findViewById(R.id.etDays);
+        etTemplate = header.findViewById(R.id.etTemplate);
+        settingsBox = header.findViewById(R.id.settingsBox);
+        cbAmount = header.findViewById(R.id.cbAmount);
+        tvSummary = header.findViewById(R.id.tvSummary);
+        rbOverdue = header.findViewById(R.id.rbOverdue);
         btnSend = findViewById(R.id.btnSend);
         btnWhatsApp = findViewById(R.id.btnWhatsApp);
 
@@ -95,23 +99,27 @@ public class MainActivity extends Activity {
         }
         updateFilterLabel();
 
-        findViewById(R.id.btnToggleSettings).setOnClickListener(v ->
+        header.findViewById(R.id.btnToggleSettings).setOnClickListener(v ->
                 settingsBox.setVisibility(settingsBox.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
-        findViewById(R.id.btnSave).setOnClickListener(v -> {
+        header.findViewById(R.id.btnSave).setOnClickListener(v -> {
             saveSettings();
             updateFilterLabel();
             refreshList();
             toast("تم الحفظ");
         });
-        findViewById(R.id.btnPick).setOnClickListener(v -> pickPdf());
-        ((RadioGroup) findViewById(R.id.rgFilter)).setOnCheckedChangeListener((g, id) -> refreshList());
+        header.findViewById(R.id.btnPick).setOnClickListener(v -> pickPdf());
+        ((RadioGroup) header.findViewById(R.id.rgFilter)).setOnCheckedChangeListener((g, id) -> refreshList());
         list.setAdapter(adapter);
         list.setOnItemClickListener((parent, view, pos, id) -> {
+            pos -= list.getHeaderViewsCount();
+            if (pos < 0 || pos >= shown.size()) return;
             String k = DebtStore.key(shown.get(pos));
             if (!unchecked.remove(k)) unchecked.add(k);
             adapter.notifyDataSetChanged();
         });
         list.setOnItemLongClickListener((parent, view, pos, id) -> {
+            pos -= list.getHeaderViewsCount();
+            if (pos < 0 || pos >= shown.size()) return false;
             editStartDate(shown.get(pos));
             return true;
         });

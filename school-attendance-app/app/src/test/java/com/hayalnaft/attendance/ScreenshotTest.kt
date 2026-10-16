@@ -106,6 +106,10 @@ class ScreenshotTest {
         go(app, Screen.Attendance()); shot("07-attendance-pick")
         go(app, Screen.Attendance(cls.id, math.id)); shot("08-attendance-one")
         go(app, Screen.Attendance(cls.id)); shot("08b-daily-card")
+        rule.onNodeWithText("غائب").performClick()
+        // Marking absent asks before contacting the parent.
+        rule.onNodeWithText("نعم، بلّغ ولي الأمر").assertExists()
+        rule.onNodeWithText("لا").performClick()
         go(app, Screen.Grades(cls.id)); shot("09-grades")
         go(app, Screen.StudentDetail(ids[0])); shot("10-student")
         go(app, Screen.Timetable); shot("11-timetable")

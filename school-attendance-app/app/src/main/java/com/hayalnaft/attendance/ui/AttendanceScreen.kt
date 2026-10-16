@@ -109,6 +109,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
     var confirmSend by remember { mutableStateOf(false) }
     var whatsappList by remember { mutableStateOf(false) }
     var noteFor by remember { mutableStateOf<Student?>(null) }
+    var askNotify by remember { mutableStateOf<Pair<AttendanceRow, Int>?>(null) }
 
     val notifyLate = app.prefs.notifyLate
     fun needsNotice(r: AttendanceRow) =
@@ -121,8 +122,9 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
         app.db.setStatus(r.student.id, date, subjectId, newStatus)
         app.changed()
         val notify = newStatus == Status.ABSENT || (notifyLate && newStatus == Status.LATE)
-        if (app.prefs.autoSend && notify && !r.notified) app.notifyStatus(r.student, date, subjectId, newStatus)
-        if (newStatus == Status.ABSENT) app.checkAbsenceLimit(r.student)
+        // Ask before contacting the parent; the absence-limit warning (if any) follows the answer.
+        if (app.prefs.autoSend && notify && !r.notified && r.student.phone.isNotBlank()) askNotify = r to newStatus
+        else if (newStatus == Status.ABSENT) app.checkAbsenceLimit(r.student)
     }
 
     fun addPoints(s: Student, points: Int) {
@@ -319,6 +321,35 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 }
             },
             confirmButton = { TextButton(onClick = { whatsappList = false }) { Text("إغلاق") } },
+        )
+    }
+
+    askNotify?.let { (r, status) ->
+        val absent = status == Status.ABSENT
+        fun done() {
+            askNotify = null
+            if (absent) app.checkAbsenceLimit(r.student)
+        }
+        AlertDialog(
+            onDismissRequest = { done() },
+            icon = { Icon(Icons.Filled.Send, null, tint = if (app.whatsappChannel) Color(0xFF1FA855) else AbsentRed) },
+            title = { Text("تبليغ ولي الأمر") },
+            text = {
+                Text(
+                    "تم تسجيل ${r.student.name} ${if (absent) "غائباً" else "متأخراً"}.\n" +
+                        "هل تريد تبليغ ولي أمره ${if (app.whatsappChannel) "عبر واتساب" else "برسالة SMS"}؟",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        app.notifyStatus(r.student, date, subjectId, status)
+                        done()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = if (app.whatsappChannel) Color(0xFF1FA855) else AbsentRed),
+                ) { Text("نعم، بلّغ ولي الأمر") }
+            },
+            dismissButton = { TextButton(onClick = { done() }) { Text("لا") } },
         )
     }
 

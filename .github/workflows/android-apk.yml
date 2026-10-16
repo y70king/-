@@ -1,0 +1,28 @@
+name: Build attendance APK
+
+on:
+  push:
+    paths:
+      - "school-attendance-app/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: school-attendance-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Test and build
+        run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hay-alnaft-attendance-apk
+          path: school-attendance-app/app/build/outputs/apk/release/app-release.apk

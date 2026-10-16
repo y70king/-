@@ -81,6 +81,7 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     val grades = remember(v, cls?.id) { cls?.let { app.db.classGrades(it.id) } ?: emptyMap() }
     var menu by remember { mutableStateOf(false) }
     var pdf by remember { mutableStateOf<Pair<File, String>?>(null) }
+    var export by remember { mutableStateOf<Pair<String, () -> com.hayalnaft.attendance.util.ReportDoc>?>(null) }
 
     Scaffold(
         topBar = {
@@ -90,19 +91,19 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "المزيد") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(
-                                text = { Text("كشف مادة ${subject.name} (PDF)") },
+                                text = { Text("كشف مادة ${subject.name} (PDF / Word / Excel)") },
                                 leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) },
                                 onClick = {
                                     menu = false
-                                    pdf = Reports.subjectSheet(ctx, app.db, school, cls, subject) to "كشف مادة ${subject.name}"
+                                    export = "كشف مادة ${subject.name}" to { Reports.subjectSheetDoc(app.db, school, cls, subject) }
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("الكشف الشامل لكل المواد (PDF)") },
+                                text = { Text("الكشف الشامل لكل المواد (PDF / Word / Excel)") },
                                 leadingIcon = { Icon(Icons.Filled.TableView, null) },
                                 onClick = {
                                     menu = false
-                                    pdf = Reports.classSheet(ctx, app.db, school, cls) to "الكشف الشامل ${cls.title}"
+                                    export = "الكشف الشامل ${cls.title}" to { Reports.classSheetDoc(app.db, school, cls) }
                                 },
                             )
                             DropdownMenuItem(
@@ -175,6 +176,7 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     }
 
     pdf?.let { (file, title) -> PdfDialog(app, file, title, onDismiss = { pdf = null }) }
+    export?.let { (title, doc) -> ExportDialog(app, school, title, onDismiss = { export = null }, doc = doc) }
 }
 
 @Composable

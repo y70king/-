@@ -161,6 +161,18 @@ class ScreenshotTest {
         val month = com.hayalnaft.attendance.util.Periods.options(s.year)[2]
         tag = "class-report"; Reports.classReport(ctx, app.db, s, c, month)
         tag = "student-month"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[2])!!, month)
+        val exports = File("build/exports").apply { mkdirs() }
+        val docs = mapOf(
+            "class-report" to Reports.classReportDoc(app.db, s, c, month),
+            "student-report" to Reports.studentReportDoc(app.db, s, c, app.db.student(ids[2])!!, month),
+            "subject-sheet" to Reports.subjectSheetDoc(app.db, s, c, math),
+            "class-sheet" to Reports.classSheetDoc(app.db, s, c),
+        )
+        for ((name, d) in docs) {
+            com.hayalnaft.attendance.util.Export.docx(ctx, s, d).copyTo(File(exports, "$name.docx"), overwrite = true)
+            com.hayalnaft.attendance.util.Export.xlsx(ctx, s, d).copyTo(File(exports, "$name.xlsx"), overwrite = true)
+            File(exports, "$name.txt").writeText(com.hayalnaft.attendance.util.Export.text(s, d))
+        }
         File(out, "student.txt").writeText(Reports.studentText(app.db, s, c, app.db.student(ids[0])!!))
     }
 

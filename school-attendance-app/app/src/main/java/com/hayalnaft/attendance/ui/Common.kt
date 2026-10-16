@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -74,6 +75,14 @@ import com.hayalnaft.attendance.data.Subject
 import com.hayalnaft.attendance.data.Stages
 import androidx.compose.material3.Checkbox
 import com.hayalnaft.attendance.util.PdfFiles
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.TableChart
+import com.hayalnaft.attendance.data.School
+import com.hayalnaft.attendance.util.Export
+import com.hayalnaft.attendance.util.ExportFormat
+import com.hayalnaft.attendance.util.ReportDoc
+import com.hayalnaft.attendance.util.Reports
 import com.hayalnaft.attendance.util.Phone
 import java.io.File
 import com.hayalnaft.attendance.data.SchoolClass
@@ -503,27 +512,139 @@ fun PinDialog(expected: String, onDismiss: () -> Unit, onSuccess: () -> Unit) {
 
 /** What to do with a generated PDF: share (e.g. WhatsApp), print, or send to the student's parent. */
 @Composable
-fun PdfDialog(app: AppState, file: File, title: String, parentPhone: String? = null, onDismiss: () -> Unit) {
+fun PdfDialog(app: AppState, file: File, title: String, parentPhone: String? = null, onDismiss: () -> Unit) =
+    FileDialog(app, file, title, "application/pdf", parentPhone, onDismiss)
+
+/** Share a generated report file (PDF, Word or Excel); PDFs can also be printed. */
+@Composable
+fun FileDialog(app: AppState, file: File, title: String, mime: String, parentPhone: String? = null, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
+    val kind = when (mime) {
+        Export.MIME_DOCX -> "Word"
+        Export.MIME_XLSX -> "Excel"
+        else -> "PDF"
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.PictureAsPdf, null, tint = AbsentRed) },
+        icon = {
+            Icon(
+                when (kind) {
+                    "Word" -> Icons.Filled.Description
+                    "Excel" -> Icons.Filled.TableChart
+                    else -> Icons.Filled.PictureAsPdf
+                },
+                null,
+                tint = when (kind) {
+                    "Word" -> ExcusedBlue
+                    "Excel" -> PresentGreen
+                    else -> AbsentRed
+                },
+            )
+        },
         title = { Text(title) },
-        text = { Text("تم إنشاء الملف بصيغة PDF جاهزاً للطباعة على ورق A4.") },
+        text = {
+            Text(
+                when (kind) {
+                    "Word" -> "تم إنشاء الملف بصيغة Word، ويمكن تعديله وطباعته من برنامج Word."
+                    "Excel" -> "تم إنشاء الملف بصيغة Excel، ويمكن فتحه وتعديله من برنامج Excel."
+                    else -> "تم إنشاء الملف بصيغة PDF جاهزاً للطباعة على ورق A4."
+                },
+            )
+        },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (!parentPhone.isNullOrBlank()) {
-                    Button(onClick = { Phone.shareFile(ctx, file, "application/pdf", parentPhone, app.prefs.countryCode); onDismiss() }) {
+                    Button(onClick = { Phone.shareFile(ctx, file, mime, parentPhone, app.prefs.countryCode); onDismiss() }) {
                         Text("إرسال لولي الأمر عبر واتساب")
                     }
                 }
-                OutlinedButton(onClick = { Phone.shareFile(ctx, file, "application/pdf", null, app.prefs.countryCode); onDismiss() }) {
-                    Text("مشاركة / حفظ")
+                OutlinedButton(onClick = { Phone.shareFile(ctx, file, mime, null, app.prefs.countryCode); onDismiss() }) {
+                    Text("مشاركة / حفظ / واتساب")
                 }
-                OutlinedButton(onClick = { PdfFiles.print(ctx, file, title); onDismiss() }) { Text("طباعة") }
+                if (kind == "PDF") OutlinedButton(onClick = { PdfFiles.print(ctx, file, title); onDismiss() }) { Text("طباعة") }
                 TextButton(onClick = onDismiss) { Text("إغلاق") }
             }
         },
+    )
+}
+
+/**
+ * Lets the teacher pick how a report goes out: PDF, Word, Excel or a WhatsApp message.
+ * [parentPhone] sends the message (and offers files) straight to a parent; otherwise WhatsApp asks for the chat.
+ */
+@Composable
+fun ExportDialog(
+    app: AppState,
+    school: School,
+    title: String,
+    parentPhone: String? = null,
+    whatsappText: (() -> String)? = null,
+    summary: (@Composable () -> Unit)? = null,
+    onDismiss: () -> Unit,
+    doc: () -> ReportDoc,
+) {
+    val ctx = LocalContext.current
+    var file by remember { mutableStateOf<Pair<File, String>?>(null) }
+    file?.let { (f, mime) ->
+        FileDialog(app, f, title, mime, parentPhone, onDismiss)
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Description, null, tint = Ink) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                summary?.invoke()
+                Text("اختر صيغة التقرير", color = Muted, style = MaterialTheme.typography.bodySmall)
+                ExportFormat.entries.forEach { f ->
+                    val (icon, color) = when (f) {
+                        ExportFormat.PDF -> Icons.Filled.PictureAsPdf to AbsentRed
+                        ExportFormat.WORD -> Icons.Filled.Description to ExcusedBlue
+                        ExportFormat.EXCEL -> Icons.Filled.TableChart to PresentGreen
+                        ExportFormat.WHATSAPP -> Icons.Filled.Chat to Color(0xFF1FA855)
+                    }
+                    Surface(
+                        onClick = {
+                            when (f) {
+                                ExportFormat.PDF -> file = Reports.pdf(ctx, school, doc()) to "application/pdf"
+                                ExportFormat.WORD -> file = Export.docx(ctx, school, doc()) to Export.MIME_DOCX
+                                ExportFormat.EXCEL -> file = Export.xlsx(ctx, school, doc()) to Export.MIME_XLSX
+                                ExportFormat.WHATSAPP -> {
+                                    val text = whatsappText?.invoke() ?: Export.text(school, doc())
+                                    if (!parentPhone.isNullOrBlank()) Phone.whatsapp(ctx, parentPhone, text, app.prefs.countryCode)
+                                    else Phone.shareText(ctx, text)
+                                    onDismiss()
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        color = color.copy(alpha = 0.1f),
+                        contentColor = color,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(icon, null)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(f.label, fontWeight = FontWeight.Bold)
+                                Text(
+                                    when (f) {
+                                        ExportFormat.PDF -> "جاهز للطباعة"
+                                        ExportFormat.WORD -> "قابل للتعديل في Word"
+                                        ExportFormat.EXCEL -> "جدول قابل للتعديل في Excel"
+                                        ExportFormat.WHATSAPP -> if (parentPhone.isNullOrBlank()) "نص التقرير في محادثة تختارها" else "نص التقرير إلى ولي الأمر"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Muted,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
     )
 }
 

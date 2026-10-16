@@ -342,7 +342,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
     }
     reportRange?.let { r ->
         if (student != null && school != null && cls != null) {
-            StudentReportDialog(app, school, cls, student, r, onDismiss = { reportRange = null }) { pdf = it }
+            StudentReportDialog(app, school, cls, student, r, onDismiss = { reportRange = null })
         }
     }
     pdf?.let { (file, title) -> PdfDialog(app, file, title, student?.phone, onDismiss = { pdf = null }) }

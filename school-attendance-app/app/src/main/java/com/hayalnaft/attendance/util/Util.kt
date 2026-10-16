@@ -222,6 +222,21 @@ object Phone {
         start(context, Intent(Intent.ACTION_VIEW, uri))
     }
 
+    /** Shares plain text, preferring WhatsApp so the teacher only picks the chat. */
+    fun shareText(context: Context, text: String) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            try {
+                context.startActivity(Intent(send).setPackage(pkg))
+                return
+            } catch (e: ActivityNotFoundException) {
+                // Not installed; try the next one.
+            }
+        }
+        start(context, Intent.createChooser(send, "إرسال التقرير"))
+    }
+
     /** Shares a file (e.g. a PDF report). With a phone, opens that parent's WhatsApp chat directly when possible. */
     fun shareFile(context: Context, file: File, mime: String, phone: String?, countryCode: String) {
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)

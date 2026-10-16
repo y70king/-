@@ -45,11 +45,9 @@ object Reports {
     private fun bestGrade(r: GradeResult) = r.finalGrade ?: r.annual
 
     /** Full grade sheet of one subject for one class. */
-    fun subjectSheet(context: Context, db: Db, school: School, cls: SchoolClass, subject: Subject): File {
+    fun subjectSheetDoc(db: Db, school: School, cls: SchoolClass, subject: Subject): ReportDoc {
         val students = db.students(school.id, cls.id)
         val grades = db.classGrades(cls.id)
-        val pdf = PdfBuilder(landscape = true)
-        pdf.header(context, school, "كشف درجات مادة ${subject.name}", "${cls.title}${roomText(cls)}")
         val headers = listOf(
             "ت", "اسم الطالب", "الشهر الأول", "الشهر الثاني", "معدل الفصل الأول", "نصف السنة",
             "الشهر الأول ف2", "الشهر الثاني ف2", "معدل الفصل الثاني", "السعي السنوي", "الامتحان النهائي",
@@ -65,25 +63,33 @@ object Reports {
                 if (r.exempt) "معفى" else fmt(v[GradeField.FINAL]), fmt(r.finalGrade), r.status,
             )
         }
-        pdf.table(
-            headers, rows, listOf(0.5f, 3.2f, 1f, 1f, 1.1f, 1f, 1f, 1f, 1.1f, 1f, 1.1f, 1.1f, 1f),
-            cellColor = { r, c -> statusColor(results[r].status).takeIf { c == 12 } },
-        )
         val exempt = results.count { it.exempt }
         val graded = results.count { it.finalGrade != null }
         val passed = results.count { it.status == "ناجح" || it.exempt }
-        pdf.text("عدد الطلاب: ${students.size}   •   المعفون: $exempt   •   الناجحون: $passed من $graded", 10f, true)
-        pdf.signatures("مدرس المادة", "مدير المدرسة")
-        return pdf.save(PdfFiles.file(context, "كشف ${subject.name} ${cls.title}"))
+        return ReportDoc(
+            fileName = "كشف ${subject.name} ${cls.title}",
+            title = "كشف درجات مادة ${subject.name}",
+            subtitle = "${cls.title}${roomText(cls)}",
+            landscape = true,
+            blocks = listOf(
+                Block.Table(
+                    headers, rows, listOf(0.5f, 3.2f, 1f, 1f, 1.1f, 1f, 1f, 1f, 1.1f, 1f, 1.1f, 1.1f, 1f),
+                    tint = { r, c -> statusColor(results[r].status).takeIf { c == 12 } },
+                ),
+                Block.Para("عدد الطلاب: ${students.size}   •   المعفون: $exempt   •   الناجحون: $passed من $graded", bold = true),
+            ),
+            signatures = listOf("مدرس المادة", "مدير المدرسة"),
+        )
     }
 
+    fun subjectSheet(context: Context, db: Db, school: School, cls: SchoolClass, subject: Subject): File =
+        pdf(context, school, subjectSheetDoc(db, school, cls, subject))
+
     /** All subjects of a class side by side with the general average. */
-    fun classSheet(context: Context, db: Db, school: School, cls: SchoolClass): File {
+    fun classSheetDoc(db: Db, school: School, cls: SchoolClass): ReportDoc {
         val students = db.students(school.id, cls.id)
         val subjects = db.subjects(school.id)
         val grades = db.classGrades(cls.id)
-        val pdf = PdfBuilder(landscape = true)
-        pdf.header(context, school, "الكشف الشامل لدرجات الطلاب", "${cls.title}${roomText(cls)}")
         val headers = listOf("ت", "اسم الطالب") + subjects.map { it.name } + listOf("المعدل", "النتيجة")
         val pass = Grades.roundUp(school.maxMark / 2.0)
         val rows = students.mapIndexed { i, s ->
@@ -98,34 +104,43 @@ object Reports {
             }
             listOf("${i + 1}", s.name) + marks.map { fmt(it) } + listOf(fmt(avg), res)
         }
-        val weights = listOf(0.5f, 3f) + subjects.map { 1f } + listOf(1f, 1.2f)
-        pdf.table(headers, rows, weights, size = if (subjects.size > 9) 8f else 9.5f, cellColor = { r, c ->
-            val cell = rows[r][c]
-            when {
-                c == rows[r].lastIndex -> statusColor(if (cell.startsWith("مكمل")) "مكمل" else cell)
-                c in 2 until 2 + subjects.size -> cell.toIntOrNull()?.takeIf { it < pass }?.let { 0x22C62828 }
-                else -> null
-            }
-        })
-        pdf.text("الدرجة المعتمدة لكل مادة هي الدرجة النهائية إن وجدت وإلا السعي السنوي. الدرجات الحمراء دون درجة النجاح ($pass).", 9f)
-        pdf.signatures("مرشد الصف", "مدير المدرسة")
-        return pdf.save(PdfFiles.file(context, "الكشف الشامل ${cls.title}"))
+        return ReportDoc(
+            fileName = "الكشف الشامل ${cls.title}",
+            title = "الكشف الشامل لدرجات الطلاب",
+            subtitle = "${cls.title}${roomText(cls)}",
+            landscape = true,
+            blocks = listOf(
+                Block.Table(
+                    headers, rows, listOf(0.5f, 3f) + subjects.map { 1f } + listOf(1f, 1.2f),
+                    small = subjects.size > 9,
+                    tint = { r, c ->
+                        val cell = rows[r][c]
+                        when {
+                            c == rows[r].lastIndex -> statusColor(if (cell.startsWith("مكمل")) "مكمل" else cell)
+                            c in 2 until 2 + subjects.size -> cell.toIntOrNull()?.takeIf { it < pass }?.let { 0x22C62828 }
+                            else -> null
+                        }
+                    },
+                ),
+                Block.Para("الدرجة المعتمدة لكل مادة هي الدرجة النهائية إن وجدت وإلا السعي السنوي. الدرجات الملونة بالأحمر دون درجة النجاح ($pass)."),
+            ),
+            signatures = listOf("مرشد الصف", "مدير المدرسة"),
+        )
     }
 
+    fun classSheet(context: Context, db: Db, school: School, cls: SchoolClass): File = pdf(context, school, classSheetDoc(db, school, cls))
+
     /** Everything known about one student over a period: attendance, activity, behaviour, grades and notes. */
-    fun studentReport(
-        context: Context, db: Db, school: School, cls: SchoolClass, student: Student, range: DateRange = DateRange.ALL,
-    ): File {
-        val pdf = PdfBuilder()
-        pdf.header(context, school, "تقرير الطالب", student.name)
-        pdf.table(
+    fun studentReportDoc(db: Db, school: School, cls: SchoolClass, student: Student, range: DateRange = DateRange.ALL): ReportDoc {
+        val blocks = mutableListOf<Block>()
+        blocks += Block.Table(
             listOf("اسم الطالب", "الصف والشعبة", "رقم ولي الأمر", "فترة التقرير"),
             listOf(listOf(student.name, cls.title, student.phone, Periods.describe(range))),
             listOf(2f, 1.4f, 1.3f, 2.2f),
         )
         val st = db.studentStats(student.id, range)
         val t = db.eventTotals(student.id, range)
-        pdf.statBoxes(
+        blocks += Block.Stats(
             listOf(
                 Triple("نسبة الحضور", st?.attendanceRate?.let { "$it%" } ?: "-", rateColor(st?.attendanceRate)),
                 Triple("أيام الغياب", "${st?.absent ?: 0}", PdfBuilder.RED),
@@ -133,26 +148,26 @@ object Reports {
                 Triple("سلوك جيد / مشاغب", "${t.good} / ${t.bad}", PdfBuilder.NAVY),
             )
         )
-        pdf.heading("الحضور والغياب")
-        pdf.table(
+        blocks += Block.Heading("الحضور والغياب")
+        blocks += Block.Table(
             listOf("حضور", "غياب", "تأخر", "إجازة"),
             listOf(listOf(fmt(st?.present), fmt(st?.absent), fmt(st?.late), fmt(st?.excused))),
             listOf(1f, 1f, 1f, 1f),
         )
         val missed = db.history(student.id, range).filter { it.status != com.hayalnaft.attendance.data.Status.PRESENT }.take(30)
         if (missed.isNotEmpty()) {
-            pdf.table(
+            blocks += Block.Table(
                 listOf("التاريخ", "الحصة", "الحالة"),
                 missed.map { listOf(Dates.pretty(it.date), it.subjectName ?: "التعداد اليومي", statusText(it.status)) },
                 listOf(2f, 2f, 1.2f),
-                cellColor = { r, c -> if (c == 2) statusTint(missed[r].status) else null },
+                tint = { r, c -> if (c == 2) statusTint(missed[r].status) else null },
             )
         }
         val subjects = db.subjects(school.id)
         val grades = db.studentGrades(student.id)
         if (subjects.isNotEmpty() && grades.isNotEmpty()) {
-            pdf.heading("الدرجات")
-            pdf.table(
+            blocks += Block.Heading("الدرجات")
+            blocks += Block.Table(
                 listOf("المادة", "الفصل الأول", "نصف السنة", "الفصل الثاني", "السعي السنوي", "الدرجة النهائية", "النتيجة"),
                 subjects.map { sub ->
                     val v = grades[sub.id] ?: emptyMap()
@@ -164,19 +179,29 @@ object Reports {
         }
         val notes = db.events(student.id, range).filter { it.note.isNotBlank() || it.type != EventType.POINTS }.take(20)
         if (notes.isNotEmpty()) {
-            pdf.heading("الملاحظات والسلوك")
-            pdf.table(
+            blocks += Block.Heading("الملاحظات والسلوك")
+            blocks += Block.Table(
                 listOf("التاريخ", "النوع", "الملاحظة"),
                 notes.map { listOf(Dates.display(it.date), eventLabel(it.type, it.points), it.note) },
                 listOf(1.2f, 1.2f, 4f),
             )
         }
-        pdf.signatures("المدرس / المرشد", "مدير المدرسة")
-        return pdf.save(PdfFiles.file(context, "تقرير ${student.name} ${range.label}"))
+        return ReportDoc(
+            fileName = "تقرير ${student.name} ${range.label}",
+            title = "تقرير الطالب",
+            subtitle = student.name,
+            landscape = false,
+            blocks = blocks,
+            signatures = listOf("المدرس / المرشد", "مدير المدرسة"),
+        )
     }
 
+    fun studentReport(
+        context: Context, db: Db, school: School, cls: SchoolClass, student: Student, range: DateRange = DateRange.ALL,
+    ): File = pdf(context, school, studentReportDoc(db, school, cls, student, range))
+
     /** A class over a period: summary boxes, every student's attendance, activity and average, and highlights. */
-    fun classReport(context: Context, db: Db, school: School, cls: SchoolClass, range: DateRange): File {
+    fun classReportDoc(db: Db, school: School, cls: SchoolClass, range: DateRange): ReportDoc {
         val stats = db.stats(school.id, cls.id, range).sortedBy { it.student.id }
         val totals = db.classEventTotals(cls.id, range)
         val subjects = db.subjects(school.id)
@@ -185,12 +210,11 @@ object Reports {
             val marks = subjects.mapNotNull { sub -> result(grades[st.student.id]?.get(sub.id), school, cls).let(::bestGrade) }
             st.student.id to (if (marks.isEmpty()) null else Grades.roundUp(marks.sum().toDouble() / marks.size))
         }
-        val pdf = PdfBuilder(landscape = true)
-        pdf.header(context, school, "تقرير الصف ${cls.title}", Periods.describe(range))
         val recorded = stats.sumOf { it.recorded }
         val attended = stats.sumOf { it.present + it.late + it.excused }
         val rate = if (recorded == 0) null else Math.round(attended * 100f / recorded)
-        pdf.statBoxes(
+        val blocks = mutableListOf<Block>()
+        blocks += Block.Stats(
             listOf(
                 Triple("عدد الطلاب", "${stats.size}", PdfBuilder.NAVY),
                 Triple("نسبة الحضور العامة", rate?.let { "$it%" } ?: "-", rateColor(rate)),
@@ -207,11 +231,11 @@ object Reports {
                 fmt(averages[st.student.id]),
             )
         }
-        pdf.table(
+        blocks += Block.Table(
             listOf("ت", "اسم الطالب", "حضور", "غياب", "تأخر", "إجازة", "نسبة الحضور", "نقاط النشاط", "سلوك جيد", "مشاغب", "معدل الدرجات"),
             rows,
             listOf(0.5f, 3f, 0.9f, 0.9f, 0.9f, 0.9f, 1.1f, 1.1f, 1f, 0.9f, 1.1f),
-            cellColor = { r, c ->
+            tint = { r, c ->
                 when (c) {
                     6 -> stats[r].attendanceRate?.let { lightTint(rateColor(it)) }
                     3 -> if (stats[r].absent > 0) 0x22C62828 else null
@@ -223,16 +247,39 @@ object Reports {
         val mostActive = stats.map { it.student to (totals[it.student.id]?.points ?: 0) }.filter { it.second > 0 }
             .sortedByDescending { it.second }.take(5)
         if (mostAbsent.isNotEmpty() || mostActive.isNotEmpty()) {
-            pdf.heading("أبرز الملاحظات")
+            blocks += Block.Heading("أبرز الملاحظات")
             if (mostActive.isNotEmpty()) {
-                pdf.text("الأكثر نشاطاً: " + mostActive.joinToString("، ") { "${it.first.name} (${it.second})" }, 10.5f)
+                blocks += Block.Para("الأكثر نشاطاً: " + mostActive.joinToString("، ") { "${it.first.name} (${it.second})" })
             }
             if (mostAbsent.isNotEmpty()) {
-                pdf.text("الأكثر غياباً: " + mostAbsent.joinToString("، ") { "${it.student.name} (${it.absent})" }, 10.5f)
+                blocks += Block.Para("الأكثر غياباً: " + mostAbsent.joinToString("، ") { "${it.student.name} (${it.absent})" })
             }
         }
-        pdf.signatures("مرشد الصف", "مدير المدرسة")
-        return pdf.save(PdfFiles.file(context, "تقرير ${cls.title} ${range.label}"))
+        return ReportDoc(
+            fileName = "تقرير ${cls.title} ${range.label}",
+            title = "تقرير الصف ${cls.title}",
+            subtitle = Periods.describe(range),
+            landscape = true,
+            blocks = blocks,
+            signatures = listOf("مرشد الصف", "مدير المدرسة"),
+        )
+    }
+
+    fun classReport(context: Context, db: Db, school: School, cls: SchoolClass, range: DateRange): File =
+        pdf(context, school, classReportDoc(db, school, cls, range))
+
+    /** Renders a report as an A4 PDF with the school header. */
+    fun pdf(context: Context, school: School, doc: ReportDoc): File {
+        val pdf = PdfBuilder(landscape = doc.landscape)
+        pdf.header(context, school, doc.title, doc.subtitle)
+        for (b in doc.blocks) when (b) {
+            is Block.Heading -> pdf.heading(b.text)
+            is Block.Para -> pdf.text(b.text, 10.5f, b.bold)
+            is Block.Stats -> pdf.statBoxes(b.items)
+            is Block.Table -> pdf.table(b.headers, b.rows, b.weights, size = if (b.small) 8f else 9.5f, cellColor = b.tint)
+        }
+        pdf.signatures(*doc.signatures.toTypedArray())
+        return pdf.save(PdfFiles.file(context, doc.fileName))
     }
 
     private fun rateColor(rate: Int?): Int = when {

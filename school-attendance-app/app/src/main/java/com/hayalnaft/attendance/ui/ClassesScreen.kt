@@ -316,6 +316,7 @@ fun ClassPageScreen(app: AppState, classId: Long) {
     var pickRange by remember { mutableStateOf(false) }
     var pdf by remember { mutableStateOf<Pair<File, String>?>(null) }
     var pdfPhone by remember { mutableStateOf<String?>(null) }
+    var export by remember { mutableStateOf<Pair<String, () -> com.hayalnaft.attendance.util.ReportDoc>?>(null) }
     var reportFor by remember { mutableStateOf<Student?>(null) }
 
     if (cls == null || school == null) {
@@ -424,11 +425,11 @@ fun ClassPageScreen(app: AppState, classId: Long) {
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
-                                pdf = Reports.classSheet(ctx, app.db, school, cls) to "الكشف الشامل ${cls.title}"
+                                export = "الكشف الشامل ${cls.title}" to { Reports.classSheetDoc(app.db, school, cls) }
                             }, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Filled.TableView, null)
                                 Spacer(Modifier.width(4.dp))
-                                Text("الكشف الشامل PDF", maxLines = 1)
+                                Text("تصدير الكشف الشامل", maxLines = 1)
                             }
                         }
                     }
@@ -458,12 +459,12 @@ fun ClassPageScreen(app: AppState, classId: Long) {
                     item { ClassReportSummary(stats, totals.values.sumOf { it.points }) }
                     item {
                         Button(
-                            onClick = { pdf = Reports.classReport(ctx, app.db, school, cls, range) to "تقرير ${cls.title} — ${range.label}" },
+                            onClick = { export = "تقرير ${cls.title} — ${range.label}" to { Reports.classReportDoc(app.db, school, cls, range) } },
                             modifier = Modifier.fillMaxWidth().height(50.dp),
                         ) {
                             Icon(Icons.Filled.PictureAsPdf, null)
                             Spacer(Modifier.width(6.dp))
-                            Text("تقرير الصف PDF (${range.label})", fontWeight = FontWeight.Bold)
+                            Text("تصدير تقرير الصف (${range.label})", fontWeight = FontWeight.Bold)
                         }
                         Text(
                             "اضغط على أي طالب لإصدار تقريره الفردي لنفس الفترة",
@@ -515,12 +516,10 @@ fun ClassPageScreen(app: AppState, classId: Long) {
         ) { DateRangePicker(state, modifier = Modifier.height(480.dp)) }
     }
     reportFor?.let { s ->
-        StudentReportDialog(app, school, cls, s, range, onDismiss = { reportFor = null }) {
-            pdf = it
-            pdfPhone = s.phone
-        }
+        StudentReportDialog(app, school, cls, s, range, onDismiss = { reportFor = null })
     }
     pdf?.let { (file, title) -> PdfDialog(app, file, title, pdfPhone, onDismiss = { pdf = null; pdfPhone = null }) }
+    export?.let { (title, doc) -> ExportDialog(app, school, title, onDismiss = { export = null }, doc = doc) }
 }
 
 @Composable
@@ -614,7 +613,7 @@ private fun StudentPeriodRow(st: StudentStats, points: Int, onClick: () -> Unit)
     }
 }
 
-/** Individual report of one student for a period: as PDF or as a WhatsApp message to the parent. */
+/** Individual report of one student for a period, as PDF, Word, Excel or a WhatsApp message to the parent. */
 @Composable
 fun StudentReportDialog(
     app: AppState,
@@ -623,47 +622,23 @@ fun StudentReportDialog(
     student: Student,
     range: DateRange,
     onDismiss: () -> Unit,
-    onPdf: (Pair<File, String>) -> Unit,
 ) {
-    val ctx = LocalContext.current
     val st = remember(student.id, range) { app.db.studentStats(student.id, range) }
     val t = remember(student.id, range) { app.db.eventTotals(student.id, range) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.Person, null, tint = Ink) },
-        title = { Text("تقرير ${student.name}") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(Periods.describe(range), style = MaterialTheme.typography.bodySmall, color = Muted)
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Tag("الحضور ${st?.attendanceRate?.let { "$it%" } ?: "-"}", rateColor(st?.attendanceRate))
-                    Tag("غياب ${st?.absent ?: 0}", AbsentRed)
-                    Tag("تأخر ${st?.late ?: 0}", LateOrange)
-                    Tag("نقاط ${t.points}", Color(0xFFB07A00))
-                    Tag("جيد ${t.good} / مشاغب ${t.bad}", Ink)
-                }
+    ExportDialog(
+        app, school, "تقرير ${student.name}",
+        parentPhone = student.phone,
+        whatsappText = { Reports.studentText(app.db, school, cls, student, range) },
+        summary = {
+            Text(Periods.describe(range), style = MaterialTheme.typography.bodySmall, color = Muted)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Tag("الحضور ${st?.attendanceRate?.let { "$it%" } ?: "-"}", rateColor(st?.attendanceRate))
+                Tag("غياب ${st?.absent ?: 0}", AbsentRed)
+                Tag("تأخر ${st?.late ?: 0}", LateOrange)
+                Tag("نقاط ${t.points}", Color(0xFFB07A00))
+                Tag("جيد ${t.good} / مشاغب ${t.bad}", Ink)
             }
         },
-        confirmButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = {
-                    onDismiss()
-                    onPdf(Reports.studentReport(ctx, app.db, school, cls, student, range) to "تقرير ${student.name}")
-                }) {
-                    Icon(Icons.Filled.PictureAsPdf, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("تقرير PDF")
-                }
-                OutlinedButton(enabled = student.phone.isNotBlank(), onClick = {
-                    onDismiss()
-                    Phone.whatsapp(ctx, student.phone, Reports.studentText(app.db, school, cls, student, range), app.prefs.countryCode)
-                }) {
-                    Icon(Icons.Filled.Chat, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("رسالة لولي الأمر عبر واتساب")
-                }
-                TextButton(onClick = { onDismiss(); app.go(Screen.StudentDetail(student.id)) }) { Text("فتح صفحة الطالب") }
-            }
-        },
-    )
+        onDismiss = onDismiss,
+    ) { Reports.studentReportDoc(app.db, school, cls, student, range) }
 }

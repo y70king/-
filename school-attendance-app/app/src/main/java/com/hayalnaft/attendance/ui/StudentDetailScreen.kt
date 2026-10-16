@@ -61,6 +61,7 @@ import com.hayalnaft.attendance.AppState
 import com.hayalnaft.attendance.Screen
 import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.EventType
+import com.hayalnaft.attendance.data.HistoryRow
 import com.hayalnaft.attendance.util.Periods
 import com.hayalnaft.attendance.util.Dates
 import com.hayalnaft.attendance.util.Phone
@@ -85,6 +86,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
     var editing by remember { mutableStateOf(false) }
     var addNote by remember { mutableStateOf(false) }
     var reportMenu by remember { mutableStateOf(false) }
+    var editHistory by remember { mutableStateOf<HistoryRow?>(null) }
     var reportRange by remember { mutableStateOf<DateRange?>(null) }
     var pdf by remember { mutableStateOf<Pair<File, String>?>(null) }
 
@@ -180,7 +182,11 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                     if (history.isEmpty()) item { EmptyState(Icons.Filled.EmojiEvents, "لا يوجد سجل حضور بعد") }
                     items(history.size) { i ->
                         val h = history[i]
-                        Card(colors = CardDefaults.cardColors(containerColor = StatusUi.color(h.status).copy(alpha = 0.07f)), shape = RoundedCornerShape(12.dp)) {
+                        Card(
+                            onClick = { editHistory = h },
+                            colors = CardDefaults.cardColors(containerColor = StatusUi.color(h.status).copy(alpha = 0.07f)),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(StatusUi.icon(h.status), null, tint = StatusUi.color(h.status))
                                 Spacer(Modifier.width(10.dp))
@@ -189,6 +195,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                     Text(h.subjectName?.let { "حصة $it" } ?: "التعداد اليومي", style = MaterialTheme.typography.labelSmall, color = Muted)
                                 }
                                 Tag(StatusUi.label(h.status), StatusUi.color(h.status))
+                                Icon(Icons.Filled.Edit, "تعديل", tint = Muted, modifier = Modifier.padding(start = 8.dp).size(18.dp))
                             }
                         }
                     }
@@ -251,6 +258,50 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                 }
             }
         }
+    }
+
+    editHistory?.let { h ->
+        fun set(status: Int) {
+            app.db.setStatus(studentId, h.date, h.subjectId, status)
+            app.changed()
+            editHistory = null
+        }
+        AlertDialog(
+            onDismissRequest = { editHistory = null },
+            title = { Text("تعديل التسجيل") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${Dates.pretty(h.date)} • ${h.subjectName?.let { "حصة $it" } ?: "التعداد اليومي"}", color = Muted)
+                    StatusUi.order.chunked(2).forEach { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { st ->
+                                val c = StatusUi.color(st)
+                                OutlinedButton(
+                                    onClick = { set(st) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (h.status == st) c.copy(alpha = 0.15f) else Color.Transparent,
+                                        contentColor = c,
+                                    ),
+                                ) {
+                                    Icon(StatusUi.icon(st), null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(StatusUi.label(st))
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { set(com.hayalnaft.attendance.data.Status.NONE) }) {
+                    Icon(Icons.Filled.Delete, null, tint = AbsentRed)
+                    Spacer(Modifier.width(4.dp))
+                    Text("حذف التسجيل", color = AbsentRed)
+                }
+            },
+            dismissButton = { TextButton(onClick = { editHistory = null }) { Text("إلغاء") } },
+        )
     }
 
     if (editing && student != null) {

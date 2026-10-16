@@ -96,7 +96,7 @@ fun TimetableScreen(app: AppState) {
         floatingActionButton = {
             if (classes.isNotEmpty() && subjects.isNotEmpty()) {
                 ExtendedFloatingActionButton(
-                    onClick = { editing = Period(0, sid, day, 8 * 60, 45, classes.first().id, subjects.first().id) },
+                    onClick = { editing = Period(0, sid, day, 8 * 60, 30, classes.first().id, subjects.first().id) },
                     icon = { Icon(Icons.Filled.Add, null) },
                     text = { Text("إضافة حصة") },
                     containerColor = Gold,
@@ -225,7 +225,7 @@ private fun PeriodDialog(
                     }
                 }
                 Text("مدة الحصة", style = MaterialTheme.typography.labelLarge)
-                OptionChips(listOf(35, 40, 45, 50, 60), p.duration, { "$it د" }) { p = p.copy(duration = it) }
+                OptionChips(listOf(30, 35, 40, 45, 50, 60), p.duration, { "$it د" }) { p = p.copy(duration = it) }
                 Text("الصف", style = MaterialTheme.typography.labelLarge)
                 OptionChips(classes.map { it.id }, p.classId, { id -> classes.first { it.id == id }.title }) { p = p.copy(classId = it) }
                 Text("المادة", style = MaterialTheme.typography.labelLarge)

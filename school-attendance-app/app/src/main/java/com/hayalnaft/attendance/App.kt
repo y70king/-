@@ -115,10 +115,12 @@ class AppState(context: Context) {
         toast(msg)
     }
 
-    /** The app serves a single school, Hay Al-Naft secondary; it is created on first run. */
+    /** The app serves a single school (Hay Al-Naft secondary by default, renameable); it is created on first run. */
     fun ensureSchool() {
         val schools = db.schools()
-        schoolId = (schools.firstOrNull { it.name == DEFAULT_SCHOOL } ?: schools.firstOrNull())?.id
+        // The saved school keeps working after it is renamed.
+        schoolId = (schools.firstOrNull { it.id == prefs.schoolId } ?: schools.firstOrNull { it.name == DEFAULT_SCHOOL }
+            ?: schools.firstOrNull())?.id
             ?: db.addSchool(School(0, DEFAULT_SCHOOL), withClasses = true)
         prefs.schoolId = schoolId
     }

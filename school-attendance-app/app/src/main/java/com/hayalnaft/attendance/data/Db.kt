@@ -431,10 +431,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
 
     /** Every recorded session of the student, newest first. */
     fun history(studentId: Long, range: DateRange = DateRange.ALL): List<HistoryRow> = query(
-        "SELECT a.date, sub.name, a.status FROM attendance a LEFT JOIN subjects sub ON sub.id = a.subject_id " +
+        "SELECT a.date, sub.name, a.status, a.subject_id FROM attendance a LEFT JOIN subjects sub ON sub.id = a.subject_id " +
             "WHERE a.student_id = ? AND a.date BETWEEN ? AND ? ORDER BY a.date DESC, a.subject_id",
         studentId, range.from, range.to,
-    ) { HistoryRow(it.getString(0), it.getString(1), it.getInt(2)) }
+    ) { HistoryRow(it.getString(0), it.getString(1), it.getInt(2), it.getLong(3)) }
 
     // ---------- Points, behaviour and notes ----------
 

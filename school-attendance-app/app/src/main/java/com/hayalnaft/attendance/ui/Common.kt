@@ -450,7 +450,13 @@ fun SendingBanner(app: AppState, modifier: Modifier = Modifier) {
 /** One-of-many choice shown as a row of chips that scrolls sideways. */
 @Composable
 fun <T> OptionChips(options: List<T>, selected: T?, label: (T) -> String, modifier: Modifier = Modifier, onSelect: (T) -> Unit) {
+    val listState = rememberLazyListState()
+    val selectedIndex = options.indexOf(selected)
+    LaunchedEffect(selectedIndex) {
+        if (selectedIndex >= 0) listState.animateScrollToItem(selectedIndex)
+    }
     LazyRow(
+        state = listState,
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

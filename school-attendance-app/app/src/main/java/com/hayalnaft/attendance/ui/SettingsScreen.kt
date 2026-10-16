@@ -96,8 +96,13 @@ fun SettingsScreen(app: AppState) {
         ) {
             if (school != null) {
                 SettingsCard("بيانات المدرسة") {
-                    Text(school.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
+                    SchoolField("اسم المدرسة", school.name) {
+                        if (it.isNotBlank()) {
+                            app.db.updateSchool(school.copy(name = it))
+                            app.changed()
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text("المرحلة", style = MaterialTheme.typography.labelLarge)
                     OptionChips(Stages.all, school.stage, { it }) { app.db.updateSchool(school.copy(stage = it)); app.changed() }
                     Spacer(Modifier.height(6.dp))

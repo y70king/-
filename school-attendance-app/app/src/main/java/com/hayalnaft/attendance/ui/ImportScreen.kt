@@ -60,6 +60,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hayalnaft.attendance.AppState
+import com.hayalnaft.attendance.data.SchoolClass
+import com.hayalnaft.attendance.data.Stages
 import com.hayalnaft.attendance.util.ImportException
 import com.hayalnaft.attendance.util.Importer
 import com.hayalnaft.attendance.util.ParsedStudent
@@ -86,8 +88,13 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
     val v = app.version
     val sid = app.schoolId
     val classes = remember(v, sid) { app.db.classes(sid) }
+    // Step 1: the grade, then its section (or new ones added by hand).
     var classId by rememberSaveable { mutableStateOf(initialClassId) }
-    val target = classes.firstOrNull { it.id == classId } ?: classes.firstOrNull()
+    var grade by rememberSaveable { mutableStateOf(classes.firstOrNull { it.id == initialClassId }?.name) }
+    val target = classes.firstOrNull { it.id == classId }
+    val grades = classes.map { it.name }.distinct().sortedBy { g -> Stages.allGrades.indexOf(g).let { if (it < 0) 1000 else it } }
+    val sections = classes.filter { it.name == grade }
+    var newSection by remember { mutableStateOf(false) }
 
     var text by rememberSaveable { mutableStateOf("") }
     val parsed = remember { mutableStateListOf<ParsedStudent>() }
@@ -148,7 +155,10 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                     ) {
                         Icon(Icons.Filled.PlaylistAddCheck, null)
                         Spacer(Modifier.width(8.dp))
-                        Text("إضافة $selectedCount طالب إلى ${target?.title ?: ""}", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (target == null) "اختر الصف والشعبة أولاً" else "إضافة $selectedCount طالب إلى ${target.title}",
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -174,6 +184,41 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                 }
             }
             item {
+                Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                        Text("١. اختر الصف والشعبة", fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(horizontal = 14.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("الصف", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 14.dp))
+                        OptionChips(grades + NEW, grade, { if (it == NEW) "+ صف جديد" else it }, Modifier.padding(vertical = 4.dp)) { g ->
+                            if (g == NEW) {
+                                newClass = true
+                            } else {
+                                grade = g
+                                val secs = classes.filter { it.name == g }
+                                classId = if (secs.size == 1) secs.first().id else null
+                            }
+                        }
+                        if (grade != null) {
+                            Text("الشعبة", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                            OptionChips(sections.map { it.id } + -1L, classId, { id ->
+                                if (id == -1L) "+ شعبة جديدة" else "شعبة " + sections.first { it.id == id }.section.ifBlank { "-" }
+                            }, Modifier.padding(vertical = 4.dp)) { id ->
+                                if (id == -1L) newSection = true else classId = id
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (target == null) "لم يتم اختيار الشعبة بعد" else "سيُضاف الطلاب إلى: ${target.title} (${target.count} طالب حالياً)",
+                            color = if (target == null) AbsentRed else PresentGreen,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 14.dp),
+                        )
+                    }
+                }
+            }
+            item {
+                Text("٢. اختر ملف الأسماء أو الصقها", fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SourceButton("ملف Excel", Icons.Filled.TableChart, PresentGreen, Modifier.weight(1f)) { picker.launch(excelTypes) }
                     SourceButton("ملف Word", Icons.Filled.Description, ExcusedBlue, Modifier.weight(1f)) { picker.launch(wordTypes) }
@@ -240,11 +285,6 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
             }
             if (parsed.isNotEmpty()) {
                 item {
-                    Text("إضافة إلى صف:", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    ClassChips(classes, target?.id, { classId = it }, onAdd = { newClass = true })
-                }
-                item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "تم العثور على ${parsed.size} طالب",
@@ -285,12 +325,28 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
     }
 
     if (newClass) {
-        ClassDialog(null, app.db.school(sid)?.stage ?: "", onDismiss = { newClass = false }) { name, section, room, ministerial ->
+        ClassDialog(null, app.db.school(sid)?.stage ?: "", "صف جديد", onDismiss = { newClass = false }) { name, section, room, ministerial ->
             classId = app.db.addClass(sid, name, section, room, ministerial)
+            grade = name
+            app.changed()
+        }
+    }
+    if (newSection) {
+        val g = grade.orEmpty()
+        val used = sections.map { it.section }.toSet()
+        val next = listOf("أ", "ب", "ج", "د", "هـ", "و", "ز", "ح", "ط", "ي").firstOrNull { it !in used } ?: ""
+        ClassDialog(
+            SchoolClass(0, sid, g, next, "", Stages.isMinisterial(g), 0), app.db.school(sid)?.stage ?: "", "شعبة جديدة",
+            onDismiss = { newSection = false },
+        ) { name, section, room, ministerial ->
+            classId = app.db.addClass(sid, name, section, room, ministerial)
+            grade = name
             app.changed()
         }
     }
 }
+
+private const val NEW = "__new__"
 
 @Composable
 private fun SourceButton(label: String, icon: ImageVector, color: Color, modifier: Modifier, onClick: () -> Unit) {

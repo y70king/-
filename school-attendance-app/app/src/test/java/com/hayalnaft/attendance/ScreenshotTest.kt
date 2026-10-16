@@ -84,8 +84,8 @@ class ScreenshotTest {
             app.db.setGrade(ids[i], sub.id, f, (m - sub.id % 3 * 2).coerceAtLeast(0.0))
         }
         val day = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
-        listOf(8 * 60 to math, 8 * 60 + 50 to subjects[2], 9 * 60 + 40 to subjects[0], 23 * 60 + 30 to subjects[3]).forEach { (t, s) ->
-            app.db.savePeriod(Period(0, sid, day, t, 45, cls.id, s.id))
+        listOf(8 * 60 to math, 8 * 60 + 35 to subjects[2], 9 * 60 + 10 to subjects[0], 23 * 60 + 30 to subjects[3]).forEach { (t, s) ->
+            app.db.savePeriod(Period(0, sid, day, t, 30, cls.id, s.id))
         }
         val t = LessonTemplates.all[2]
         val planId = app.db.savePlan(
@@ -110,6 +110,14 @@ class ScreenshotTest {
         // Marking absent asks before contacting the parent.
         rule.onNodeWithText("نعم، بلّغ ولي الأمر").assertExists()
         rule.onNodeWithText("لا").performClick()
+        shot("08c-undo-banner")
+        // A wrong tap can be undone: back to the first student, absence removed.
+        rule.onNodeWithText("تراجع").performClick()
+        rule.waitForIdle()
+        org.junit.Assert.assertEquals(Status.NONE, app.db.attendance(cls.id, today, 0).first().status)
+        rule.onNodeWithText("أحمد محمد علي").assertExists()
+        go(app, Screen.Import(null)); shot("08d-import-pick")
+        rule.onNodeWithText(cls.name).performClick(); shot("08e-import-picked")
         go(app, Screen.Grades(cls.id)); shot("09-grades")
         go(app, Screen.StudentDetail(ids[0])); shot("10-student")
         go(app, Screen.Timetable); shot("11-timetable")

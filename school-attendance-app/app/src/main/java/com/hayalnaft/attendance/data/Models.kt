@@ -75,7 +75,7 @@ data class DateRange(val from: String, val to: String, val label: String) {
     }
 }
 
-data class HistoryRow(val date: String, val subjectName: String?, val status: Int)
+data class HistoryRow(val date: String, val subjectName: String?, val status: Int, val subjectId: Long = 0)
 
 data class StudentEvent(val id: Long, val studentId: Long, val date: String, val ts: Long, val type: Int, val points: Int, val note: String)
 

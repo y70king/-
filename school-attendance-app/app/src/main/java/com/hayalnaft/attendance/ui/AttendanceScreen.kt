@@ -30,6 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.LinearProgressIndicator
@@ -216,6 +218,10 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                     whatsapp = app.whatsappChannel,
                     pendingCount = pending.size,
                     onMark = { r, st -> mark(r, st, toggle = false) },
+                    onSet = { r, st ->
+                        app.db.setStatus(r.student.id, date, subjectId, st)
+                        app.changed()
+                    },
                     onMessage = { r -> app.notifyStatus(r.student, date, subjectId, r.status) },
                     onPoints = { r, p -> addPoints(r.student, p) },
                     onNote = { noteFor = it.student },
@@ -463,6 +469,8 @@ private fun StatusButton(status: Int, selected: Boolean, modifier: Modifier, onC
     }
 }
 
+private data class UndoInfo(val index: Int, val name: String, val oldStatus: Int, val newStatus: Int)
+
 /** Choose the grade, then its section. */
 @Composable
 private fun ClassPicker(classes: List<SchoolClass>, onPick: (Long) -> Unit) {
@@ -536,6 +544,7 @@ private fun OneByOne(
     whatsapp: Boolean,
     pendingCount: Int,
     onMark: (AttendanceRow, Int) -> Unit,
+    onSet: (AttendanceRow, Int) -> Unit,
     onMessage: (AttendanceRow) -> Unit,
     onPoints: (AttendanceRow, Int) -> Unit,
     onNote: (AttendanceRow) -> Unit,
@@ -547,6 +556,8 @@ private fun OneByOne(
     var index by rememberSaveable(key) {
         mutableIntStateOf(rows.indexOfFirst { it.status == Status.NONE }.let { if (it < 0) rows.size else it })
     }
+    // The last choice, so a wrong tap can be undone: position, student, status before and after.
+    var last by remember(key) { mutableStateOf<UndoInfo?>(null) }
     val counts = StatusUi.order.associateWith { s -> rows.count { it.status == s } }
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -567,6 +578,34 @@ private fun OneByOne(
             drawStopIndicator = {},
         )
         Spacer(Modifier.height(12.dp))
+        last?.let { u ->
+            Surface(
+                color = StatusUi.color(u.newStatus).copy(alpha = 0.12f),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            ) {
+                Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(StatusUi.icon(u.newStatus), null, tint = StatusUi.color(u.newStatus), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${u.name}: ${StatusUi.label(u.newStatus)}",
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    TextButton(onClick = {
+                        rows.getOrNull(u.index)?.let { onSet(it, u.oldStatus) }
+                        index = u.index
+                        last = null
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("تراجع", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         if (index >= rows.size) {
             val unmarked = rows.indexOfFirst { it.status == Status.NONE }
             Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(20.dp)) {
@@ -630,6 +669,7 @@ private fun OneByOne(
                             val sel = r.status == s
                             Surface(
                                 onClick = {
+                                    last = UndoInfo(index, r.student.name, r.status, s)
                                     onMark(r, s)
                                     index++
                                 },
@@ -645,6 +685,16 @@ private fun OneByOne(
                                 }
                             }
                         }
+                    }
+                }
+                if (r.status != Status.NONE) {
+                    TextButton(onClick = {
+                        onSet(r, Status.NONE)
+                        last = null
+                    }) {
+                        Icon(Icons.Filled.Delete, null, tint = AbsentRed, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("مسح التسجيل (${StatusUi.label(r.status)})", color = AbsentRed)
                     }
                 }
                 if ((r.status == Status.ABSENT || r.status == Status.LATE) && !r.notified && r.student.phone.isNotBlank()) {

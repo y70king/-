@@ -183,7 +183,7 @@ fun SettingsScreen(app: AppState) {
             SettingsCard("تبليغ أولياء الأمور") {
                 Text("طريقة الإرسال", style = MaterialTheme.typography.labelLarge)
                 OptionChips(
-                    listOf(Prefs.CHANNEL_SMS, Prefs.CHANNEL_WHATSAPP), channel,
+                    listOf(Prefs.CHANNEL_WHATSAPP, Prefs.CHANNEL_SMS), channel,
                     { if (it == Prefs.CHANNEL_SMS) "رسالة SMS (بدون إنترنت)" else "واتساب" },
                 ) { channel = it; prefs.channel = it }
                 Text(

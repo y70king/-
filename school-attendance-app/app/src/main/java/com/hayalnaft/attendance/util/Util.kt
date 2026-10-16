@@ -50,7 +50,7 @@ class Prefs(context: Context) {
 
     /** How parents are notified: [CHANNEL_SMS] sends from the SIM, [CHANNEL_WHATSAPP] opens WhatsApp. */
     var channel: String
-        get() = sp.getString("channel", null) ?: CHANNEL_SMS
+        get() = sp.getString("channel", null) ?: CHANNEL_WHATSAPP
         set(v) = sp.edit().putString("channel", v).apply()
 
     /** PIN asked before deleting data; empty means no protection. */
@@ -208,9 +208,18 @@ object Phone {
         }
     }
 
+    /** Opens the parent's WhatsApp chat with the message ready to send (WhatsApp, then WhatsApp Business, then the browser). */
     fun whatsapp(context: Context, phone: String, body: String, countryCode: String) {
-        val d = waNumber(phone, countryCode)
-        start(context, Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$d?text=" + Uri.encode(body))))
+        val uri = Uri.parse("https://api.whatsapp.com/send?phone=${waNumber(phone, countryCode)}&text=" + Uri.encode(body))
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            } catch (e: ActivityNotFoundException) {
+                // Not installed; try the next one.
+            }
+        }
+        start(context, Intent(Intent.ACTION_VIEW, uri))
     }
 
     /** Shares a file (e.g. a PDF report). With a phone, opens that parent's WhatsApp chat directly when possible. */

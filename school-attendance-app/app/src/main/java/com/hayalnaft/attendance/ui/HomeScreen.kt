@@ -172,9 +172,9 @@ fun HomeScreen(app: AppState) {
                     ) { Icon(Icons.Filled.HowToReg, null, modifier = Modifier.size(30.dp)) }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("التعداد اليومي والحضور", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("التعداد اليومي", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "حضور وغياب ونقاط نشاط وسلوك بنقرة واحدة",
+                            "اختر الصف والشعبة ثم سجّل الطلاب واحداً تلو الآخر",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.85f),
                         )

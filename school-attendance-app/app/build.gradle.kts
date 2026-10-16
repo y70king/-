@@ -12,8 +12,8 @@ android {
         applicationId = "com.hayalnaft.attendance"
         minSdk = 21
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 4
+        versionName = "3.1"
     }
 
     // A fixed key so every new build installs as an update over the previous one.

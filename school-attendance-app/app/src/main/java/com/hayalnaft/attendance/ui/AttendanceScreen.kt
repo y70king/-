@@ -32,7 +32,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.LinearProgressIndicator
 import com.hayalnaft.attendance.data.SchoolClass
 import com.hayalnaft.attendance.data.Stages
@@ -100,7 +99,9 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
     if (subjectId != 0L && subjects.none { it.id == subjectId }) subjectId = 0L
     val classId = classes.firstOrNull { it.id == selected }?.id
     val cls = classes.firstOrNull { it.id == classId }
+    // Cards one student at a time; the full list is only for reviewing after the roll call.
     var oneByOne by rememberSaveable { mutableStateOf(true) }
+    val lessonMode = initialSubjectId != null
     var date by rememberSaveable { mutableStateOf(Dates.today()) }
     val rows = remember(v, classId, date, subjectId) { classId?.let { app.db.attendance(it, date, subjectId) } ?: emptyList() }
     val activity = remember(v, classId, date) { classId?.let { app.db.dayActivity(it, date) } ?: emptyMap() }
@@ -138,10 +139,8 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 subtitle = Dates.pretty(date),
                 onBack = app::back,
                 actions = {
-                    if (classId != null) {
-                        IconButton(onClick = { oneByOne = !oneByOne }) {
-                            Icon(if (oneByOne) Icons.Filled.ViewList else Icons.Filled.Person, if (oneByOne) "عرض القائمة" else "طالب طالب")
-                        }
+                    if (classId != null && !oneByOne) {
+                        IconButton(onClick = { oneByOne = true }) { Icon(Icons.Filled.Person, "العودة للبطاقات") }
                     }
                     IconButton(onClick = { showDate = true }) { Icon(Icons.Filled.CalendarMonth, "اختيار التاريخ") }
                 },
@@ -194,9 +193,9 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 Icon(Icons.Filled.School, null, tint = Ink, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(cls.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { selected = null }) { Text("تغيير الصف") }
+                TextButton(onClick = { selected = null; oneByOne = true }) { Text("تغيير الصف") }
             }
-            if (subjects.isNotEmpty()) {
+            if (lessonMode && subjects.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 SubjectChips(subjects, subjectId, { subjectId = it }, generalLabel = "التعداد اليومي")
             }
@@ -212,6 +211,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                     rows = rows,
                     activity = activity,
                     autoSend = app.prefs.autoSend,
+                    whatsapp = app.whatsappChannel,
                     pendingCount = pending.size,
                     onMark = { r, st -> mark(r, st, toggle = false) },
                     onMessage = { r -> app.notifyStatus(r.student, date, subjectId, r.status) },
@@ -502,6 +502,7 @@ private fun OneByOne(
     rows: List<AttendanceRow>,
     activity: Map<Long, DayActivity>,
     autoSend: Boolean,
+    whatsapp: Boolean,
     pendingCount: Int,
     onMark: (AttendanceRow, Int) -> Unit,
     onMessage: (AttendanceRow) -> Unit,
@@ -623,7 +624,7 @@ private fun OneByOne(
                     ) {
                         Icon(Icons.Filled.Send, null)
                         Spacer(Modifier.width(6.dp))
-                        Text("إرسال رسالة لولي الأمر الآن")
+                        Text(if (whatsapp) "إرسال رسالة واتساب لولي الأمر" else "إرسال رسالة لولي الأمر الآن")
                     }
                 }
                 Spacer(Modifier.height(10.dp))

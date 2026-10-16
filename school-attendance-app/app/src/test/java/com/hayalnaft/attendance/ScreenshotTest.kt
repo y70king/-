@@ -105,6 +105,7 @@ class ScreenshotTest {
         rule.onNodeWithText("التقرير").performClick(); shot("06-class-report")
         go(app, Screen.Attendance()); shot("07-attendance-pick")
         go(app, Screen.Attendance(cls.id, math.id)); shot("08-attendance-one")
+        go(app, Screen.Attendance(cls.id)); shot("08b-daily-card")
         go(app, Screen.Grades(cls.id)); shot("09-grades")
         go(app, Screen.StudentDetail(ids[0])); shot("10-student")
         go(app, Screen.Timetable); shot("11-timetable")

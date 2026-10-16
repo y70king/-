@@ -138,7 +138,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                             app.changed()
                             val skipped = list.size - added
                             app.toast(
-                                "تمت إضافة $added طالب إلى ${t.name}" +
+                                "تمت إضافة $added طالب إلى ${t.title}" +
                                     if (skipped > 0) " (تم تجاهل $skipped اسم مكرر)" else ""
                             )
                             app.back()
@@ -148,7 +148,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                     ) {
                         Icon(Icons.Filled.PlaylistAddCheck, null)
                         Spacer(Modifier.width(8.dp))
-                        Text("إضافة $selectedCount طالب إلى ${target?.name ?: ""}", fontWeight = FontWeight.Bold)
+                        Text("إضافة $selectedCount طالب إلى ${target?.title ?: ""}", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -285,8 +285,8 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
     }
 
     if (newClass) {
-        TextInputDialog("صف جديد", "اسم الصف", onDismiss = { newClass = false }) {
-            classId = app.db.addClass(sid, it)
+        ClassDialog(null, app.db.school(sid)?.stage ?: "", onDismiss = { newClass = false }) { name, section, room, ministerial ->
+            classId = app.db.addClass(sid, name, section, room, ministerial)
             app.changed()
         }
     }

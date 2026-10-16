@@ -24,7 +24,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -80,6 +83,8 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
     var body by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf("") }
     var confirm by remember { mutableStateOf(false) }
+    var waList by remember { mutableStateOf(false) }
+    val sentWa = remember { mutableStateListOf<Long>() }
 
     val student = remember(v, studentId) { app.db.student(studentId) }
     val cls = classes.firstOrNull { it.id == classId } ?: classes.firstOrNull()
@@ -189,13 +194,16 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
             item {
                 Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { confirm = true },
+                        onClick = { if (app.whatsappChannel) waList = true else confirm = true },
                         enabled = body.isNotBlank() && withPhone.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                     ) {
                         Icon(Icons.Filled.Send, null)
                         Spacer(Modifier.width(8.dp))
-                        Text("إرسال إلى ${withPhone.size} ولي أمر", fontWeight = FontWeight.Bold)
+                        Text(
+                            "إرسال إلى ${withPhone.size} ولي أمر" + if (app.whatsappChannel) " (واتساب)" else " (SMS)",
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                     val missing = recipients.size - withPhone.size
                     if (missing > 0) {
@@ -239,6 +247,40 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
                 }
             }
         }
+    }
+
+    if (waList) {
+        val today = Dates.today()
+        AlertDialog(
+            onDismissRequest = { waList = false },
+            title = { Text("إرسال عبر واتساب") },
+            text = {
+                Column {
+                    Text("اضغط على كل ولي أمر لفتح محادثته برسالة جاهزة ثم اضغط إرسال في واتساب.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(withPhone, key = { it.id }) { s ->
+                            val done = s.id in sentWa
+                            Card(
+                                onClick = {
+                                    val text = Templates.fill(body, s, schoolName, today)
+                                    Phone.whatsapp(ctx, s.phone, text, app.prefs.countryCode)
+                                    app.db.logMessage(sid, s.name, s.phone, text, true, "تبليغ (واتساب)")
+                                    sentWa.add(s.id)
+                                },
+                                colors = CardDefaults.cardColors(containerColor = if (done) PresentGreen.copy(alpha = 0.1f) else Color(0xFFF1F4F8)),
+                            ) {
+                                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(s.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    Icon(if (done) Icons.Filled.CheckCircle else Icons.Filled.Send, null, tint = if (done) PresentGreen else Color(0xFF1FA855))
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { waList = false; app.changed() }) { Text("تم") } },
+        )
     }
 
     if (confirm) {

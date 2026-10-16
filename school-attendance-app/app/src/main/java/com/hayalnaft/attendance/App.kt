@@ -9,9 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hayalnaft.attendance.data.DEFAULT_SCHOOL
 import com.hayalnaft.attendance.data.Db
+import com.hayalnaft.attendance.data.School
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.Student
 import com.hayalnaft.attendance.util.Phone
@@ -33,12 +35,16 @@ sealed interface Screen {
     data object Home : Screen
     data object Students : Screen
     data class Import(val classId: Long?) : Screen
-    data object Attendance : Screen
+    data class Attendance(val classId: Long? = null, val subjectId: Long? = null) : Screen
     data class Messages(val studentId: Long? = null) : Screen
     data object Reports : Screen
     data class StudentDetail(val studentId: Long) : Screen
-    data object Schools : Screen
     data object Settings : Screen
+    data object Subjects : Screen
+    data object Grades : Screen
+    data object Timetable : Screen
+    data object Plans : Screen
+    data class PlanEditor(val planId: Long?) : Screen
 }
 
 data class OutMsg(
@@ -106,14 +112,11 @@ class AppState(context: Context) {
         toast(msg)
     }
 
+    /** The app serves a single school, Hay Al-Naft secondary; it is created on first run. */
     fun ensureSchool() {
         val schools = db.schools()
-        val saved = prefs.schoolId
-        schoolId = when {
-            schools.any { it.id == saved } -> saved
-            schools.isNotEmpty() -> schools.first().id
-            else -> db.addSchool(DEFAULT_SCHOOL, withClasses = true)
-        }
+        schoolId = (schools.firstOrNull { it.name == DEFAULT_SCHOOL } ?: schools.firstOrNull())?.id
+            ?: db.addSchool(School(0, DEFAULT_SCHOOL), withClasses = true)
         prefs.schoolId = schoolId
     }
 
@@ -152,21 +155,52 @@ class AppState(context: Context) {
         }
     }
 
-    /** Sends the absence / lateness message to the student's parent and marks the day as notified. */
-    fun notifyStatus(student: Student, date: String, status: Int) {
+    /** An action waiting for the PIN to be entered; shown as a dialog by the root composable. */
+    var pendingGuard by mutableStateOf<(() -> Unit)?>(null)
+
+    /** Runs a destructive action, asking for the PIN first when one is set. */
+    fun guard(action: () -> Unit) {
+        if (prefs.pin.isBlank()) action() else pendingGuard = action
+    }
+
+    val whatsappChannel: Boolean get() = prefs.channel == Prefs.CHANNEL_WHATSAPP
+
+    /**
+     * Notifies the student's parent of an absence or lateness: by SMS straight from the SIM, or by opening
+     * WhatsApp with the message ready, depending on the chosen channel.
+     */
+    fun notifyStatus(student: Student, date: String, subjectId: Long, status: Int) {
         if (student.phone.isBlank()) {
             toast("لا يوجد رقم هاتف لولي أمر ${student.name}")
             return
         }
-        send(listOf(statusMessage(student, date, status)))
+        val msg = statusMessage(student, date, subjectId, status)
+        if (whatsappChannel) {
+            Phone.whatsapp(ctx, msg.phone, msg.body, prefs.countryCode)
+            db.logMessage(msg.schoolId, msg.studentName, msg.phone, msg.body, true, msg.kind + " (واتساب)")
+            msg.onSent?.invoke()
+            changed()
+        } else {
+            send(listOf(msg))
+        }
     }
 
-    fun statusMessage(student: Student, date: String, status: Int): OutMsg {
+    fun statusMessage(student: Student, date: String, subjectId: Long, status: Int): OutMsg {
         val late = status == Status.LATE
-        val body = Templates.fill(if (late) prefs.lateTemplate else prefs.absentTemplate, student, schoolName(), date)
+        val subject = if (subjectId == 0L) "" else db.subjects(student.schoolId).firstOrNull { it.id == subjectId }?.name.orEmpty()
+        var tpl = if (late) prefs.lateTemplate else prefs.absentTemplate
+        if (subject.isNotBlank() && "{المادة}" !in tpl) tpl = tpl.replace("عن الدوام", "عن حصة $subject")
+        val body = Templates.fill(tpl, student, schoolName(), date, subject)
         return OutMsg(student.schoolId, student.phone, body, student.name, if (late) "تأخر" else "غياب") {
-            db.markNotified(student.id, date)
+            db.markNotified(student.id, date, subjectId)
         }
+    }
+
+    /** Opens the roll call of a lesson, e.g. from the timetable alarm. */
+    fun openAttendance(schoolId: Long, classId: Long, subjectId: Long) {
+        if (schoolId != this.schoolId && db.school(schoolId) != null) selectSchool(schoolId)
+        while (stack.size > 1) back()
+        go(Screen.Attendance(classId, subjectId))
     }
 
     // ---------- Backup ----------
@@ -198,6 +232,7 @@ class AppState(context: Context) {
             tmp.copyTo(target, overwrite = true)
             ensureSchool()
             changed()
+            Alarms.reschedule(ctx)
             return null
         } catch (e: Exception) {
             return "الملف ليس نسخة احتياطية صحيحة"

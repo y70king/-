@@ -21,6 +21,38 @@ class ImporterTest {
         )
     }
 
+    private val excelStudents = listOf(
+        ParsedStudent("أحمد محمد علي", "07701234567"),
+        ParsedStudent("علي حسين كاظم", "07801234567"),
+        ParsedStudent("مصطفى كريم جاسم", ""),
+        ParsedStudent("حسن عباس فاضل", "07709876543"),
+    )
+
+    private val wordStudents = listOf(
+        ParsedStudent("محمد جواد كاظم", "07711112222"),
+        ParsedStudent("زيد علي حسين", ""),
+        ParsedStudent("كرار عادل سالم", "07501112233"),
+        ParsedStudent("سجاد ماجد", ""),
+    )
+
+    @Test
+    fun readsOldExcelFormat() {
+        assertEquals(excelStudents, Importer.fromBytes(resource("students.xls")))
+    }
+
+    @Test
+    fun readsLongOldExcelListAcrossContinueRecords() {
+        val list = Importer.fromBytes(resource("many.xls"))
+        assertEquals(400, list.size)
+        assertEquals(ParsedStudent("طالب رقم 1 محمد عبد الله الحسيني", "07700000001"), list.first())
+        assertEquals(ParsedStudent("طالب رقم 400 محمد عبد الله الحسيني", "07700000400"), list.last())
+    }
+
+    @Test
+    fun readsOldWordFormat() {
+        assertEquals(wordStudents, Importer.fromBytes(resource("students.doc")))
+    }
+
     @Test
     fun readsWordParagraphsAndTables() {
         assertEquals(

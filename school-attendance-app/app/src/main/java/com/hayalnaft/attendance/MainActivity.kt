@@ -1,6 +1,7 @@
 package com.hayalnaft.attendance
 
 import android.Manifest
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -23,21 +24,29 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.hayalnaft.attendance.ui.AppTheme
 import com.hayalnaft.attendance.ui.AttendanceScreen
+import com.hayalnaft.attendance.ui.GradesScreen
 import com.hayalnaft.attendance.ui.HomeScreen
 import com.hayalnaft.attendance.ui.ImportScreen
 import com.hayalnaft.attendance.ui.MessagesScreen
+import com.hayalnaft.attendance.ui.PinDialog
+import com.hayalnaft.attendance.ui.PlanEditorScreen
+import com.hayalnaft.attendance.ui.PlansScreen
 import com.hayalnaft.attendance.ui.ReportsScreen
-import com.hayalnaft.attendance.ui.SchoolsScreen
 import com.hayalnaft.attendance.ui.SendingBanner
 import com.hayalnaft.attendance.ui.SettingsScreen
 import com.hayalnaft.attendance.ui.StudentDetailScreen
 import com.hayalnaft.attendance.ui.StudentsScreen
+import com.hayalnaft.attendance.ui.SubjectsScreen
+import com.hayalnaft.attendance.ui.TimetableScreen
 
 class MainActivity : ComponentActivity() {
+    private val app get() = (application as App).state
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        val app = (application as App).state
+        if (savedInstanceState == null) handleAlarm(intent)
+        Alarms.reschedule(this)
         setContent {
             AppTheme {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -45,6 +54,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleAlarm(intent)
+    }
+
+    /** Opens the lesson's roll call when launched from the timetable alarm. */
+    private fun handleAlarm(intent: Intent?) {
+        val classId = intent?.getLongExtra(Alarms.EXTRA_CLASS, 0) ?: 0
+        if (classId == 0L) return
+        Alarms.stop(this)
+        app.openAttendance(
+            intent!!.getLongExtra(Alarms.EXTRA_SCHOOL, app.schoolId),
+            classId,
+            intent.getLongExtra(Alarms.EXTRA_SUBJECT, 0),
+        )
     }
 }
 
@@ -85,14 +111,29 @@ private fun AppRoot(app: AppState) {
                 Screen.Home -> HomeScreen(app)
                 Screen.Students -> StudentsScreen(app)
                 is Screen.Import -> ImportScreen(app, screen.classId)
-                Screen.Attendance -> AttendanceScreen(app)
+                is Screen.Attendance -> AttendanceScreen(app, screen.classId, screen.subjectId)
                 is Screen.Messages -> MessagesScreen(app, screen.studentId)
                 Screen.Reports -> ReportsScreen(app)
                 is Screen.StudentDetail -> StudentDetailScreen(app, screen.studentId)
-                Screen.Schools -> SchoolsScreen(app)
                 Screen.Settings -> SettingsScreen(app)
+                Screen.Subjects -> SubjectsScreen(app)
+                Screen.Grades -> GradesScreen(app)
+                Screen.Timetable -> TimetableScreen(app)
+                Screen.Plans -> PlansScreen(app)
+                is Screen.PlanEditor -> PlanEditorScreen(app, screen.planId)
             }
         }
         SendingBanner(app, Modifier.align(Alignment.BottomCenter))
+    }
+
+    app.pendingGuard?.let { action ->
+        PinDialog(
+            expected = app.prefs.pin,
+            onDismiss = { app.pendingGuard = null },
+            onSuccess = {
+                app.pendingGuard = null
+                action()
+            },
+        )
     }
 }

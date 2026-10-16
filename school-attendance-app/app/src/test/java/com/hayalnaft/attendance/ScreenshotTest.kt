@@ -4,9 +4,17 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
+import com.hayalnaft.attendance.data.EventType
+import com.hayalnaft.attendance.data.GradeField
+import com.hayalnaft.attendance.data.LessonPlan
+import com.hayalnaft.attendance.data.Period
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.util.Dates
 import com.hayalnaft.attendance.util.Importer
+import com.hayalnaft.attendance.util.LessonTemplates
+import com.hayalnaft.attendance.util.PageSink
+import com.hayalnaft.attendance.util.PdfBuilder
+import com.hayalnaft.attendance.util.Reports
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,8 +22,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.util.Calendar
 
-/** Renders the main screens to build/screenshots so the layout can be reviewed without a phone. */
+/** Renders the main screens and PDF reports to build/ so the layout can be reviewed without a phone. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = "w400dp-h860dp-xxhdpi")
@@ -25,9 +34,12 @@ class ScreenshotTest {
 
     @Test
     fun screens() {
-        val app = ApplicationProvider.getApplicationContext<App>().state
+        val ctx = ApplicationProvider.getApplicationContext<App>()
+        val app = ctx.state
         val sid = app.schoolId
-        val classId = app.db.classes(sid)[3].id
+        val school = app.db.school(sid)!!.copy(directorate = "البصرة", principal = "أ. علي حسن", teacher = "أ. محمد كاظم")
+        app.db.updateSchool(school)
+        val cls = app.db.classes(sid).first { it.name == "الرابع العلمي" }
         val names = Importer.fromText(
             """
             أحمد محمد علي	07701234567
@@ -39,26 +51,85 @@ class ScreenshotTest {
             سجاد ماجد حميد	07721112233
             """.trimIndent()
         )
-        app.db.importStudents(sid, classId, names)
+        app.db.importStudents(sid, cls.id, names)
+        listOf("اللغة العربية", "الرياضيات", "الفيزياء", "الكيمياء", "اللغة الإنكليزية").forEach { app.db.addSubject(sid, it) }
+        val subjects = app.db.subjects(sid)
+        val math = subjects[1]
         val today = Dates.today()
-        val ids = app.db.students(sid, classId).map { it.id }
-        app.db.setStatus(ids[0], today, Status.PRESENT)
-        app.db.setStatus(ids[1], today, Status.ABSENT)
-        app.db.markNotified(ids[1], today)
-        app.db.setStatus(ids[2], today, Status.LATE)
-        app.db.setStatus(ids[3], today, Status.PRESENT)
-        app.db.setStatus(ids[4], today, Status.EXCUSED)
+        val ids = app.db.students(sid, cls.id).map { it.id }
+        app.db.setStatus(ids[0], today, math.id, Status.PRESENT)
+        app.db.setStatus(ids[1], today, math.id, Status.ABSENT)
+        app.db.markNotified(ids[1], today, math.id)
+        app.db.setStatus(ids[2], today, math.id, Status.LATE)
+        app.db.setStatus(ids[3], today, math.id, Status.PRESENT)
+        app.db.setStatus(ids[4], today, math.id, Status.EXCUSED)
+        app.db.addEvent(ids[0], today, EventType.POINTS, 5)
+        app.db.addEvent(ids[0], today, EventType.GOOD, 0, "شارك بفاعلية في حل التمارين")
+        app.db.addEvent(ids[2], today, EventType.BAD, 0, "كثير الحديث أثناء الشرح")
+        val marks = listOf(
+            listOf(95.0, 92.0, 94.0, 96.0, 90.0, null),
+            listOf(70.0, 75.0, 60.0, 80.0, 81.0, 65.0),
+            listOf(40.0, 45.0, 38.0, 50.0, 42.0, 44.0),
+            listOf(85.0, 88.0, 80.0, 90.0, 86.0, 82.0),
+            listOf(60.0, 66.0, 58.0, 70.0, 72.0, 61.0),
+        )
+        for ((i, row) in marks.withIndex()) for (sub in subjects) for ((j, f) in GradeField.inputs.withIndex()) {
+            val m = row[j] ?: continue
+            app.db.setGrade(ids[i], sub.id, f, (m - sub.id % 3 * 2).coerceAtLeast(0.0))
+        }
+        val day = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        listOf(8 * 60 to math, 8 * 60 + 50 to subjects[2], 9 * 60 + 40 to subjects[0], 23 * 60 + 30 to subjects[3]).forEach { (t, s) ->
+            app.db.savePeriod(Period(0, sid, day, t, 45, cls.id, s.id))
+        }
+        val t = LessonTemplates.all[2]
+        val planId = app.db.savePlan(
+            LessonPlan(
+                schoolId = sid, date = today, classId = cls.id, subjectId = math.id, title = "حل المعادلات من الدرجة الثانية",
+                cognitive = t.cognitive, affective = t.affective, psychomotor = t.psychomotor, aids = t.aids, steps = t.steps,
+                homework = t.homework,
+            )
+        )
         app.changed()
 
         shot("01-home")
-        go(app, Screen.Attendance); shot("02-attendance")
-        go(app, Screen.Students); shot("03-students")
-        go(app, Screen.Import(classId)); shot("04-import")
-        go(app, Screen.Messages()); shot("05-messages")
-        go(app, Screen.Reports); shot("06-reports")
-        go(app, Screen.StudentDetail(ids[1])); shot("07-student")
-        go(app, Screen.Schools); shot("08-schools")
-        go(app, Screen.Settings); shot("09-settings")
+        go(app, Screen.Attendance(cls.id, math.id)); shot("02-attendance")
+        go(app, Screen.Grades); shot("03-grades")
+        go(app, Screen.StudentDetail(ids[0])); shot("04-student")
+        go(app, Screen.Timetable); shot("05-timetable")
+        go(app, Screen.PlanEditor(planId)); shot("06-plan")
+        go(app, Screen.Students); shot("07-students")
+        go(app, Screen.Settings); shot("08-settings")
+        go(app, Screen.Subjects); shot("09-subjects")
+        go(app, Screen.Reports); shot("10-reports")
+
+        val s = app.db.school(sid)!!
+        val c = app.db.classes(sid).first { it.id == cls.id }
+        val out = File("build/pdfs").apply { mkdirs() }
+        var tag = ""
+        // PdfDocument has no native implementation under Robolectric, so pages are captured as images.
+        PdfBuilder.sinkFactory = {
+            object : PageSink {
+                val pages = mutableListOf<Bitmap>()
+                override fun start(width: Int, height: Int, number: Int): Canvas {
+                    val b = Bitmap.createBitmap(width * 2, height * 2, Bitmap.Config.ARGB_8888)
+                    pages.add(b)
+                    return Canvas(b).apply { scale(2f, 2f) }
+                }
+                override fun finish() {}
+                override fun write(file: File) {
+                    pages.forEachIndexed { i, b ->
+                        File(out, "$tag-${i + 1}.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    }
+                    file.writeText("")
+                }
+            }
+        }
+        tag = "subject"; Reports.subjectSheet(ctx, app.db, s, c, math)
+        tag = "class"; Reports.classSheet(ctx, app.db, s, c)
+        tag = "student"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[0])!!)
+        tag = "certificate"; Reports.certificate(ctx, s, c, app.db.student(ids[0])!!, listOf("الرياضيات" to 94))
+        tag = "plan"; Reports.lessonPlan(ctx, s, app.db.plan(planId)!!)
+        File(out, "student.txt").writeText(Reports.studentText(app.db, s, c, app.db.student(ids[0])!!))
     }
 
     private fun go(app: AppState, screen: Screen) = rule.runOnIdle {

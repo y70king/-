@@ -111,7 +111,8 @@ fun ReportsScreen(app: AppState) {
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(day, key = { it.student.id }) { r ->
+                        items(day.size) { i ->
+                            val r = day[i]
                             Card(
                                 onClick = { app.go(Screen.StudentDetail(r.student.id)) },
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -122,7 +123,11 @@ fun ReportsScreen(app: AppState) {
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(r.student.name, fontWeight = FontWeight.Bold)
-                                        Text(r.student.className, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        Text(
+                                            r.student.className + (r.subjectName?.let { " • حصة $it" } ?: " • التعداد اليومي"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.Gray,
+                                        )
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Tag(StatusUi.label(r.status), StatusUi.color(r.status))

@@ -51,10 +51,16 @@ object Importer {
             }
         }
         if (bytes.size >= 8 && bytes[0] == 0xD0.toByte() && bytes[1] == 0xCF.toByte()) {
-            throw ImportException(
-                "هذا الملف بصيغة قديمة (xls أو doc). افتحه واحفظه بصيغة xlsx أو docx ثم أعد المحاولة، " +
-                    "أو انسخ الأسماء منه والصقها مباشرة."
-            )
+            val file = try {
+                CompoundFile(bytes)
+            } catch (e: Exception) {
+                throw ImportException("تعذرت قراءة الملف")
+            }
+            return when {
+                file.stream("Workbook") != null || file.stream("Book") != null -> fromRows(XlsReader.rows(file))
+                file.stream("WordDocument") != null -> fromRows(DocReader.rows(file))
+                else -> throw ImportException("صيغة الملف غير مدعومة")
+            }
         }
         return fromText(decodeText(bytes))
     }

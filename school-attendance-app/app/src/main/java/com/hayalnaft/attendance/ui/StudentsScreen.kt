@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -77,6 +79,9 @@ fun StudentsScreen(app: AppState) {
     var addClass by remember { mutableStateOf(false) }
     var renameClass by remember { mutableStateOf<SchoolClass?>(null) }
     var deleteClass by remember { mutableStateOf<SchoolClass?>(null) }
+    var copyFrom by remember { mutableStateOf<SchoolClass?>(null) }
+    var copyToNew by remember { mutableStateOf<SchoolClass?>(null) }
+    val stage = remember(v, sid) { app.db.school(sid)?.stage ?: "" }
 
     Scaffold(
         topBar = {
@@ -104,21 +109,17 @@ fun StudentsScreen(app: AppState) {
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        "${selectedClass.name}: ${selectedClass.count} طالب",
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { renameClass = selectedClass }) {
-                        Icon(Icons.Filled.Edit, null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("تعديل")
+                    Column(Modifier.weight(1f)) {
+                        Text("${selectedClass.title}: ${selectedClass.count} طالب", fontWeight = FontWeight.Bold)
+                        val info = listOfNotNull(
+                            selectedClass.room.takeIf { it.isNotBlank() }?.let { "قاعة $it" },
+                            "وزاري".takeIf { selectedClass.ministerial },
+                        )
+                        if (info.isNotEmpty()) Text(info.joinToString(" • "), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                     }
-                    TextButton(onClick = { deleteClass = selectedClass }) {
-                        Icon(Icons.Filled.Delete, null, tint = AbsentRed)
-                        Spacer(Modifier.width(4.dp))
-                        Text("حذف", color = AbsentRed)
-                    }
+                    IconButton(onClick = { renameClass = selectedClass }) { Icon(Icons.Filled.Edit, "تعديل الصف") }
+                    IconButton(onClick = { copyFrom = selectedClass }) { Icon(Icons.Filled.ContentCopy, "نسخ الطلاب إلى صف آخر") }
+                    IconButton(onClick = { deleteClass = selectedClass }) { Icon(Icons.Filled.Delete, "حذف الصف", tint = AbsentRed) }
                 }
             }
             OutlinedTextField(
@@ -177,31 +178,65 @@ fun StudentsScreen(app: AppState) {
     }
     deleting?.let { s ->
         ConfirmDialog(
-            "حذف طالب", "هل تريد حذف الطالب ${s.name} وكل سجل حضوره؟", "حذف", danger = true,
+            "حذف طالب", "هل تريد حذف الطالب ${s.name} وكل سجلاته ودرجاته؟", "حذف", danger = true,
             onDismiss = { deleting = null },
-        ) { app.db.deleteStudent(s.id); app.changed() }
+        ) { app.guard { app.db.deleteStudent(s.id); app.changed() } }
     }
     if (addClass) {
-        TextInputDialog("صف جديد", "اسم الصف (مثال: الرابع العلمي - أ)", onDismiss = { addClass = false }) {
-            classId = app.db.addClass(sid, it)
+        ClassDialog(null, stage, onDismiss = { addClass = false }) { name, section, room, ministerial ->
+            classId = app.db.addClass(sid, name, section, room, ministerial)
             app.changed()
         }
     }
     renameClass?.let { c ->
-        TextInputDialog("تعديل اسم الصف", "اسم الصف", c.name, onDismiss = { renameClass = null }) {
-            app.db.renameClass(c.id, it)
+        ClassDialog(c, stage, onDismiss = { renameClass = null }) { name, section, room, ministerial ->
+            app.db.updateClass(c.copy(name = name, section = section, room = room, ministerial = ministerial))
             app.changed()
         }
     }
     deleteClass?.let { c ->
         ConfirmDialog(
             "حذف الصف",
-            "سيتم حذف صف ${c.name} مع جميع طلابه (${c.count}) وسجل حضورهم. هل أنت متأكد؟",
+            "سيتم حذف صف ${c.title} مع جميع طلابه (${c.count}) وسجلاتهم ودرجاتهم. هل أنت متأكد؟",
             "حذف", danger = true, onDismiss = { deleteClass = null },
         ) {
-            app.db.deleteClass(c.id)
-            classId = null
+            app.guard {
+                app.db.deleteClass(c.id)
+                classId = null
+                app.changed()
+            }
+        }
+    }
+    copyFrom?.let { from ->
+        AlertDialog(
+            onDismissRequest = { copyFrom = null },
+            title = { Text("نسخ طلاب ${from.title}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("تُنسخ أسماء الطلاب وأرقام أولياء أمورهم إلى الصف المختار (مفيد عند الانتقال للمرحلة التالية).", style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { copyToNew = from; copyFrom = null }, modifier = Modifier.fillMaxWidth()) { Text("إلى صف جديد") }
+                    LazyColumn(Modifier.height(260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(classes.filter { it.id != from.id }, key = { it.id }) { c ->
+                            TextButton(onClick = {
+                                val n = app.db.copyStudents(from.id, c.id)
+                                app.changed()
+                                app.toast("تم نسخ $n طالب إلى ${c.title}")
+                                copyFrom = null
+                            }, modifier = Modifier.fillMaxWidth()) { Text("${c.title} (${c.count})") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { copyFrom = null }) { Text("إلغاء") } },
+        )
+    }
+    copyToNew?.let { from ->
+        ClassDialog(null, stage, onDismiss = { copyToNew = null }) { name, section, room, ministerial ->
+            val id = app.db.addClass(sid, name, section, room, ministerial)
+            val n = app.db.copyStudents(from.id, id)
+            classId = id
             app.changed()
+            app.toast("تم إنشاء الصف ونسخ $n طالب")
         }
     }
 }

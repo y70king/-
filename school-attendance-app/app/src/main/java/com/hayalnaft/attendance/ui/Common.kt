@@ -63,6 +63,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hayalnaft.attendance.AppState
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.hayalnaft.attendance.data.Subject
+import com.hayalnaft.attendance.data.Stages
+import androidx.compose.material3.Checkbox
+import com.hayalnaft.attendance.util.PdfFiles
+import com.hayalnaft.attendance.util.Phone
+import java.io.File
 import com.hayalnaft.attendance.data.SchoolClass
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.Student
@@ -191,7 +202,7 @@ fun ClassChips(
             FilterChip(
                 selected = selected == c.id,
                 onClick = { onSelect(c.id) },
-                label = { Text("${c.name} (${c.count})") },
+                label = { Text("${c.title} (${c.count})") },
                 colors = chipColors(),
             )
         }
@@ -352,7 +363,7 @@ fun StudentDialog(
                             FilterChip(
                                 selected = classId == c.id,
                                 onClick = { classId = c.id },
-                                label = { Text(c.name) },
+                                label = { Text(c.title) },
                                 colors = chipColors(),
                             )
                         }
@@ -397,4 +408,145 @@ fun SendingBanner(app: AppState, modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/** One-of-many choice shown as a row of chips that scrolls sideways. */
+@Composable
+fun <T> OptionChips(options: List<T>, selected: T?, label: (T) -> String, modifier: Modifier = Modifier, onSelect: (T) -> Unit) {
+    LazyRow(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(options.size) { i ->
+            val o = options[i]
+            FilterChip(selected = o == selected, onClick = { onSelect(o) }, label = { Text(label(o)) }, colors = chipColors())
+        }
+    }
+}
+
+/** Subject picker; [generalLabel] adds a choice for the general (whole-day) record with id 0. */
+@Composable
+fun SubjectChips(subjects: List<Subject>, selected: Long?, onSelect: (Long) -> Unit, generalLabel: String? = null) {
+    val ids = (if (generalLabel != null) listOf(0L) else emptyList()) + subjects.map { it.id }
+    OptionChips(ids, selected, { id -> if (id == 0L) generalLabel.orEmpty() else subjects.first { it.id == id }.name }) { onSelect(it) }
+}
+
+@Composable
+fun PinDialog(expected: String, onDismiss: () -> Unit, onSuccess: () -> Unit) {
+    var value by remember { mutableStateOf("") }
+    var wrong by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Lock, null, tint = Navy) },
+        title = { Text("أدخل الرمز السري") },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { v -> value = v.filter { it.isDigit() }; wrong = false },
+                singleLine = true,
+                isError = wrong,
+                supportingText = { if (wrong) Text("الرمز غير صحيح") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            )
+        },
+        confirmButton = {
+            Button(onClick = { if (value == expected) onSuccess() else wrong = true }) { Text("تأكيد") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
+    )
+}
+
+/** What to do with a generated PDF: share (e.g. WhatsApp), print, or send to the student's parent. */
+@Composable
+fun PdfDialog(app: AppState, file: File, title: String, parentPhone: String? = null, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.PictureAsPdf, null, tint = AbsentRed) },
+        title = { Text(title) },
+        text = { Text("تم إنشاء الملف بصيغة PDF جاهزاً للطباعة على ورق A4.") },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!parentPhone.isNullOrBlank()) {
+                    Button(onClick = { Phone.shareFile(ctx, file, "application/pdf", parentPhone, app.prefs.countryCode); onDismiss() }) {
+                        Text("إرسال لولي الأمر عبر واتساب")
+                    }
+                }
+                OutlinedButton(onClick = { Phone.shareFile(ctx, file, "application/pdf", null, app.prefs.countryCode); onDismiss() }) {
+                    Text("مشاركة / حفظ")
+                }
+                OutlinedButton(onClick = { PdfFiles.print(ctx, file, title); onDismiss() }) { Text("طباعة") }
+                TextButton(onClick = onDismiss) { Text("إغلاق") }
+            }
+        },
+    )
+}
+
+private val sections = listOf("أ", "ب", "ج", "د", "هـ", "و", "ز", "ح")
+
+/** Create or edit a class: its grade, section (شعبة), room number and whether its final exam is ministerial. */
+@Composable
+fun ClassDialog(
+    initial: SchoolClass?,
+    stage: String,
+    onDismiss: () -> Unit,
+    onSave: (name: String, section: String, room: String, ministerial: Boolean) -> Unit,
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var section by remember { mutableStateOf(initial?.section ?: "أ") }
+    var room by remember { mutableStateOf(initial?.room ?: "") }
+    var ministerial by remember { mutableStateOf(initial?.ministerial ?: false) }
+    val grades = Stages.grades(stage) + Stages.allGrades.filter { it !in Stages.grades(stage) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "صف جديد" else "تعديل الصف") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("الصف", style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(grades) { g ->
+                        FilterChip(
+                            selected = name == g,
+                            onClick = { name = g; ministerial = Stages.isMinisterial(g) },
+                            label = { Text(g) },
+                            colors = chipColors(),
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, label = { Text("اسم الصف") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Text("الشعبة", style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(sections) { sec ->
+                        FilterChip(selected = section == sec, onClick = { section = sec }, label = { Text(sec) }, colors = chipColors())
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = section, onValueChange = { section = it }, label = { Text("الشعبة") },
+                        singleLine = true, modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = room, onValueChange = { room = it }, label = { Text("رقم القاعة") },
+                        singleLine = true, modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = ministerial, onCheckedChange = { ministerial = it })
+                    Text("صف وزاري (لا يوجد إعفاء)", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = name.isNotBlank(), onClick = {
+                onSave(name.trim(), section.trim(), room.trim(), ministerial)
+                onDismiss()
+            }) { Text("حفظ") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
+    )
 }

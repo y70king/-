@@ -115,7 +115,7 @@ fun StudentsScreen(app: AppState) {
                             selectedClass.room.takeIf { it.isNotBlank() }?.let { "قاعة $it" },
                             "وزاري".takeIf { selectedClass.ministerial },
                         )
-                        if (info.isNotEmpty()) Text(info.joinToString(" • "), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        if (info.isNotEmpty()) Text(info.joinToString(" • "), style = MaterialTheme.typography.labelSmall, color = Muted)
                     }
                     IconButton(onClick = { renameClass = selectedClass }) { Icon(Icons.Filled.Edit, "تعديل الصف") }
                     IconButton(onClick = { copyFrom = selectedClass }) { Icon(Icons.Filled.ContentCopy, "نسخ الطلاب إلى صف آخر") }
@@ -242,13 +242,13 @@ fun StudentsScreen(app: AppState) {
 }
 
 @Composable
-private fun StudentCard(app: AppState, s: Student, showClass: Boolean, onEdit: () -> Unit, onDelete: () -> Unit) {
+internal fun StudentCard(app: AppState, s: Student, showClass: Boolean, onEdit: () -> Unit, onDelete: () -> Unit) {
     val ctx = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     Card(
         onClick = { app.go(Screen.StudentDetail(s.id)) },
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -258,10 +258,10 @@ private fun StudentCard(app: AppState, s: Student, showClass: Boolean, onEdit: (
                 Text(s.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     if (s.phone.isBlank()) "لا يوجد رقم ولي أمر" else s.phone,
-                    color = if (s.phone.isBlank()) AbsentRed else Color.Gray,
+                    color = if (s.phone.isBlank()) AbsentRed else Muted,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (showClass) Text(s.className, color = Navy, style = MaterialTheme.typography.labelSmall)
+                if (showClass) Text(s.className, color = Ink, style = MaterialTheme.typography.labelSmall)
             }
             if (s.phone.isNotBlank()) {
                 IconButton(onClick = { Phone.dial(ctx, s.phone) }) { Icon(Icons.Filled.Call, "اتصال", tint = PresentGreen) }

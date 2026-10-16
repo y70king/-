@@ -28,6 +28,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material3.LinearProgressIndicator
+import com.hayalnaft.attendance.data.SchoolClass
+import com.hayalnaft.attendance.data.Stages
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EditNote
@@ -91,7 +99,8 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
     var subjectId by rememberSaveable { mutableStateOf(initialSubjectId ?: 0L) }
     if (subjectId != 0L && subjects.none { it.id == subjectId }) subjectId = 0L
     val classId = classes.firstOrNull { it.id == selected }?.id
-        ?: (classes.firstOrNull { it.count > 0 } ?: classes.firstOrNull())?.id
+    val cls = classes.firstOrNull { it.id == classId }
+    var oneByOne by rememberSaveable { mutableStateOf(true) }
     var date by rememberSaveable { mutableStateOf(Dates.today()) }
     val rows = remember(v, classId, date, subjectId) { classId?.let { app.db.attendance(it, date, subjectId) } ?: emptyList() }
     val activity = remember(v, classId, date) { classId?.let { app.db.dayActivity(it, date) } ?: emptyMap() }
@@ -106,12 +115,13 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
             (r.status == Status.ABSENT || (notifyLate && r.status == Status.LATE))
     val pending = rows.filter(::needsNotice)
 
-    fun mark(r: AttendanceRow, status: Int) {
-        val newStatus = if (r.status == status) Status.NONE else status
+    fun mark(r: AttendanceRow, status: Int, toggle: Boolean = true) {
+        val newStatus = if (toggle && r.status == status) Status.NONE else status
         app.db.setStatus(r.student.id, date, subjectId, newStatus)
         app.changed()
         val notify = newStatus == Status.ABSENT || (notifyLate && newStatus == Status.LATE)
         if (app.prefs.autoSend && notify && !r.notified) app.notifyStatus(r.student, date, subjectId, newStatus)
+        if (newStatus == Status.ABSENT) app.checkAbsenceLimit(r.student)
     }
 
     fun addPoints(s: Student, points: Int) {
@@ -128,13 +138,18 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 subtitle = Dates.pretty(date),
                 onBack = app::back,
                 actions = {
+                    if (classId != null) {
+                        IconButton(onClick = { oneByOne = !oneByOne }) {
+                            Icon(if (oneByOne) Icons.Filled.ViewList else Icons.Filled.Person, if (oneByOne) "عرض القائمة" else "طالب طالب")
+                        }
+                    }
                     IconButton(onClick = { showDate = true }) { Icon(Icons.Filled.CalendarMonth, "اختيار التاريخ") }
                 },
             )
         },
         bottomBar = {
-            if (rows.isNotEmpty()) {
-                Surface(Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = Color.White) {
+            if (rows.isNotEmpty() && !oneByOne) {
+                Surface(Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = CardBg) {
                     Column(Modifier.navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             StatusUi.order.forEach { s -> CountBadge(StatusUi.label(s), rows.count { it.status == s }, StatusUi.color(s)) }
@@ -168,8 +183,19 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 }
                 return@Column
             }
-            Spacer(Modifier.height(10.dp))
-            ClassChips(classes, classId, { selected = it })
+            if (cls == null) {
+                ClassPicker(classes) { selected = it }
+                return@Column
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.School, null, tint = Ink, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(cls.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { selected = null }) { Text("تغيير الصف") }
+            }
             if (subjects.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 SubjectChips(subjects, subjectId, { subjectId = it }, generalLabel = "التعداد اليومي")
@@ -178,6 +204,24 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                 EmptyState(Icons.Filled.Groups, "لا يوجد طلاب في هذا الصف", "استورد أسماء الطلاب من Excel أو Word أو الصقها") {
                     Button(onClick = { app.go(Screen.Import(classId)) }) { Text("استيراد الطلاب") }
                 }
+                return@Column
+            }
+            if (oneByOne) {
+                OneByOne(
+                    key = "$classId-$subjectId-$date",
+                    rows = rows,
+                    activity = activity,
+                    autoSend = app.prefs.autoSend,
+                    pendingCount = pending.size,
+                    onMark = { r, st -> mark(r, st, toggle = false) },
+                    onMessage = { r -> app.notifyStatus(r.student, date, subjectId, r.status) },
+                    onPoints = { r, p -> addPoints(r.student, p) },
+                    onNote = { noteFor = it.student },
+                    onOpen = { app.go(Screen.StudentDetail(it.student.id)) },
+                    onSendPending = { if (app.whatsappChannel) whatsappList = true else confirmSend = true },
+                    onShowList = { oneByOne = false },
+                    onFinish = app::back,
+                )
                 return@Column
             }
             Row(
@@ -190,7 +234,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                         app.whatsappChannel -> "التبليغ الفوري عبر واتساب"
                         else -> "التبليغ الفوري عبر SMS"
                     },
-                    color = if (app.prefs.autoSend) PresentGreen else Color.Gray,
+                    color = if (app.prefs.autoSend) PresentGreen else Muted,
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.weight(1f),
                 )
@@ -261,7 +305,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                         items(rows.filter { (it.status == Status.ABSENT || (notifyLate && it.status == Status.LATE)) && it.student.phone.isNotBlank() }) { r ->
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                                    .background(if (r.notified) PresentGreen.copy(alpha = 0.1f) else Color(0xFFF1F4F8))
+                                    .background(if (r.notified) PresentGreen.copy(alpha = 0.1f) else SoftBg)
                                     .clickable { app.notifyStatus(r.student, date, subjectId, r.status) }
                                     .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -303,7 +347,7 @@ private fun AttendanceItem(
     val color = StatusUi.color(r.status)
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(Modifier.height(IntrinsicSize.Min)) {
@@ -330,7 +374,7 @@ private fun AttendanceItem(
                     if (r.notified) {
                         Icon(Icons.Filled.MarkChatRead, "تم التبليغ", tint = PresentGreen, modifier = Modifier.padding(start = 6.dp).size(20.dp))
                     } else if (r.student.phone.isBlank()) {
-                        Icon(Icons.Filled.PhoneDisabled, "لا يوجد رقم", tint = Color.Gray, modifier = Modifier.padding(start = 6.dp).size(18.dp))
+                        Icon(Icons.Filled.PhoneDisabled, "لا يوجد رقم", tint = Muted, modifier = Modifier.padding(start = 6.dp).size(18.dp))
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -356,8 +400,8 @@ private fun AttendanceItem(
                         onClick = onNote,
                         modifier = Modifier.weight(1.3f).height(32.dp),
                         shape = RoundedCornerShape(8.dp),
-                        color = Navy.copy(alpha = 0.08f),
-                        contentColor = Navy,
+                        color = Ink.copy(alpha = 0.08f),
+                        contentColor = Ink,
                     ) {
                         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.EditNote, null, modifier = Modifier.size(18.dp))
@@ -384,6 +428,250 @@ private fun StatusButton(status: Int, selected: Boolean, modifier: Modifier, onC
             Icon(StatusUi.icon(status), null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(3.dp))
             Text(StatusUi.label(status), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+/** Choose the grade, then its section. */
+@Composable
+private fun ClassPicker(classes: List<SchoolClass>, onPick: (Long) -> Unit) {
+    var grade by rememberSaveable { mutableStateOf<String?>(null) }
+    val grades = classes.groupBy { it.name }.toList()
+        .sortedBy { Stages.allGrades.indexOf(it.first).let { i -> if (i < 0) 1000 else i } }
+    val sections = grade?.let { g -> classes.filter { it.name == g } }
+    LazyColumn(
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (grade != null) {
+                    IconButton(onClick = { grade = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع للصفوف") }
+                }
+                Text(
+                    if (grade == null) "اختر الصف" else "اختر شعبة $grade",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(4.dp),
+                )
+            }
+        }
+        if (sections == null) {
+            items(grades, key = { it.first }) { (g, secs) ->
+                Card(
+                    onClick = { if (secs.size == 1) onPick(secs.first().id) else grade = g },
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.School, null, tint = Ink)
+                        Spacer(Modifier.width(12.dp))
+                        Text(g, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("${secs.size} شعبة • ${secs.sumOf { it.count }} طالب", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        } else {
+            items(sections, key = { it.id }) { c ->
+                Card(
+                    onClick = { onPick(c.id) },
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(44.dp).clip(CircleShape).background(Gold), contentAlignment = Alignment.Center) {
+                            Text(c.section.ifBlank { "-" }, color = NavyDark, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text("شعبة ${c.section}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("${c.count} طالب", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Roll call one student at a time: a big card with the name and four large buttons. Choosing a status moves on to
+ * the next student; marking absent notifies the parent straight away (SMS or WhatsApp per settings).
+ */
+@Composable
+private fun OneByOne(
+    key: String,
+    rows: List<AttendanceRow>,
+    activity: Map<Long, DayActivity>,
+    autoSend: Boolean,
+    pendingCount: Int,
+    onMark: (AttendanceRow, Int) -> Unit,
+    onMessage: (AttendanceRow) -> Unit,
+    onPoints: (AttendanceRow, Int) -> Unit,
+    onNote: (AttendanceRow) -> Unit,
+    onOpen: (AttendanceRow) -> Unit,
+    onSendPending: () -> Unit,
+    onShowList: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    var index by rememberSaveable(key) {
+        mutableIntStateOf(rows.indexOfFirst { it.status == Status.NONE }.let { if (it < 0) rows.size else it })
+    }
+    val counts = StatusUi.order.associateWith { s -> rows.count { it.status == s } }
+    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (index < rows.size) "الطالب ${index + 1} من ${rows.size}" else "انتهى التعداد",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            counts.forEach { (s, n) -> if (n > 0) Box(Modifier.padding(start = 4.dp)) { Tag("$n", StatusUi.color(s)) } }
+        }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { if (rows.isEmpty()) 0f else rows.count { it.status != Status.NONE }.toFloat() / rows.size },
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+            color = PresentGreen,
+            trackColor = SoftBg,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Spacer(Modifier.height(12.dp))
+        if (index >= rows.size) {
+            val unmarked = rows.indexOfFirst { it.status == Status.NONE }
+            Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.DoneAll, null, tint = PresentGreen, modifier = Modifier.size(56.dp))
+                    Text("ملخص التعداد", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatusUi.order.forEach { s -> CountBadge(StatusUi.label(s), counts[s] ?: 0, StatusUi.color(s)) }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    if (unmarked >= 0) {
+                        OutlinedButton(onClick = { index = unmarked }, modifier = Modifier.fillMaxWidth()) {
+                            Text("${rows.count { it.status == Status.NONE }} طالب لم يُسجّل — الذهاب إليه")
+                        }
+                    }
+                    if (pendingCount > 0) {
+                        Button(
+                            onClick = onSendPending,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = AbsentRed),
+                        ) { Text("تبليغ أولياء أمور الغائبين ($pendingCount)") }
+                    }
+                    OutlinedButton(onClick = onShowList, modifier = Modifier.fillMaxWidth()) { Text("مراجعة القائمة كاملة") }
+                    Button(onClick = onFinish, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("إنهاء", fontWeight = FontWeight.Bold) }
+                }
+            }
+            return@Column
+        }
+        val r = rows[index]
+        val act = activity[r.student.id]
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CardBg),
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(86.dp).clip(CircleShape).background(StatusUi.color(r.status).copy(alpha = 0.15f)).clickable { onOpen(r) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(r.student.name.trim().take(1), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = StatusUi.color(r.status).let { if (r.status == Status.NONE) Ink else it })
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(r.student.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text(
+                    r.student.phone.ifBlank { "لا يوجد رقم ولي أمر" },
+                    color = if (r.student.phone.isBlank()) AbsentRed else Muted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    if (r.status != Status.NONE) Tag(StatusUi.label(r.status), StatusUi.color(r.status))
+                    if (r.notified) Tag("تم إبلاغ ولي الأمر", PresentGreen)
+                    if ((act?.points ?: 0) > 0) Tag("\u200E+${act!!.points}", LateOrange)
+                }
+                Spacer(Modifier.height(16.dp))
+                StatusUi.order.chunked(2).forEach { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 5.dp)) {
+                        pair.forEach { s ->
+                            val c = StatusUi.color(s)
+                            val sel = r.status == s
+                            Surface(
+                                onClick = {
+                                    onMark(r, s)
+                                    index++
+                                },
+                                modifier = Modifier.weight(1f).height(74.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                color = if (sel) c else c.copy(alpha = 0.12f),
+                                contentColor = if (sel) Color.White else c,
+                            ) {
+                                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(StatusUi.icon(s), null, modifier = Modifier.size(28.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(StatusUi.label(s), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+                if ((r.status == Status.ABSENT || r.status == Status.LATE) && !r.notified && r.student.phone.isNotBlank()) {
+                    Button(
+                        onClick = { onMessage(r) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AbsentRed),
+                    ) {
+                        Icon(Icons.Filled.Send, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("إرسال رسالة لولي الأمر الآن")
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    pointValues.forEach { p ->
+                        Surface(
+                            onClick = { onPoints(r, p) },
+                            modifier = Modifier.weight(1f).height(36.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Gold.copy(alpha = 0.18f),
+                            contentColor = Color(0xFFB07A00),
+                        ) { Box(contentAlignment = Alignment.Center) { Text("\u200E+$p", fontWeight = FontWeight.Bold) } }
+                    }
+                    Surface(
+                        onClick = { onNote(r) },
+                        modifier = Modifier.weight(1.3f).height(36.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Ink.copy(alpha = 0.1f),
+                        contentColor = Ink,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.EditNote, null, modifier = Modifier.size(18.dp))
+                            Text("سلوك", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { if (index > 0) index-- }, enabled = index > 0, modifier = Modifier.weight(1f).height(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                Spacer(Modifier.width(6.dp))
+                Text("السابق")
+            }
+            OutlinedButton(onClick = { index++ }, modifier = Modifier.weight(1f).height(48.dp)) {
+                Text(if (index == rows.lastIndex) "الملخص" else "التالي")
+                Spacer(Modifier.width(6.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
+            }
+        }
+        if (!autoSend) {
+            Text(
+                "التبليغ الفوري متوقف من الإعدادات — استخدم زر «إرسال رسالة لولي الأمر الآن»",
+                style = MaterialTheme.typography.labelSmall,
+                color = Muted,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }

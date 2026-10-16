@@ -397,7 +397,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         schoolId, date,
     ) { DayAbsence(studentOf(it), it.getString(6), it.getInt(7), it.getInt(8) == 1) }
 
-    fun stats(schoolId: Long, classId: Long?, fromDate: String?): List<StudentStats> {
+    fun stats(schoolId: Long, classId: Long?, range: DateRange = DateRange.ALL): List<StudentStats> {
         val sql = StringBuilder(
             "SELECT $STUDENT_COLS, " +
                 "SUM(CASE WHEN a.status = ${Status.PRESENT} THEN 1 ELSE 0 END), " +
@@ -405,10 +405,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
                 "SUM(CASE WHEN a.status = ${Status.LATE} THEN 1 ELSE 0 END), " +
                 "SUM(CASE WHEN a.status = ${Status.EXCUSED} THEN 1 ELSE 0 END) " +
                 "FROM students st JOIN classes c ON c.id = st.class_id " +
-                "LEFT JOIN attendance a ON a.student_id = st.id AND a.date >= ? " +
+                "LEFT JOIN attendance a ON a.student_id = st.id AND a.date BETWEEN ? AND ? " +
                 "WHERE st.school_id = ?"
         )
-        val args = mutableListOf<Any?>(fromDate ?: "0000-00-00", schoolId)
+        val args = mutableListOf<Any?>(range.from, range.to, schoolId)
         if (classId != null) {
             sql.append(" AND st.class_id = ?")
             args.add(classId)
@@ -419,16 +419,21 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         }
     }
 
-    fun studentStats(studentId: Long): StudentStats? {
+    fun studentStats(studentId: Long, range: DateRange = DateRange.ALL): StudentStats? {
         val s = student(studentId) ?: return null
-        return stats(s.schoolId, s.classId, null).firstOrNull { it.student.id == studentId }
+        return stats(s.schoolId, s.classId, range).firstOrNull { it.student.id == studentId }
     }
 
+    /** Number of different days on which the student was recorded absent. */
+    fun absentDays(studentId: Long): Int = query(
+        "SELECT COUNT(DISTINCT date) FROM attendance WHERE student_id = ? AND status = ${Status.ABSENT}", studentId,
+    ) { it.getInt(0) }.first()
+
     /** Every recorded session of the student, newest first. */
-    fun history(studentId: Long): List<HistoryRow> = query(
+    fun history(studentId: Long, range: DateRange = DateRange.ALL): List<HistoryRow> = query(
         "SELECT a.date, sub.name, a.status FROM attendance a LEFT JOIN subjects sub ON sub.id = a.subject_id " +
-            "WHERE a.student_id = ? ORDER BY a.date DESC, a.subject_id",
-        studentId,
+            "WHERE a.student_id = ? AND a.date BETWEEN ? AND ? ORDER BY a.date DESC, a.subject_id",
+        studentId, range.from, range.to,
     ) { HistoryRow(it.getString(0), it.getString(1), it.getInt(2)) }
 
     // ---------- Points, behaviour and notes ----------
@@ -447,9 +452,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         w.delete("events", "id = ?", arrayOf(id.toString()))
     }
 
-    fun events(studentId: Long): List<StudentEvent> = query(
-        "SELECT id, student_id, date, ts, type, points, note FROM events WHERE student_id = ? ORDER BY date DESC, ts DESC",
-        studentId,
+    fun events(studentId: Long, range: DateRange = DateRange.ALL): List<StudentEvent> = query(
+        "SELECT id, student_id, date, ts, type, points, note FROM events " +
+            "WHERE student_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC, ts DESC",
+        studentId, range.from, range.to,
     ) { StudentEvent(it.getLong(0), it.getLong(1), it.getString(2), it.getLong(3), it.getInt(4), it.getInt(5), it.getString(6)) }
 
     fun dayActivity(classId: Long, date: String): Map<Long, DayActivity> = query(
@@ -458,11 +464,21 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         classId, date,
     ) { it.getLong(0) to DayActivity(it.getInt(1), it.getInt(2), it.getInt(3)) }.toMap()
 
-    fun eventTotals(studentId: Long): EventTotals = query(
-        "SELECT IFNULL(SUM(points), 0), IFNULL(SUM(type = ${EventType.GOOD}), 0), IFNULL(SUM(type = ${EventType.BAD}), 0), " +
-            "IFNULL(SUM(type = ${EventType.NOTE}), 0) FROM events WHERE student_id = ?",
-        studentId,
+    private val totalsCols =
+        "IFNULL(SUM(points), 0), IFNULL(SUM(type = ${EventType.GOOD}), 0), IFNULL(SUM(type = ${EventType.BAD}), 0), " +
+            "IFNULL(SUM(type = ${EventType.NOTE}), 0)"
+
+    fun eventTotals(studentId: Long, range: DateRange = DateRange.ALL): EventTotals = query(
+        "SELECT $totalsCols FROM events WHERE student_id = ? AND date BETWEEN ? AND ?",
+        studentId, range.from, range.to,
     ) { EventTotals(it.getInt(0), it.getInt(1), it.getInt(2), it.getInt(3)) }.first()
+
+    /** Points and behaviour totals of every student of a class over a period. */
+    fun classEventTotals(classId: Long, range: DateRange = DateRange.ALL): Map<Long, EventTotals> = query(
+        "SELECT student_id, $totalsCols FROM events WHERE date BETWEEN ? AND ? " +
+            "AND student_id IN (SELECT id FROM students WHERE class_id = ?) GROUP BY student_id",
+        range.from, range.to, classId,
+    ) { it.getLong(0) to EventTotals(it.getInt(1), it.getInt(2), it.getInt(3), it.getInt(4)) }.toMap()
 
     // ---------- Grades ----------
 

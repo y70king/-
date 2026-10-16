@@ -59,7 +59,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hayalnaft.attendance.AppState
 import com.hayalnaft.attendance.Screen
+import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.EventType
+import com.hayalnaft.attendance.util.Periods
 import com.hayalnaft.attendance.util.Dates
 import com.hayalnaft.attendance.util.Phone
 import com.hayalnaft.attendance.util.Reports
@@ -83,6 +85,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
     var editing by remember { mutableStateOf(false) }
     var addNote by remember { mutableStateOf(false) }
     var reportMenu by remember { mutableStateOf(false) }
+    var reportRange by remember { mutableStateOf<DateRange?>(null) }
     var pdf by remember { mutableStateOf<Pair<File, String>?>(null) }
 
     Scaffold(
@@ -111,15 +114,15 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+                Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Avatar(student.name)
                         Spacer(Modifier.height(8.dp))
                         Text(student.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(cls.title + if (cls.room.isNotBlank()) " • قاعة ${cls.room}" else "", color = Navy)
+                        Text(cls.title + if (cls.room.isNotBlank()) " • قاعة ${cls.room}" else "", color = Ink)
                         Text(
                             if (student.phone.isBlank()) "لا يوجد رقم ولي أمر" else "ولي الأمر: ${student.phone}",
-                            color = if (student.phone.isBlank()) AbsentRed else Color.Gray,
+                            color = if (student.phone.isBlank()) AbsentRed else Muted,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -166,7 +169,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                 }
             }
             item {
-                TabRow(selectedTabIndex = tab, containerColor = Color.White, contentColor = Navy) {
+                TabRow(selectedTabIndex = tab, containerColor = CardBg, contentColor = Ink) {
                     Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("الحضور") })
                     Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("السلوك والنشاط") })
                     Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("الدرجات") })
@@ -183,7 +186,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(Dates.pretty(h.date))
-                                    Text(h.subjectName?.let { "حصة $it" } ?: "التعداد اليومي", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                    Text(h.subjectName?.let { "حصة $it" } ?: "التعداد اليومي", style = MaterialTheme.typography.labelSmall, color = Muted)
                                 }
                                 Tag(StatusUi.label(h.status), StatusUi.color(h.status))
                             }
@@ -197,9 +200,9 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                             EventType.POINTS -> Icons.Filled.Star to Color(0xFF8A5A00)
                             EventType.GOOD -> Icons.Filled.ThumbUp to PresentGreen
                             EventType.BAD -> Icons.Filled.ThumbDown to AbsentRed
-                            else -> Icons.Filled.NoteAlt to Navy
+                            else -> Icons.Filled.NoteAlt to Ink
                         }
-                        Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(12.dp)) {
+                        Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(12.dp)) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(icon, null, tint = color)
                                 Spacer(Modifier.width(10.dp))
@@ -209,14 +212,14 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                         if (e.type != EventType.POINTS && e.points > 0) Text("  \u200E+${e.points}", color = Color(0xFF8A5A00))
                                     }
                                     if (e.note.isNotBlank()) Text(e.note)
-                                    Text(Dates.pretty(e.date), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                    Text(Dates.pretty(e.date), style = MaterialTheme.typography.labelSmall, color = Muted)
                                 }
                                 IconButton(onClick = {
                                     app.guard {
                                         app.db.deleteEvent(e.id)
                                         app.changed()
                                     }
-                                }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.Delete, "حذف", tint = Color.Gray) }
+                                }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.Delete, "حذف", tint = Muted) }
                             }
                         }
                     }
@@ -225,7 +228,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                     if (subjects.isEmpty()) item { EmptyState(Icons.Filled.MenuBook, "لم تُضف مواد دراسية") }
                     items(subjects, key = { it.id }) { sub ->
                         val r = Reports.result(grades[sub.id], school, cls)
-                        Card(colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else Color.White), shape = RoundedCornerShape(12.dp)) {
+                        Card(colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else CardBg), shape = RoundedCornerShape(12.dp)) {
                             Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(sub.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -233,9 +236,9 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Tag("ف1: ${r.semester1 ?: "-"}", Navy)
-                                    Tag("نصف: ${grades[sub.id]?.get("mid")?.let { fmtGrade(it) } ?: "-"}", Navy)
-                                    Tag("ف2: ${r.semester2 ?: "-"}", Navy)
+                                    Tag("ف1: ${r.semester1 ?: "-"}", Ink)
+                                    Tag("نصف: ${grades[sub.id]?.get("mid")?.let { fmtGrade(it) } ?: "-"}", Ink)
+                                    Tag("ف2: ${r.semester2 ?: "-"}", Ink)
                                     Tag("السعي: ${r.annual ?: "-"}", ExcusedBlue)
                                     r.finalGrade?.let { Tag("النهائية: $it", PresentGreen) }
                                 }
@@ -243,7 +246,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                         }
                     }
                     item {
-                        TextButton(onClick = { app.go(Screen.Grades) }) { Text("فتح دفتر الدرجات") }
+                        TextButton(onClick = { app.go(Screen.Grades(student.classId)) }) { Text("فتح دفتر الدرجات") }
                     }
                 }
             }
@@ -262,32 +265,34 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
             app.changed()
         }
     }
-    if (reportMenu && student != null && school != null && cls != null) {
+    if (reportMenu && school != null) {
         AlertDialog(
             onDismissRequest = { reportMenu = false },
-            title = { Text("تقرير الطالب لولي الأمر") },
-            text = { Text("تقرير شامل عن الحضور والسلوك والنشاط والدرجات.") },
-            confirmButton = {
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        enabled = student.phone.isNotBlank(),
-                        onClick = {
-                            reportMenu = false
-                            Phone.whatsapp(ctx, student.phone, Reports.studentText(app.db, school, cls, student), app.prefs.countryCode)
-                        },
-                    ) {
-                        Icon(Icons.Filled.Chat, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("رسالة نصية عبر واتساب")
+            title = { Text("فترة التقرير") },
+            text = {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(Periods.options(school.year)) { r ->
+                        Card(
+                            onClick = { reportMenu = false; reportRange = r },
+                            colors = CardDefaults.cardColors(containerColor = SoftBg),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text(r.label, fontWeight = FontWeight.Bold)
+                                if (r != DateRange.ALL) {
+                                    Text(Periods.describe(r).substringAfter(": ", ""), style = MaterialTheme.typography.labelSmall, color = Muted)
+                                }
+                            }
+                        }
                     }
-                    OutlinedButton(onClick = {
-                        reportMenu = false
-                        pdf = Reports.studentReport(ctx, app.db, school, cls, student) to "تقرير ${student.name}"
-                    }) { Text("ملف PDF") }
-                    TextButton(onClick = { reportMenu = false }) { Text("إلغاء") }
                 }
             },
+            confirmButton = { TextButton(onClick = { reportMenu = false }) { Text("إلغاء") } },
         )
+    }
+    reportRange?.let { r ->
+        if (student != null && school != null && cls != null) {
+            StudentReportDialog(app, school, cls, student, r, onDismiss = { reportRange = null }) { pdf = it }
+        }
     }
     pdf?.let { (file, title) -> PdfDialog(app, file, title, student?.phone, onDismiss = { pdf = null }) }
 }

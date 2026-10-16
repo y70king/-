@@ -61,7 +61,19 @@ data class AttendanceRow(val student: Student, val status: Int, val notified: Bo
 
 data class DayAbsence(val student: Student, val subjectName: String?, val status: Int, val notified: Boolean)
 
-data class StudentStats(val student: Student, val present: Int, val absent: Int, val late: Int, val excused: Int)
+data class StudentStats(val student: Student, val present: Int, val absent: Int, val late: Int, val excused: Int) {
+    val recorded: Int get() = present + absent + late + excused
+
+    /** Share of recorded sessions the student attended (late counts as attended), or null when nothing is recorded. */
+    val attendanceRate: Int? get() = if (recorded == 0) null else Math.round((present + late + excused) * 100f / recorded)
+}
+
+/** An inclusive range of ISO dates with a display name. */
+data class DateRange(val from: String, val to: String, val label: String) {
+    companion object {
+        val ALL = DateRange("0000-00-00", "9999-12-31", "كل الفترة")
+    }
+}
 
 data class HistoryRow(val date: String, val subjectName: String?, val status: Int)
 

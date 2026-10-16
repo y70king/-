@@ -1,6 +1,7 @@
 package com.hayalnaft.attendance.util
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -143,8 +144,11 @@ class PdfBuilder(landscape: Boolean = false, private val pageNumbers: Boolean = 
         y += h + 6
     }
 
-    /** Official school header: ministry and school on the right, year and shift on the left, title in the middle. */
-    fun schoolHeader(school: School, title: String, subtitle: String? = null) {
+    /**
+     * Official school header: ministry and school on the right, year and shift on the left (after the logo, if any),
+     * title in the middle.
+     */
+    fun schoolHeader(school: School, title: String, subtitle: String? = null, logo: Bitmap? = null) {
         val third = contentWidth / 3
         val right = buildString {
             append("جمهورية العراق\nوزارة التربية")
@@ -155,17 +159,42 @@ class PdfBuilder(landscape: Boolean = false, private val pageNumbers: Boolean = 
             if (school.year.isNotBlank()) append("العام الدراسي: ${school.yearText}\n")
             append("الدوام: ${school.shift}")
         }
+        val logoSize = if (logo != null) 56f else 0f
         val rl = layout(right, paint(9.5f, true), third)
-        val ll = layout(left, paint(9.5f), third, Layout.Alignment.ALIGN_OPPOSITE)
+        val ll = layout(left, paint(9.5f), third - logoSize - 6, Layout.Alignment.ALIGN_OPPOSITE)
         val tl = layout(title + (subtitle?.let { "\n$it" } ?: ""), paint(14f, true, NAVY), third, Layout.Alignment.ALIGN_CENTER)
-        val h = maxOf(rl.height, ll.height, tl.height).toFloat()
+        val h = maxOf(rl.height.toFloat(), ll.height.toFloat(), tl.height.toFloat(), logoSize)
         // Right-to-left: the first block sits at the right edge.
         draw(rl, margin + 2 * third, y)
         draw(tl, margin + third, y + (h - tl.height) / 2)
-        draw(ll, margin, y)
+        if (logo != null) {
+            canvas.drawBitmap(logo, null, RectF(margin, y, margin + logoSize, y + logoSize), Paint(Paint.FILTER_BITMAP_FLAG))
+            draw(ll, margin + logoSize + 6, y + (logoSize - ll.height) / 2)
+        } else {
+            draw(ll, margin, y)
+        }
         y += h + 8
         canvas.drawLine(margin, y, margin + contentWidth, y, Paint().apply { color = GOLD; strokeWidth = 2f })
         y += 10
+    }
+
+    /** A row of coloured summary boxes, each with a big value and a caption, right to left. */
+    fun statBoxes(items: List<Triple<String, String, Int>>) {
+        val gap = 8f
+        val w = (contentWidth - gap * (items.size - 1)) / items.size
+        val h = 52f
+        ensure(h + 10)
+        items.forEachIndexed { i, (caption, value, color) ->
+            val x = margin + contentWidth - (i + 1) * w - i * gap
+            val rect = RectF(x, y, x + w, y + h)
+            canvas.drawRoundRect(rect, 8f, 8f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = Color.argb(30, Color.red(color), Color.green(color), Color.blue(color)) })
+            canvas.drawRoundRect(RectF(x + w - 4, y, x + w, y + h), 2f, 2f, Paint().apply { this.color = color })
+            val vl = layout(value, paint(17f, true, color), w - 10, Layout.Alignment.ALIGN_CENTER)
+            val cl = layout(caption, paint(9f, false, Color.DKGRAY), w - 10, Layout.Alignment.ALIGN_CENTER)
+            draw(vl, x + 5, y + 6)
+            draw(cl, x + 5, y + 8 + vl.height)
+        }
+        y += h + 10
     }
 
     fun draw(l: StaticLayout, x: Float, top: Float) {

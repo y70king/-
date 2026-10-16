@@ -1,9 +1,13 @@
 package com.hayalnaft.attendance.util
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.text.Layout
+import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.Db
 import com.hayalnaft.attendance.data.EventType
 import com.hayalnaft.attendance.data.GradeField
@@ -18,6 +22,13 @@ import java.io.File
 
 /** Builds the printable PDF documents and the plain-text parent report. */
 object Reports {
+
+    fun logoFile(context: Context) = File(context.filesDir, "logo.png")
+
+    private fun logo(context: Context): Bitmap? = logoFile(context).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
+
+    private fun PdfBuilder.header(context: Context, school: School, title: String, subtitle: String? = null) =
+        schoolHeader(school, title, subtitle, logo(context))
 
     private fun fmt(v: Double?): String = when {
         v == null -> ""
@@ -38,7 +49,7 @@ object Reports {
         val students = db.students(school.id, cls.id)
         val grades = db.classGrades(cls.id)
         val pdf = PdfBuilder(landscape = true)
-        pdf.schoolHeader(school, "كشف درجات مادة ${subject.name}", "${cls.title}${roomText(cls)}")
+        pdf.header(context, school, "كشف درجات مادة ${subject.name}", "${cls.title}${roomText(cls)}")
         val headers = listOf(
             "ت", "اسم الطالب", "الشهر الأول", "الشهر الثاني", "معدل الفصل الأول", "نصف السنة",
             "الشهر الأول ف2", "الشهر الثاني ف2", "معدل الفصل الثاني", "السعي السنوي", "الامتحان النهائي",
@@ -72,7 +83,7 @@ object Reports {
         val subjects = db.subjects(school.id)
         val grades = db.classGrades(cls.id)
         val pdf = PdfBuilder(landscape = true)
-        pdf.schoolHeader(school, "الكشف الشامل لدرجات الطلاب", "${cls.title}${roomText(cls)}")
+        pdf.header(context, school, "الكشف الشامل لدرجات الطلاب", "${cls.title}${roomText(cls)}")
         val headers = listOf("ت", "اسم الطالب") + subjects.map { it.name } + listOf("المعدل", "النتيجة")
         val pass = Grades.roundUp(school.maxMark / 2.0)
         val rows = students.mapIndexed { i, s ->
@@ -101,32 +112,45 @@ object Reports {
         return pdf.save(PdfFiles.file(context, "الكشف الشامل ${cls.title}"))
     }
 
-    /** Everything known about one student: attendance, activity, behaviour, grades and notes. */
-    fun studentReport(context: Context, db: Db, school: School, cls: SchoolClass, student: Student): File {
+    /** Everything known about one student over a period: attendance, activity, behaviour, grades and notes. */
+    fun studentReport(
+        context: Context, db: Db, school: School, cls: SchoolClass, student: Student, range: DateRange = DateRange.ALL,
+    ): File {
         val pdf = PdfBuilder()
-        pdf.schoolHeader(school, "تقرير الطالب", student.name)
+        pdf.header(context, school, "تقرير الطالب", student.name)
         pdf.table(
-            listOf("اسم الطالب", "الصف والشعبة", "رقم ولي الأمر", "تاريخ التقرير"),
-            listOf(listOf(student.name, cls.title, student.phone, Dates.display(Dates.today()))),
-            listOf(2.4f, 1.6f, 1.4f, 1.2f),
+            listOf("اسم الطالب", "الصف والشعبة", "رقم ولي الأمر", "فترة التقرير"),
+            listOf(listOf(student.name, cls.title, student.phone, Periods.describe(range))),
+            listOf(2f, 1.4f, 1.3f, 2.2f),
         )
-        val st = db.studentStats(student.id)
+        val st = db.studentStats(student.id, range)
+        val t = db.eventTotals(student.id, range)
+        pdf.statBoxes(
+            listOf(
+                Triple("نسبة الحضور", st?.attendanceRate?.let { "$it%" } ?: "-", rateColor(st?.attendanceRate)),
+                Triple("أيام الغياب", "${st?.absent ?: 0}", PdfBuilder.RED),
+                Triple("نقاط النشاط", "${t.points}", PdfBuilder.GOLD),
+                Triple("سلوك جيد / مشاغب", "${t.good} / ${t.bad}", PdfBuilder.NAVY),
+            )
+        )
         pdf.heading("الحضور والغياب")
         pdf.table(
             listOf("حضور", "غياب", "تأخر", "إجازة"),
             listOf(listOf(fmt(st?.present), fmt(st?.absent), fmt(st?.late), fmt(st?.excused))),
             listOf(1f, 1f, 1f, 1f),
         )
-        val t = db.eventTotals(student.id)
-        pdf.heading("النشاط والسلوك")
-        pdf.table(
-            listOf("نقاط النشاط", "سلوك جيد", "سلوك مشاغب", "الملاحظات"),
-            listOf(listOf("${t.points}", "${t.good}", "${t.bad}", "${t.notes}")),
-            listOf(1f, 1f, 1f, 1f),
-        )
+        val missed = db.history(student.id, range).filter { it.status != com.hayalnaft.attendance.data.Status.PRESENT }.take(30)
+        if (missed.isNotEmpty()) {
+            pdf.table(
+                listOf("التاريخ", "الحصة", "الحالة"),
+                missed.map { listOf(Dates.pretty(it.date), it.subjectName ?: "التعداد اليومي", statusText(it.status)) },
+                listOf(2f, 2f, 1.2f),
+                cellColor = { r, c -> if (c == 2) statusTint(missed[r].status) else null },
+            )
+        }
         val subjects = db.subjects(school.id)
         val grades = db.studentGrades(student.id)
-        if (subjects.isNotEmpty()) {
+        if (subjects.isNotEmpty() && grades.isNotEmpty()) {
             pdf.heading("الدرجات")
             pdf.table(
                 listOf("المادة", "الفصل الأول", "نصف السنة", "الفصل الثاني", "السعي السنوي", "الدرجة النهائية", "النتيجة"),
@@ -138,7 +162,7 @@ object Reports {
                 listOf(2f, 1f, 1f, 1f, 1f, 1.1f, 1f),
             )
         }
-        val notes = db.events(student.id).filter { it.note.isNotBlank() || it.type != EventType.POINTS }.take(15)
+        val notes = db.events(student.id, range).filter { it.note.isNotBlank() || it.type != EventType.POINTS }.take(20)
         if (notes.isNotEmpty()) {
             pdf.heading("الملاحظات والسلوك")
             pdf.table(
@@ -148,7 +172,90 @@ object Reports {
             )
         }
         pdf.signatures("المدرس / المرشد", "مدير المدرسة")
-        return pdf.save(PdfFiles.file(context, "تقرير ${student.name}"))
+        return pdf.save(PdfFiles.file(context, "تقرير ${student.name} ${range.label}"))
+    }
+
+    /** A class over a period: summary boxes, every student's attendance, activity and average, and highlights. */
+    fun classReport(context: Context, db: Db, school: School, cls: SchoolClass, range: DateRange): File {
+        val stats = db.stats(school.id, cls.id, range).sortedBy { it.student.id }
+        val totals = db.classEventTotals(cls.id, range)
+        val subjects = db.subjects(school.id)
+        val grades = db.classGrades(cls.id)
+        val averages = stats.associate { st ->
+            val marks = subjects.mapNotNull { sub -> result(grades[st.student.id]?.get(sub.id), school, cls).let(::bestGrade) }
+            st.student.id to (if (marks.isEmpty()) null else Grades.roundUp(marks.sum().toDouble() / marks.size))
+        }
+        val pdf = PdfBuilder(landscape = true)
+        pdf.header(context, school, "تقرير الصف ${cls.title}", Periods.describe(range))
+        val recorded = stats.sumOf { it.recorded }
+        val attended = stats.sumOf { it.present + it.late + it.excused }
+        val rate = if (recorded == 0) null else Math.round(attended * 100f / recorded)
+        pdf.statBoxes(
+            listOf(
+                Triple("عدد الطلاب", "${stats.size}", PdfBuilder.NAVY),
+                Triple("نسبة الحضور العامة", rate?.let { "$it%" } ?: "-", rateColor(rate)),
+                Triple("مجموع الغيابات", "${stats.sumOf { it.absent }}", PdfBuilder.RED),
+                Triple("مجموع التأخر", "${stats.sumOf { it.late }}", Color.rgb(239, 108, 0)),
+                Triple("نقاط النشاط", "${totals.values.sumOf { it.points }}", PdfBuilder.GOLD),
+            )
+        )
+        val rows = stats.mapIndexed { i, st ->
+            val t = totals[st.student.id]
+            listOf(
+                "${i + 1}", st.student.name, "${st.present}", "${st.absent}", "${st.late}", "${st.excused}",
+                st.attendanceRate?.let { "$it%" } ?: "-", "${t?.points ?: 0}", "${t?.good ?: 0}", "${t?.bad ?: 0}",
+                fmt(averages[st.student.id]),
+            )
+        }
+        pdf.table(
+            listOf("ت", "اسم الطالب", "حضور", "غياب", "تأخر", "إجازة", "نسبة الحضور", "نقاط النشاط", "سلوك جيد", "مشاغب", "معدل الدرجات"),
+            rows,
+            listOf(0.5f, 3f, 0.9f, 0.9f, 0.9f, 0.9f, 1.1f, 1.1f, 1f, 0.9f, 1.1f),
+            cellColor = { r, c ->
+                when (c) {
+                    6 -> stats[r].attendanceRate?.let { lightTint(rateColor(it)) }
+                    3 -> if (stats[r].absent > 0) 0x22C62828 else null
+                    else -> null
+                }
+            },
+        )
+        val mostAbsent = stats.filter { it.absent > 0 }.sortedByDescending { it.absent }.take(5)
+        val mostActive = stats.map { it.student to (totals[it.student.id]?.points ?: 0) }.filter { it.second > 0 }
+            .sortedByDescending { it.second }.take(5)
+        if (mostAbsent.isNotEmpty() || mostActive.isNotEmpty()) {
+            pdf.heading("أبرز الملاحظات")
+            if (mostActive.isNotEmpty()) {
+                pdf.text("الأكثر نشاطاً: " + mostActive.joinToString("، ") { "${it.first.name} (${it.second})" }, 10.5f)
+            }
+            if (mostAbsent.isNotEmpty()) {
+                pdf.text("الأكثر غياباً: " + mostAbsent.joinToString("، ") { "${it.student.name} (${it.absent})" }, 10.5f)
+            }
+        }
+        pdf.signatures("مرشد الصف", "مدير المدرسة")
+        return pdf.save(PdfFiles.file(context, "تقرير ${cls.title} ${range.label}"))
+    }
+
+    private fun rateColor(rate: Int?): Int = when {
+        rate == null -> Color.GRAY
+        rate >= 90 -> PdfBuilder.GREEN
+        rate >= 75 -> Color.rgb(239, 108, 0)
+        else -> PdfBuilder.RED
+    }
+
+    private fun lightTint(c: Int) = Color.argb(45, Color.red(c), Color.green(c), Color.blue(c))
+
+    private fun statusText(s: Int) = when (s) {
+        com.hayalnaft.attendance.data.Status.ABSENT -> "غائب"
+        com.hayalnaft.attendance.data.Status.LATE -> "متأخر"
+        com.hayalnaft.attendance.data.Status.EXCUSED -> "مجاز"
+        else -> "حاضر"
+    }
+
+    private fun statusTint(s: Int): Int? = when (s) {
+        com.hayalnaft.attendance.data.Status.ABSENT -> 0x33C62828
+        com.hayalnaft.attendance.data.Status.LATE -> 0x33EF6C00
+        com.hayalnaft.attendance.data.Status.EXCUSED -> 0x331565C0
+        else -> null
     }
 
     fun eventLabel(type: Int, points: Int) = when (type) {
@@ -159,16 +266,18 @@ object Reports {
     }
 
     /** Short report sent as a WhatsApp or SMS message. */
-    fun studentText(db: Db, school: School, cls: SchoolClass, student: Student): String {
-        val st = db.studentStats(student.id)
-        val t = db.eventTotals(student.id)
+    fun studentText(db: Db, school: School, cls: SchoolClass, student: Student, range: DateRange = DateRange.ALL): String {
+        val st = db.studentStats(student.id, range)
+        val t = db.eventTotals(student.id, range)
         val subjects = db.subjects(school.id)
         val grades = db.studentGrades(student.id)
         return buildString {
             appendLine("تقرير الطالب: ${student.name}")
             appendLine("${cls.title} — ${school.name}")
             appendLine("التاريخ: ${Dates.display(Dates.today())}")
+            if (range != DateRange.ALL) appendLine("الفترة: ${Periods.describe(range)}")
             appendLine()
+            st?.attendanceRate?.let { appendLine("نسبة الحضور: $it%") }
             appendLine("الحضور: ${st?.present ?: 0} | الغياب: ${st?.absent ?: 0} | التأخر: ${st?.late ?: 0} | الإجازات: ${st?.excused ?: 0}")
             appendLine("نقاط النشاط: ${t.points} | سلوك جيد: ${t.good} | سلوك مشاغب: ${t.bad}")
             val lines = subjects.mapNotNull { sub ->
@@ -199,7 +308,7 @@ object Reports {
         c.drawRect(RectF(14f, 14f, w - 14, h - 14), Paint().apply { color = PdfBuilder.NAVY; style = Paint.Style.STROKE; strokeWidth = 6f })
         c.drawRect(RectF(24f, 24f, w - 24, h - 24), Paint().apply { color = PdfBuilder.GOLD; style = Paint.Style.STROKE; strokeWidth = 2f })
         pdf.space(14f)
-        pdf.schoolHeader(school, "")
+        pdf.header(context, school, "")
         pdf.space(40f)
         pdf.text("شهادة تقديرية", 34f, true, PdfBuilder.NAVY, Layout.Alignment.ALIGN_CENTER, 18f)
         val subjectText = subjects.joinToString("، ") { "${it.first} (${it.second})" }
@@ -214,7 +323,7 @@ object Reports {
 
     fun lessonPlan(context: Context, school: School, plan: LessonPlan): File {
         val pdf = PdfBuilder()
-        pdf.schoolHeader(school, "الخطة التربوية اليومية")
+        pdf.header(context, school, "الخطة التربوية اليومية")
         pdf.table(
             listOf("اليوم والتاريخ", "الصف والشعبة", "المادة", "عنوان الموضوع"),
             listOf(listOf(Dates.pretty(plan.date), plan.classTitle, plan.subjectName, plan.title)),

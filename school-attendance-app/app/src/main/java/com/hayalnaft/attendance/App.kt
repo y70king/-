@@ -34,6 +34,9 @@ class App : Application() {
 sealed interface Screen {
     data object Home : Screen
     data object Students : Screen
+    data object Classes : Screen
+    data class Sections(val grade: String) : Screen
+    data class ClassPage(val classId: Long) : Screen
     data class Import(val classId: Long?) : Screen
     data class Attendance(val classId: Long? = null, val subjectId: Long? = null) : Screen
     data class Messages(val studentId: Long? = null) : Screen
@@ -41,7 +44,7 @@ sealed interface Screen {
     data class StudentDetail(val studentId: Long) : Screen
     data object Settings : Screen
     data object Subjects : Screen
-    data object Grades : Screen
+    data class Grades(val classId: Long? = null) : Screen
     data object Timetable : Screen
     data object Plans : Screen
     data class PlanEditor(val planId: Long?) : Screen
@@ -152,6 +155,47 @@ class AppState(context: Context) {
         withSms {
             queued += items.size
             items.forEach { queue.trySend(it) }
+        }
+    }
+
+    /** True while the PIN lock screen covers the app. */
+    var locked by mutableStateOf(prefs.lockApp && prefs.pin.isNotBlank())
+
+    private var stoppedAt = 0L
+
+    fun onAppStopped() {
+        stoppedAt = System.currentTimeMillis()
+    }
+
+    /** Locks again when the app comes back after more than two minutes away (not after a quick trip to WhatsApp). */
+    fun onAppStarted() {
+        if (prefs.lockApp && prefs.pin.isNotBlank() && stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 120_000) locked = true
+    }
+
+    /** Bumped when the school logo changes. */
+    var logoVersion by mutableIntStateOf(0)
+
+    /** Light / dark choice, observed by the theme. */
+    var theme by mutableStateOf(prefs.theme)
+
+    /**
+     * Warns the parent once when the student's absence days reach the configured limit.
+     * Called after an absence is recorded.
+     */
+    fun checkAbsenceLimit(student: Student) {
+        val limit = prefs.absenceLimit
+        if (limit <= 0 || student.phone.isBlank() || prefs.limitWarned(student.id)) return
+        val days = db.absentDays(student.id)
+        if (days < limit) return
+        val body = Templates.fill(prefs.limitTemplate, student, schoolName(), com.hayalnaft.attendance.util.Dates.today())
+            .replace("{العدد}", "$days")
+        prefs.markLimitWarned(student.id)
+        toast("بلغ غياب ${student.name} $days يوماً — تم تنبيه ولي الأمر")
+        if (whatsappChannel) {
+            Phone.whatsapp(ctx, student.phone, body, prefs.countryCode)
+            db.logMessage(student.schoolId, student.name, student.phone, body, true, "تنبيه غياب (واتساب)")
+        } else {
+            send(listOf(OutMsg(student.schoolId, student.phone, body, student.name, "تنبيه غياب")))
         }
     }
 

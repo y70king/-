@@ -128,7 +128,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
         topBar = { AppTopBar("استيراد الطلاب", app.schoolName(), app::back) },
         bottomBar = {
             if (parsed.isNotEmpty()) {
-                Surface(Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = Color.White) {
+                Surface(Modifier.fillMaxWidth(), shadowElevation = 8.dp, color = CardBg) {
                     Button(
                         enabled = selectedCount > 0 && target != null,
                         onClick = {
@@ -162,7 +162,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Row(Modifier.padding(12.dp)) {
-                        Icon(Icons.Filled.Info, null, tint = Navy)
+                        Icon(Icons.Filled.Info, null, tint = Ink)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "اختر ملف Excel أو Word يحتوي أسماء الطلاب، أو انسخ الأسماء من أي مكان والصقها في المربع. " +
@@ -188,7 +188,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     HorizontalDivider(Modifier.weight(1f))
-                    Text("  أو الصق الأسماء  ", color = Color.Gray, style = MaterialTheme.typography.labelMedium)
+                    Text("  أو الصق الأسماء  ", color = Muted, style = MaterialTheme.typography.labelMedium)
                     HorizontalDivider(Modifier.weight(1f))
                 }
             }
@@ -249,7 +249,7 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                         Text(
                             "تم العثور على ${parsed.size} طالب",
                             fontWeight = FontWeight.Bold,
-                            color = Navy,
+                            color = Ink,
                             modifier = Modifier.weight(1f),
                         )
                         val all = checked.all { it }
@@ -260,26 +260,26 @@ fun ImportScreen(app: AppState, initialClassId: Long?) {
                 }
                 itemsIndexed(parsed) { i, p ->
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        colors = CardDefaults.cardColors(containerColor = CardBg),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.clickable { checked[i] = !checked[i] },
                     ) {
                         Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = checked.getOrElse(i) { false }, onCheckedChange = { checked[i] = it })
-                            Text("${i + 1}.", color = Color.Gray, modifier = Modifier.width(32.dp))
+                            Text("${i + 1}.", color = Muted, modifier = Modifier.width(32.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(p.name, fontWeight = FontWeight.Bold)
                                 Text(
                                     p.phone.ifEmpty { "بدون رقم" },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (p.phone.isEmpty()) Color.Gray else PresentGreen,
+                                    color = if (p.phone.isEmpty()) Muted else PresentGreen,
                                 )
                             }
                         }
                     }
                 }
             } else if (parsedOnce && error == null) {
-                item { Text("لا توجد أسماء", color = Color.Gray) }
+                item { Text("لا توجد أسماء", color = Muted) }
             }
         }
     }

@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hayalnaft.attendance.AppState
 import com.hayalnaft.attendance.Screen
+import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.StudentStats
 import com.hayalnaft.attendance.util.Dates
@@ -69,7 +70,7 @@ fun ReportsScreen(app: AppState) {
     val cls = classes.firstOrNull { it.id == classId }
 
     val day = remember(v, sid, date) { app.db.dayList(sid, date) }
-    val stats = remember(v, sid, cls?.id, monthOnly) { app.db.stats(sid, cls?.id, if (monthOnly) Dates.monthStart() else null) }
+    val stats = remember(v, sid, cls?.id, monthOnly) { app.db.stats(sid, cls?.id, if (monthOnly) DateRange(Dates.monthStart(), "9999-12-31", "") else DateRange.ALL) }
 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -93,7 +94,7 @@ fun ReportsScreen(app: AppState) {
         },
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            TabRow(selectedTabIndex = tab, containerColor = Color.White, contentColor = Navy) {
+            TabRow(selectedTabIndex = tab, containerColor = CardBg, contentColor = Ink) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("غيابات يوم") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("إحصائيات الطلاب") })
             }
@@ -115,7 +116,7 @@ fun ReportsScreen(app: AppState) {
                             val r = day[i]
                             Card(
                                 onClick = { app.go(Screen.StudentDetail(r.student.id)) },
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                colors = CardDefaults.cardColors(containerColor = CardBg),
                                 shape = RoundedCornerShape(14.dp),
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -126,7 +127,7 @@ fun ReportsScreen(app: AppState) {
                                         Text(
                                             r.student.className + (r.subjectName?.let { " • حصة $it" } ?: " • التعداد اليومي"),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = Color.Gray,
+                                            color = Muted,
                                         )
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
@@ -175,14 +176,14 @@ fun ReportsScreen(app: AppState) {
 
 @Composable
 private fun StatsCard(s: StudentStats, onClick: () -> Unit) {
-    Card(onClick = onClick, colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(14.dp)) {
+    Card(onClick = onClick, colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(14.dp)) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(s.student.name, if (s.absent > 0) AbsentRed else Navy)
+                Avatar(s.student.name, if (s.absent > 0) AbsentRed else Ink)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.student.name, fontWeight = FontWeight.Bold)
-                    Text(s.student.className, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text(s.student.className, style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
             }
             Spacer(Modifier.height(8.dp))

@@ -45,7 +45,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -101,10 +103,45 @@ private val LightColors = lightColorScheme(
     error = AbsentRed,
 )
 
+private val DarkColors = darkColorScheme(
+    primary = Color(0xFF9CC9F0),
+    onPrimary = NavyDark,
+    primaryContainer = Color(0xFF1E3A52),
+    onPrimaryContainer = Color(0xFFD6E6F2),
+    secondary = Gold,
+    onSecondary = Color(0xFF231A00),
+    secondaryContainer = Color(0xFF4A3A10),
+    onSecondaryContainer = Color(0xFFFFE8B0),
+    background = Color(0xFF0F1419),
+    surface = Color(0xFF1A2027),
+    surfaceVariant = Color(0xFF26303A),
+    onSurface = Color(0xFFE3E8EE),
+    onSurfaceVariant = Color(0xFFA9B4C0),
+    error = Color(0xFFEF5350),
+)
+
+/** [theme] is "light", "dark" or "system". */
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = LightColors, content = content)
+fun AppTheme(theme: String = "system", content: @Composable () -> Unit) {
+    val dark = when (theme) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, content = content)
 }
+
+/** Card and sheet background that follows light / dark mode. */
+val CardBg: Color @Composable get() = MaterialTheme.colorScheme.surface
+
+/** Secondary text colour. */
+val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+/** Brand colour for text and icons, readable in both modes. */
+val Ink: Color @Composable get() = MaterialTheme.colorScheme.primary
+
+/** Subtle filled background for list rows inside dialogs. */
+val SoftBg: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
 object StatusUi {
     val order = listOf(Status.PRESENT, Status.ABSENT, Status.LATE, Status.EXCUSED)
@@ -232,7 +269,7 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        color = Navy,
+        color = Ink,
     )
 }
 
@@ -246,10 +283,10 @@ fun EmptyState(icon: ImageVector, title: String, subtitle: String? = null, conte
         Box(
             Modifier.size(80.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = Navy, modifier = Modifier.size(40.dp)) }
+        ) { Icon(icon, null, tint = Ink, modifier = Modifier.size(40.dp)) }
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         if (subtitle != null) {
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, textAlign = TextAlign.Center)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Muted, textAlign = TextAlign.Center)
         }
         Spacer(Modifier.height(4.dp))
         content()
@@ -257,7 +294,7 @@ fun EmptyState(icon: ImageVector, title: String, subtitle: String? = null, conte
 }
 
 @Composable
-fun Avatar(name: String, color: Color = Navy) {
+fun Avatar(name: String, color: Color = Ink) {
     Box(
         Modifier.size(42.dp).clip(CircleShape).background(color.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center,
@@ -438,7 +475,7 @@ fun PinDialog(expected: String, onDismiss: () -> Unit, onSuccess: () -> Unit) {
     var wrong by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.Lock, null, tint = Navy) },
+        icon = { Icon(Icons.Filled.Lock, null, tint = Ink) },
         title = { Text("أدخل الرمز السري") },
         text = {
             OutlinedTextField(
@@ -491,6 +528,7 @@ private val sections = listOf("أ", "ب", "ج", "د", "هـ", "و", "ز", "ح")
 fun ClassDialog(
     initial: SchoolClass?,
     stage: String,
+    title: String? = null,
     onDismiss: () -> Unit,
     onSave: (name: String, section: String, room: String, ministerial: Boolean) -> Unit,
 ) {
@@ -501,7 +539,7 @@ fun ClassDialog(
     val grades = Stages.grades(stage) + Stages.allGrades.filter { it !in Stages.grades(stage) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "صف جديد" else "تعديل الصف") },
+        title = { Text(title ?: if (initial == null) "صف جديد" else "تعديل الصف") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("الصف", style = MaterialTheme.typography.labelLarge)

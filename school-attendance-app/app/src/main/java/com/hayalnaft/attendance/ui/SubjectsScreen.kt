@@ -88,7 +88,7 @@ fun SubjectsScreen(app: AppState) {
                 }
             }
             items(subjects, key = { it.id }) { s ->
-                Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(14.dp)) {
+                Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(14.dp)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Avatar(s.name, Color(0xFF2E7D32))
                         Spacer(Modifier.width(12.dp))

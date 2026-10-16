@@ -96,7 +96,7 @@ fun PlansScreen(app: AppState) {
             items(plans, key = { it.id }) { p ->
                 Card(
                     onClick = { app.go(Screen.PlanEditor(p.id)) },
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -104,7 +104,7 @@ fun PlansScreen(app: AppState) {
                         Text(
                             listOf(Dates.pretty(p.date), p.subjectName, p.classTitle).filter { it.isNotBlank() }.joinToString(" • "),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
+                            color = Muted,
                         )
                     }
                 }
@@ -264,7 +264,7 @@ fun PlanEditorScreen(app: AppState, planId: Long?) {
                                 apply(t)
                                 templates = false
                             },
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F4F8)),
+                            colors = CardDefaults.cardColors(containerColor = SoftBg),
                         ) {
                             Text(t.name, modifier = Modifier.fillMaxWidth().padding(12.dp), fontWeight = FontWeight.Bold)
                         }

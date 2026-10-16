@@ -38,12 +38,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.hayalnaft.attendance.util.Reports
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,6 +72,15 @@ fun SettingsScreen(app: AppState) {
     var hasPin by remember { mutableStateOf(prefs.pin.isNotBlank()) }
     var setPin by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf<android.net.Uri?>(null) }
+    var lockApp by remember { mutableStateOf(prefs.lockApp) }
+    var limit by remember { mutableIntStateOf(prefs.absenceLimit) }
+    var limitTpl by remember { mutableStateOf(prefs.limitTemplate) }
+    val ctx = LocalContext.current
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val ok = runCatching { saveLogo(ctx, uri) }.getOrDefault(false)
+        if (ok) app.logoVersion++ else app.toast("تعذر قراءة الصورة")
+    }
 
     val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri != null) app.toast(if (app.backup(uri)) "تم حفظ النسخة الاحتياطية بنجاح" else "تعذر حفظ النسخة الاحتياطية")
@@ -107,7 +121,61 @@ fun SettingsScreen(app: AppState) {
                     Text(
                         "للمرحلة الابتدائية التي تكون درجتها من 10: اجعل الدرجة العظمى 10 ودرجة الإعفاء 9.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray,
+                        color = Muted,
+                    )
+                }
+            }
+
+            SettingsCard("شعار المدرسة") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SchoolLogo(app, 64.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("يظهر في الشاشة الرئيسية وفي رأس جميع ملفات PDF", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { logoPicker.launch("image/*") }) { Text("اختيار صورة") }
+                            if (Reports.logoFile(ctx).exists()) {
+                                TextButton(onClick = {
+                                    Reports.logoFile(ctx).delete()
+                                    app.logoVersion++
+                                }) { Text("إزالة") }
+                            }
+                        }
+                    }
+                }
+            }
+
+            SettingsCard("المظهر") {
+                OptionChips(listOf("system", "light", "dark"), app.theme, {
+                    when (it) {
+                        "light" -> "فاتح"
+                        "dark" -> "داكن (ليلي)"
+                        else -> "حسب الهاتف"
+                    }
+                }) {
+                    app.theme = it
+                    prefs.theme = it
+                }
+            }
+
+            SettingsCard("تنبيه كثرة الغياب") {
+                Text(
+                    "يُرسل تنبيه تلقائي لولي الأمر مرة واحدة عندما يبلغ عدد أيام غياب الطالب الحد المحدد.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(6.dp))
+                OptionChips(listOf(0, 3, 5, 7, 10, 15, 20), limit, { if (it == 0) "متوقف" else "$it أيام" }) {
+                    limit = it
+                    prefs.absenceLimit = it
+                }
+                if (limit > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = limitTpl,
+                        onValueChange = { limitTpl = it; prefs.limitTemplate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        supportingText = { Text("{العدد} يُستبدل بعدد أيام الغياب") },
                     )
                 }
             }
@@ -122,7 +190,7 @@ fun SettingsScreen(app: AppState) {
                     if (channel == Prefs.CHANNEL_SMS) "تُرسل الرسالة مباشرة من شريحة الهاتف دون الحاجة للإنترنت."
                     else "يُفتح واتساب برسالة جاهزة لولي الأمر وتضغط إرسال. يحتاج إنترنت عند الإرسال فقط.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Muted,
                 )
                 SwitchRow(
                     "تبليغ فوري عند تسجيل الغياب",
@@ -167,7 +235,7 @@ fun SettingsScreen(app: AppState) {
                 Text(
                     "الكلمات التالية تُستبدل تلقائياً: {الطالب} {الصف} {المادة} {المدرسة} {اليوم} {التاريخ}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Muted,
                 )
             }
 
@@ -187,6 +255,8 @@ fun SettingsScreen(app: AppState) {
                         OutlinedButton(onClick = {
                             app.guard {
                                 prefs.pin = ""
+                                prefs.lockApp = false
+                                lockApp = false
                                 hasPin = false
                                 app.toast("تم إلغاء الرمز السري")
                             }
@@ -195,6 +265,19 @@ fun SettingsScreen(app: AppState) {
                             Spacer(Modifier.width(6.dp))
                             Text("إلغاء الرمز")
                         }
+                    }
+                }
+            }
+
+            if (hasPin) {
+                SettingsCard("قفل التطبيق") {
+                    SwitchRow(
+                        "طلب الرمز السري عند فتح التطبيق",
+                        "ويُطلب أيضاً إذا بقي التطبيق في الخلفية أكثر من دقيقتين",
+                        lockApp,
+                    ) {
+                        lockApp = it
+                        prefs.lockApp = it
                     }
                 }
             }
@@ -222,9 +305,9 @@ fun SettingsScreen(app: AppState) {
             SettingsCard("حول التطبيق") {
                 Text("تطبيق ثانوية حي النفط للبنين", fontWeight = FontWeight.Bold)
                 Text(
-                    "الإصدار 2.0 • يعمل بدون إنترنت • الحضور والدرجات والخطط والتبليغات",
+                    "الإصدار 3.0 • يعمل بدون إنترنت • الحضور والدرجات والخطط والتبليغات",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
+                    color = Muted,
                 )
             }
         }
@@ -279,6 +362,21 @@ fun SettingsScreen(app: AppState) {
     }
 }
 
+/** Saves the picked image as the school logo, scaled down to at most 512 px. */
+private fun saveLogo(context: android.content.Context, uri: android.net.Uri): Boolean {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 512) sample *= 2
+    val bmp = context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+    } ?: return false
+    val scale = minOf(1f, 512f / maxOf(bmp.width, bmp.height))
+    val out = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt().coerceAtLeast(1), (bmp.height * scale).toInt().coerceAtLeast(1), true)
+    Reports.logoFile(context).outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    return true
+}
+
 @Composable
 private fun SchoolField(label: String, value: String, modifier: Modifier = Modifier.fillMaxWidth(), number: Boolean = false, onSave: (String) -> Unit) {
     var text by remember(value) { mutableStateOf(value) }
@@ -297,9 +395,9 @@ private fun SchoolField(label: String, value: String, modifier: Modifier = Modif
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, color = Navy, style = MaterialTheme.typography.titleSmall)
+            Text(title, fontWeight = FontWeight.Bold, color = Ink, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(8.dp))
             content()
         }
@@ -311,7 +409,7 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted)
         }
         Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onChange)

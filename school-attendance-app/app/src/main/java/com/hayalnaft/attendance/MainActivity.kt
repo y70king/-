@@ -24,6 +24,10 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.hayalnaft.attendance.ui.AppTheme
 import com.hayalnaft.attendance.ui.AttendanceScreen
+import com.hayalnaft.attendance.ui.ClassPageScreen
+import com.hayalnaft.attendance.ui.ClassesScreen
+import com.hayalnaft.attendance.ui.LockScreen
+import com.hayalnaft.attendance.ui.SectionsScreen
 import com.hayalnaft.attendance.ui.GradesScreen
 import com.hayalnaft.attendance.ui.HomeScreen
 import com.hayalnaft.attendance.ui.ImportScreen
@@ -48,12 +52,22 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handleAlarm(intent)
         Alarms.reschedule(this)
         setContent {
-            AppTheme {
+            AppTheme(app.theme) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     AppRoot(app)
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        app.onAppStarted()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        app.onAppStopped()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -117,13 +131,21 @@ private fun AppRoot(app: AppState) {
                 is Screen.StudentDetail -> StudentDetailScreen(app, screen.studentId)
                 Screen.Settings -> SettingsScreen(app)
                 Screen.Subjects -> SubjectsScreen(app)
-                Screen.Grades -> GradesScreen(app)
+                is Screen.Grades -> GradesScreen(app, screen.classId)
+                Screen.Classes -> ClassesScreen(app)
+                is Screen.Sections -> SectionsScreen(app, screen.grade)
+                is Screen.ClassPage -> ClassPageScreen(app, screen.classId)
                 Screen.Timetable -> TimetableScreen(app)
                 Screen.Plans -> PlansScreen(app)
                 is Screen.PlanEditor -> PlanEditorScreen(app, screen.planId)
             }
         }
         SendingBanner(app, Modifier.align(Alignment.BottomCenter))
+    }
+
+    if (app.locked) {
+        LockScreen(app)
+        return
     }
 
     app.pendingGuard?.let { action ->

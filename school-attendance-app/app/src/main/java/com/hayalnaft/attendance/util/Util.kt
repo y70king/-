@@ -11,7 +11,10 @@ import android.telephony.SmsManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.Student
+import com.hayalnaft.attendance.data.defaultYear
+import java.util.Calendar
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -64,7 +67,36 @@ class Prefs(context: Context) {
         get() = sp.getInt("alarm_lead", 5)
         set(v) = sp.edit().putInt("alarm_lead", v).apply()
 
+    /** Ask for the PIN when opening the app (and after it was in the background for a while). */
+    var lockApp: Boolean
+        get() = sp.getBoolean("lock_app", false)
+        set(v) = sp.edit().putBoolean("lock_app", v).apply()
+
+    /** "system", "light" or "dark". */
+    var theme: String
+        get() = sp.getString("theme", null) ?: "system"
+        set(v) = sp.edit().putString("theme", v).apply()
+
+    /** Absence days after which the parent gets a warning; 0 turns it off. */
+    var absenceLimit: Int
+        get() = sp.getInt("absence_limit", 0)
+        set(v) = sp.edit().putInt("absence_limit", v).apply()
+
+    var limitTemplate: String
+        get() = sp.getString("limit_tpl", null) ?: DEFAULT_LIMIT
+        set(v) = sp.edit().putString("limit_tpl", v).apply()
+
+    /** Students already warned for the current absence limit, so the warning goes out once. */
+    fun limitWarned(studentId: Long): Boolean = sp.getStringSet("limit_warned_$absenceLimit", emptySet())!!.contains("$studentId")
+
+    fun markLimitWarned(studentId: Long) {
+        val key = "limit_warned_$absenceLimit"
+        sp.edit().putStringSet(key, sp.getStringSet(key, emptySet())!! + "$studentId").apply()
+    }
+
     companion object {
+        const val DEFAULT_LIMIT =
+            "ولي أمر الطالب {الطالب} المحترم، نود إعلامكم بأن عدد أيام غياب ابنكم بلغ {العدد} يوماً. يرجى مراجعة إدارة {المدرسة}."
         const val CHANNEL_SMS = "sms"
         const val CHANNEL_WHATSAPP = "whatsapp"
         const val DEFAULT_ABSENT =
@@ -93,6 +125,41 @@ object Dates {
     fun time(ms: Long): String = SimpleDateFormat("yyyy/MM/dd  hh:mm a", Locale.US).format(Date(ms))
     fun toUtcMillis(s: String): Long = runCatching { isoUtc().parse(s)?.time }.getOrNull() ?: System.currentTimeMillis()
     fun fromUtcMillis(ms: Long): String = isoUtc().format(Date(ms))
+}
+
+/** Report periods following the Iraqi school calendar (year from September, second semester from February). */
+object Periods {
+    private fun iso(c: Calendar) = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(c.time)
+    private fun date(y: Int, m: Int, d: Int) = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
+
+    fun options(schoolYear: String, now: Calendar = Calendar.getInstance()): List<DateRange> {
+        val today = iso(now)
+        val startYear = Regex("""\d{4}""").find(schoolYear)?.value?.toInt()
+            ?: Regex("""\d{4}""").find(defaultYear())!!.value.toInt()
+        val week = (now.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, -((get(Calendar.DAY_OF_WEEK) - Calendar.SATURDAY + 7) % 7))
+        }
+        val monthStart = (now.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, 1) }
+        val monthEnd = (monthStart.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)) }
+        val lastStart = (monthStart.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
+        val lastEnd = (lastStart.clone() as Calendar).apply { set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH)) }
+        return listOf(
+            DateRange(today, today, "اليوم"),
+            DateRange(iso(week), today, "هذا الأسبوع"),
+            DateRange(iso(monthStart), iso(monthEnd), "هذا الشهر"),
+            DateRange(iso(lastStart), iso(lastEnd), "الشهر الماضي"),
+            DateRange(date(startYear, 9, 1), date(startYear + 1, 1, 31), "الفصل الأول"),
+            DateRange(date(startYear + 1, 2, 1), date(startYear + 1, 6, 30), "الفصل الثاني"),
+            DateRange(date(startYear, 9, 1), date(startYear + 1, 8, 31), "السنة الدراسية"),
+            DateRange.ALL,
+        )
+    }
+
+    fun describe(r: DateRange): String = when {
+        r == DateRange.ALL -> r.label
+        r.from == r.to -> "${r.label} (${Dates.display(r.from)})"
+        else -> "${r.label}: من ${Dates.display(r.from)} إلى ${Dates.display(r.to)}"
+    }
 }
 
 object Templates {

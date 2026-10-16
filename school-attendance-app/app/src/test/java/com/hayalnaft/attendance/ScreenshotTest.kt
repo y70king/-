@@ -3,6 +3,8 @@ package com.hayalnaft.attendance
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.hayalnaft.attendance.data.EventType
 import com.hayalnaft.attendance.data.GradeField
@@ -63,6 +65,10 @@ class ScreenshotTest {
         app.db.setStatus(ids[2], today, math.id, Status.LATE)
         app.db.setStatus(ids[3], today, math.id, Status.PRESENT)
         app.db.setStatus(ids[4], today, math.id, Status.EXCUSED)
+        for (d in 1..6) {
+            val day = Dates.fromUtcMillis(Dates.toUtcMillis(today) - d * 86_400_000L)
+            ids.forEachIndexed { i, id -> app.db.setStatus(id, day, 0, if ((i + d) % 5 == 0) Status.ABSENT else if ((i + d) % 7 == 0) Status.LATE else Status.PRESENT) }
+        }
         app.db.addEvent(ids[0], today, EventType.POINTS, 5)
         app.db.addEvent(ids[0], today, EventType.GOOD, 0, "شارك بفاعلية في حل التمارين")
         app.db.addEvent(ids[2], today, EventType.BAD, 0, "كثير الحديث أثناء الشرح")
@@ -92,15 +98,25 @@ class ScreenshotTest {
         app.changed()
 
         shot("01-home")
-        go(app, Screen.Attendance(cls.id, math.id)); shot("02-attendance")
-        go(app, Screen.Grades); shot("03-grades")
-        go(app, Screen.StudentDetail(ids[0])); shot("04-student")
-        go(app, Screen.Timetable); shot("05-timetable")
-        go(app, Screen.PlanEditor(planId)); shot("06-plan")
-        go(app, Screen.Students); shot("07-students")
-        go(app, Screen.Settings); shot("08-settings")
-        go(app, Screen.Subjects); shot("09-subjects")
-        go(app, Screen.Reports); shot("10-reports")
+        go(app, Screen.Classes); shot("02-classes")
+        go(app, Screen.Sections(cls.name)); shot("03-sections")
+        go(app, Screen.ClassPage(cls.id)); shot("04-class-students")
+        rule.onNodeWithText("الدرجات").performClick(); shot("05-class-grades")
+        rule.onNodeWithText("التقرير").performClick(); shot("06-class-report")
+        go(app, Screen.Attendance()); shot("07-attendance-pick")
+        go(app, Screen.Attendance(cls.id, math.id)); shot("08-attendance-one")
+        go(app, Screen.Grades(cls.id)); shot("09-grades")
+        go(app, Screen.StudentDetail(ids[0])); shot("10-student")
+        go(app, Screen.Timetable); shot("11-timetable")
+        go(app, Screen.PlanEditor(planId)); shot("12-plan")
+        go(app, Screen.Settings); shot("13-settings")
+        rule.runOnIdle { app.theme = "dark" }
+        go(app, Screen.Home); shot("14-dark-home")
+        go(app, Screen.Attendance(cls.id, math.id)); shot("15-dark-attendance")
+        go(app, Screen.ClassPage(cls.id)); shot("16-dark-class")
+        rule.runOnIdle { app.theme = "system"; app.prefs.pin = "1234"; app.locked = true }
+        shot("17-lock")
+        rule.runOnIdle { app.locked = false }
 
         val s = app.db.school(sid)!!
         val c = app.db.classes(sid).first { it.id == cls.id }
@@ -129,6 +145,9 @@ class ScreenshotTest {
         tag = "student"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[0])!!)
         tag = "certificate"; Reports.certificate(ctx, s, c, app.db.student(ids[0])!!, listOf("الرياضيات" to 94))
         tag = "plan"; Reports.lessonPlan(ctx, s, app.db.plan(planId)!!)
+        val month = com.hayalnaft.attendance.util.Periods.options(s.year)[2]
+        tag = "class-report"; Reports.classReport(ctx, app.db, s, c, month)
+        tag = "student-month"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[2])!!, month)
         File(out, "student.txt").writeText(Reports.studentText(app.db, s, c, app.db.student(ids[0])!!))
     }
 

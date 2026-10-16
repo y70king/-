@@ -113,11 +113,11 @@ fun TimetableScreen(app: AppState) {
             item {
                 Card(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = if (alarms) Gold.copy(alpha = 0.15f) else Color.White),
+                    colors = CardDefaults.cardColors(containerColor = if (alarms) Gold.copy(alpha = 0.15f) else CardBg),
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if (alarms) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null, tint = if (alarms) Color(0xFF8A5A00) else Color.Gray)
+                            Icon(if (alarms) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null, tint = if (alarms) Color(0xFF8A5A00) else Muted)
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("منبه الحصص", fontWeight = FontWeight.Bold)
@@ -163,24 +163,24 @@ fun TimetableScreen(app: AppState) {
                 Card(
                     onClick = { editing = p },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(76.dp)) {
-                            Text(Dates.clock(p.startMin), fontWeight = FontWeight.Bold, color = Navy)
-                            Text(Dates.clock(p.startMin + p.duration), style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                            Text(Dates.clock(p.startMin), fontWeight = FontWeight.Bold, color = Ink)
+                            Text(Dates.clock(p.startMin + p.duration), style = MaterialTheme.typography.labelSmall, color = Muted)
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.subjectName, fontWeight = FontWeight.Bold)
-                            Text("${p.classTitle} • ${p.duration} دقيقة", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            Text("${p.classTitle} • ${p.duration} دقيقة", style = MaterialTheme.typography.bodySmall, color = Muted)
                         }
                         IconButton(onClick = { app.go(Screen.Attendance(p.classId, p.subjectId)) }) {
                             Icon(Icons.Filled.HowToReg, "أخذ الحضور", tint = PresentGreen)
                         }
                         IconButton(onClick = { app.guard { app.db.deletePeriod(p.id); changed() } }) {
-                            Icon(Icons.Filled.Delete, "حذف", tint = Color.Gray)
+                            Icon(Icons.Filled.Delete, "حذف", tint = Muted)
                         }
                     }
                 }

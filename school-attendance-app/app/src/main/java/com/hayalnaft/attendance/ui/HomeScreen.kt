@@ -87,16 +87,13 @@ fun HomeScreen(app: AppState) {
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-                    .background(Brush.verticalGradient(listOf(NavyDark, Navy)))
+                    .background(Brush.verticalGradient(listOf(NavyDark, Ink)))
                     .statusBarsPadding()
                     .padding(20.dp),
             ) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.size(60.dp).clip(CircleShape).background(Gold),
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Filled.School, null, tint = NavyDark, modifier = Modifier.size(34.dp)) }
+                        SchoolLogo(app, 60.dp)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -130,7 +127,7 @@ fun HomeScreen(app: AppState) {
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                StatTile("الطلاب", summary[Status.NONE] ?: 0, Navy, Modifier.weight(1f))
+                StatTile("الطلاب", summary[Status.NONE] ?: 0, Ink, Modifier.weight(1f))
                 StatTile("حاضر", summary[Status.PRESENT] ?: 0, PresentGreen, Modifier.weight(1f))
                 StatTile("غائب", summary[Status.ABSENT] ?: 0, AbsentRed, Modifier.weight(1f))
                 StatTile("متأخر", summary[Status.LATE] ?: 0, LateOrange, Modifier.weight(1f))
@@ -188,9 +185,9 @@ fun HomeScreen(app: AppState) {
 
             Spacer(Modifier.height(12.dp))
             val tiles = listOf(
-                Tile("الطلاب والصفوف", "الشعب والقاعات والبحث", Icons.Filled.Groups, Navy) { app.go(Screen.Students) },
+                Tile("الصفوف والشعب", "الطلاب والدرجات والتقارير", Icons.Filled.Groups, Ink) { app.go(Screen.Classes) },
                 Tile("استيراد الطلاب", "Excel • Word • لصق", Icons.Filled.UploadFile, Color(0xFF00796B)) { app.go(Screen.Import(null)) },
-                Tile("دفتر الدرجات", "السعي والمعدلات والإعفاء", Icons.Filled.Grading, Color(0xFF6A1B9A)) { app.go(Screen.Grades) },
+                Tile("دفتر الدرجات", "السعي والمعدلات والإعفاء", Icons.Filled.Grading, Color(0xFF6A1B9A)) { app.go(Screen.Grades()) },
                 Tile("جدول الحصص", "الجدول الأسبوعي والمنبه", Icons.Filled.EditCalendar, Color(0xFFAD1457)) { app.go(Screen.Timetable) },
                 Tile("الخطة اليومية", "دفتر الخطط ونماذج جاهزة", Icons.Filled.LibraryBooks, Color(0xFF5D4037)) { app.go(Screen.Plans) },
                 Tile("التبليغات", "رسائل لأولياء الأمور", Icons.Filled.Campaign, LateOrange) { app.go(Screen.Messages()) },
@@ -213,11 +210,11 @@ fun HomeScreen(app: AppState) {
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.WifiOff, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.WifiOff, null, tint = Muted, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "يعمل بدون إنترنت — جميع البيانات محفوظة على هاتفك",
-                    color = Color.Gray,
+                    color = Muted,
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                 )
@@ -234,7 +231,7 @@ private fun TileCard(t: Tile, modifier: Modifier) {
         onClick = t.onClick,
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -244,7 +241,7 @@ private fun TileCard(t: Tile, modifier: Modifier) {
             ) { Icon(t.icon, null, tint = t.color) }
             Spacer(Modifier.height(10.dp))
             Text(t.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-            Text(t.subtitle, color = Color.Gray, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            Text(t.subtitle, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
     }
 }
@@ -254,12 +251,12 @@ private fun StatTile(label: String, value: Int, color: Color, modifier: Modifier
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$value", color = color, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(label, color = Color.Gray, style = MaterialTheme.typography.labelMedium)
+            Text(label, color = Muted, style = MaterialTheme.typography.labelMedium)
         }
     }
 }

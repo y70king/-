@@ -151,14 +151,14 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
                             Card(
                                 onClick = { studentId = s.id; search = "" },
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                colors = CardDefaults.cardColors(containerColor = CardBg),
                             ) {
                                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Avatar(s.name)
                                     Spacer(Modifier.width(10.dp))
                                     Column {
                                         Text(s.name, fontWeight = FontWeight.Bold)
-                                        Text(s.className, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                        Text(s.className, style = MaterialTheme.typography.bodySmall, color = Muted)
                                     }
                                 }
                             }
@@ -227,7 +227,7 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
             items(logs, key = { it.id }) { m ->
                 Card(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,10 +239,10 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(m.studentName ?: m.phone, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Tag(m.kind, Navy)
+                            Tag(m.kind, Ink)
                         }
                         Text(m.body, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("${Dates.time(m.ts)} • ${m.phone}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("${Dates.time(m.ts)} • ${m.phone}", style = MaterialTheme.typography.labelSmall, color = Muted)
                     }
                 }
             }
@@ -268,7 +268,7 @@ fun MessagesScreen(app: AppState, initialStudentId: Long?) {
                                     app.db.logMessage(sid, s.name, s.phone, text, true, "تبليغ (واتساب)")
                                     sentWa.add(s.id)
                                 },
-                                colors = CardDefaults.cardColors(containerColor = if (done) PresentGreen.copy(alpha = 0.1f) else Color(0xFFF1F4F8)),
+                                colors = CardDefaults.cardColors(containerColor = if (done) PresentGreen.copy(alpha = 0.1f) else SoftBg),
                             ) {
                                 Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(s.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

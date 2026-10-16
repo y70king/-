@@ -65,14 +65,14 @@ import java.io.File
 private const val ALL_FIELDS = "all"
 
 @Composable
-fun GradesScreen(app: AppState) {
+fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     val ctx = LocalContext.current
     val v = app.version
     val sid = app.schoolId
     val school = remember(v, sid) { app.db.school(sid) } ?: return
     val classes = remember(v, sid) { app.db.classes(sid) }
     val subjects = remember(v, sid) { app.db.subjects(sid) }
-    var classSel by rememberSaveable { mutableStateOf<Long?>(null) }
+    var classSel by rememberSaveable { mutableStateOf(initialClassId) }
     var subjectSel by rememberSaveable { mutableStateOf<Long?>(null) }
     var field by rememberSaveable { mutableStateOf(GradeField.M1) }
     val cls = classes.firstOrNull { it.id == classSel } ?: classes.firstOrNull { it.count > 0 } ?: classes.firstOrNull()
@@ -141,7 +141,7 @@ fun GradesScreen(app: AppState) {
                     "الدرجة العظمى ${school.maxMark} • درجة الإعفاء ${school.exemptMark}" +
                         if (cls.ministerial) " • صف وزاري (بدون إعفاء)" else "",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.Gray,
+                    color = Muted,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
@@ -189,12 +189,12 @@ private fun GradeCard(
     onCertificate: () -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else Color.White),
+        colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else CardBg),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$index.", color = Color.Gray, modifier = Modifier.width(28.dp))
+                Text("$index.", color = Muted, modifier = Modifier.width(28.dp))
                 Text(s.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (field != ALL_FIELDS) {
                     GradeInput(values[field], maxMark, Modifier.width(84.dp)) { onChange(field, it) }
@@ -212,8 +212,8 @@ private fun GradeCard(
             }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                r.semester1?.let { Tag("ف1: $it", Navy) }
-                r.semester2?.let { Tag("ف2: $it", Navy) }
+                r.semester1?.let { Tag("ف1: $it", Ink) }
+                r.semester2?.let { Tag("ف2: $it", Ink) }
                 r.annual?.let { Tag("السعي: $it", ExcusedBlue) }
                 r.finalGrade?.let { Tag("النهائية: $it", PresentGreen) }
                 if (r.status.isNotBlank()) {

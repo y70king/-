@@ -44,8 +44,12 @@ class MigrationTest {
         assertTrue(rows.single().notified)
         assertEquals(2, helper.daySummary(1, "2026-10-01")[Status.NONE])
         assertEquals(1, helper.history(1).size)
-        helper.addSubject(1, "الرياضيات")
+        val math = helper.addSubject(1, "الرياضيات")
         assertEquals(1, helper.subjects(1).size)
+        // Version 3 adds daily grades.
+        val test = helper.saveDailyTest(com.hayalnaft.attendance.data.DailyTest(0, 1, math, "2026-10-02", "اختبار قصير", 10.0))
+        helper.setDailyMark(test, 1, 8.0)
+        assertEquals(mapOf(test to mapOf(1L to 8.0)), helper.dailyMarks(1, math))
         helper.close()
     }
 }

@@ -84,6 +84,16 @@ data class DayActivity(val points: Int, val good: Int, val bad: Int)
 
 data class EventTotals(val points: Int, val good: Int, val bad: Int, val notes: Int)
 
+/** One daily assessment (e.g. a quiz or oral check) of a class in a subject, marked out of [maxMark]. */
+data class DailyTest(
+    val id: Long,
+    val classId: Long,
+    val subjectId: Long,
+    val date: String,
+    val title: String,
+    val maxMark: Double,
+)
+
 data class Period(
     val id: Long,
     val schoolId: Long,

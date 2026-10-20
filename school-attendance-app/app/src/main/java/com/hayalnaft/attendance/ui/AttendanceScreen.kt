@@ -87,11 +87,13 @@ import com.hayalnaft.attendance.data.EventType
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.Student
 import com.hayalnaft.attendance.util.Dates
+import com.hayalnaft.attendance.util.Phone
 
 private val pointValues = listOf(1, 2, 5, 10)
 
 @Composable
 fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Long?) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val v = app.version
     val sid = app.schoolId
     val classes = remember(v, sid) { app.db.classes(sid) }
@@ -136,6 +138,39 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
 
     val subjectName = subjects.firstOrNull { it.id == subjectId }?.name
 
+    /** Absent, late and excused names of this roll call in one WhatsApp message (e.g. to the school group). */
+    fun shareAbsentees() {
+        val c = cls ?: return
+        fun names(status: Int) = rows.filter { it.status == status }.map { it.student.name }
+        val absent = names(Status.ABSENT)
+        val late = names(Status.LATE)
+        val excused = names(Status.EXCUSED)
+        val text = buildString {
+            appendLine("*غيابات ${c.title}*")
+            appendLine(Dates.pretty(date) + (subjectName?.let { " • حصة $it" } ?: ""))
+            appendLine()
+            if (absent.isEmpty()) appendLine("لا يوجد غياب ✅")
+            else {
+                appendLine("*الغائبون (${absent.size}):*")
+                absent.forEachIndexed { i, n -> appendLine("${i + 1}. $n") }
+            }
+            if (late.isNotEmpty()) {
+                appendLine()
+                appendLine("*المتأخرون (${late.size}):*")
+                late.forEachIndexed { i, n -> appendLine("${i + 1}. $n") }
+            }
+            if (excused.isNotEmpty()) {
+                appendLine()
+                appendLine("*المجازون (${excused.size}):*")
+                excused.forEachIndexed { i, n -> appendLine("${i + 1}. $n") }
+            }
+            appendLine()
+            appendLine("الحاضرون: ${rows.count { it.status == Status.PRESENT || it.status == Status.LATE }} من ${rows.size}")
+            append(app.schoolName())
+        }
+        Phone.shareText(ctx, text)
+    }
+
     Scaffold(
         topBar = {
             AppTopBar(
@@ -157,6 +192,11 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             StatusUi.order.forEach { s -> CountBadge(StatusUi.label(s), rows.count { it.status == s }, StatusUi.color(s)) }
                             CountBadge("لم يُسجّل", rows.count { it.status == Status.NONE }, StatusUi.color(Status.NONE))
+                        }
+                        OutlinedButton(onClick = ::shareAbsentees, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.Send, null, tint = Color(0xFF1FA855))
+                            Spacer(Modifier.width(6.dp))
+                            Text("إرسال أسماء الغائبين دفعة واحدة إلى واتساب", color = Color(0xFF1FA855))
                         }
                         if (pending.isNotEmpty()) {
                             Button(
@@ -227,6 +267,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                     onNote = { noteFor = it.student },
                     onOpen = { app.go(Screen.StudentDetail(it.student.id)) },
                     onSendPending = { if (app.whatsappChannel) whatsappList = true else confirmSend = true },
+                    onShareAbsentees = ::shareAbsentees,
                     onShowList = { oneByOne = false },
                     onFinish = app::back,
                 )
@@ -550,6 +591,7 @@ private fun OneByOne(
     onNote: (AttendanceRow) -> Unit,
     onOpen: (AttendanceRow) -> Unit,
     onSendPending: () -> Unit,
+    onShareAbsentees: () -> Unit,
     onShowList: () -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -628,6 +670,15 @@ private fun OneByOne(
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = AbsentRed),
                         ) { Text("تبليغ أولياء أمور الغائبين ($pendingCount)") }
+                    }
+                    Button(
+                        onClick = onShareAbsentees,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1FA855)),
+                    ) {
+                        Icon(Icons.Filled.Send, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("إرسال أسماء الغائبين دفعة واحدة إلى واتساب")
                     }
                     OutlinedButton(onClick = onShowList, modifier = Modifier.fillMaxWidth()) { Text("مراجعة القائمة كاملة") }
                     Button(onClick = onFinish, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("إنهاء", fontWeight = FontWeight.Bold) }

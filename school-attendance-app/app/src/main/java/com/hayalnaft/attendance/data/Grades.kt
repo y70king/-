@@ -86,3 +86,7 @@ object Grades {
         return GradeResult(s1, s2, annual, final, exempt, status)
     }
 }
+
+/** Average of daily marks, each taken as a fraction of its test's maximum, scaled to [maxMark] and rounded up. */
+fun dailyAverage(fractions: List<Double>, maxMark: Int): Int? =
+    if (fractions.isEmpty()) null else Grades.roundUp(fractions.average() * maxMark)

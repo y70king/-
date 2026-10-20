@@ -11,7 +11,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
 
     companion object {
         const val NAME = "attendance.db"
-        const val VERSION = 2
+        const val VERSION = 3
         private const val CLASS_TITLE = "(c.name || CASE WHEN c.section <> '' THEN ' - ' || c.section ELSE '' END)"
         private const val STUDENT_COLS = "st.id, st.school_id, st.class_id, $CLASS_TITLE, st.name, st.phone"
         private const val SCHOOL_COLS =
@@ -53,6 +53,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         db.execSQL("CREATE INDEX idx_students_school ON students(school_id)")
         db.execSQL("CREATE INDEX idx_messages_school ON messages(school_id, ts)")
         createV2Tables(db)
+        createV3Tables(db)
         insertSchool(db, School(0, DEFAULT_SCHOOL), withClasses = true)
     }
 
@@ -99,6 +100,22 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         )
     }
 
+    /** Daily grades: any number of short assessments per class and subject, kept apart from the monthly grades. */
+    private fun createV3Tables(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE daily_tests(id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE, " +
+                "subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE, " +
+                "date TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', max_mark REAL NOT NULL DEFAULT 10)"
+        )
+        db.execSQL("CREATE INDEX idx_daily_tests ON daily_tests(class_id, subject_id, date)")
+        db.execSQL(
+            "CREATE TABLE daily_marks(test_id INTEGER NOT NULL REFERENCES daily_tests(id) ON DELETE CASCADE, " +
+                "student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, value REAL NOT NULL, " +
+                "PRIMARY KEY(test_id, student_id))"
+        )
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE schools ADD COLUMN stage TEXT NOT NULL DEFAULT '${Stages.SECONDARY}'")
@@ -123,6 +140,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
             db.execSQL("DROP TABLE attendance_v1")
             createV2Tables(db)
         }
+        if (oldVersion < 3) createV3Tables(db)
     }
 
     private val w: SQLiteDatabase get() = writableDatabase
@@ -523,6 +541,61 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
             arrayOf<Any>(subjectId, classId),
         )
     }
+
+    // ---------- Daily grades ----------
+
+    fun dailyTests(classId: Long, subjectId: Long): List<DailyTest> = query(
+        "SELECT id, class_id, subject_id, date, title, max_mark FROM daily_tests WHERE class_id = ? AND subject_id = ? ORDER BY date, id",
+        classId, subjectId,
+    ) { DailyTest(it.getLong(0), it.getLong(1), it.getLong(2), it.getString(3), it.getString(4), it.getDouble(5)) }
+
+    fun saveDailyTest(t: DailyTest): Long {
+        val v = ContentValues().apply {
+            put("class_id", t.classId)
+            put("subject_id", t.subjectId)
+            put("date", t.date)
+            put("title", t.title)
+            put("max_mark", t.maxMark)
+        }
+        return if (t.id == 0L) w.insertOrThrow("daily_tests", null, v)
+        else {
+            w.update("daily_tests", v, "id = ?", arrayOf(t.id.toString()))
+            t.id
+        }
+    }
+
+    fun deleteDailyTest(id: Long) {
+        w.delete("daily_tests", "id = ?", arrayOf(id.toString()))
+    }
+
+    /** Daily marks of a class in a subject: test id → student id → mark. */
+    fun dailyMarks(classId: Long, subjectId: Long): Map<Long, Map<Long, Double>> {
+        val out = mutableMapOf<Long, MutableMap<Long, Double>>()
+        query(
+            "SELECT m.test_id, m.student_id, m.value FROM daily_marks m JOIN daily_tests t ON t.id = m.test_id " +
+                "WHERE t.class_id = ? AND t.subject_id = ?",
+            classId, subjectId,
+        ) { out.getOrPut(it.getLong(0)) { mutableMapOf() }[it.getLong(1)] = it.getDouble(2) }
+        return out
+    }
+
+    fun setDailyMark(testId: Long, studentId: Long, value: Double?) {
+        if (value == null) {
+            w.delete("daily_marks", "test_id = ? AND student_id = ?", arrayOf(testId.toString(), studentId.toString()))
+        } else {
+            w.execSQL(
+                "INSERT OR REPLACE INTO daily_marks(test_id, student_id, value) VALUES(?, ?, ?)",
+                arrayOf<Any>(testId, studentId, value),
+            )
+        }
+    }
+
+    /** Per subject: the student's daily marks as fractions of each test's maximum. */
+    fun studentDailyScores(studentId: Long): Map<Long, List<Double>> = query(
+        "SELECT t.subject_id, m.value / t.max_mark FROM daily_marks m JOIN daily_tests t ON t.id = m.test_id " +
+            "WHERE m.student_id = ? AND t.max_mark > 0",
+        studentId,
+    ) { it.getLong(0) to it.getDouble(1) }.groupBy({ it.first }, { it.second })
 
     // ---------- Timetable ----------
 

@@ -36,6 +36,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,6 +77,7 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     var classSel by rememberSaveable { mutableStateOf(initialClassId) }
     var subjectSel by rememberSaveable { mutableStateOf<Long?>(null) }
     var field by rememberSaveable { mutableStateOf(GradeField.M1) }
+    var daily by rememberSaveable { mutableStateOf(false) }
     val cls = classes.firstOrNull { it.id == classSel } ?: classes.firstOrNull { it.count > 0 } ?: classes.firstOrNull()
     val subject = subjects.firstOrNull { it.id == subjectSel } ?: subjects.firstOrNull()
     val students = remember(v, cls?.id) { cls?.let { app.db.students(sid, it.id) } ?: emptyList() }
@@ -96,6 +99,14 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
                                 onClick = {
                                     menu = false
                                     export = "كشف مادة ${subject.name}" to { Reports.subjectSheetDoc(app.db, school, cls, subject) }
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("كشف الدرجات اليومية لمادة ${subject.name}") },
+                                leadingIcon = { Icon(Icons.Filled.TableView, null) },
+                                onClick = {
+                                    menu = false
+                                    export = "الدرجات اليومية — ${subject.name}" to { Reports.dailySheetDoc(app.db, school, cls, subject) }
                                 },
                             )
                             DropdownMenuItem(
@@ -136,6 +147,19 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
             Spacer(Modifier.height(6.dp))
             SubjectChips(subjects, subject?.id, { subjectSel = it })
             Spacer(Modifier.height(6.dp))
+            TabRow(selectedTabIndex = if (daily) 1 else 0, containerColor = CardBg, contentColor = Ink) {
+                Tab(selected = !daily, onClick = { daily = false }, text = { Text("الدرجات الشهرية") })
+                Tab(selected = daily, onClick = { daily = true }, text = { Text("الدرجات اليومية") })
+            }
+            Spacer(Modifier.height(6.dp))
+            if (daily) {
+                if (cls == null || subject == null || students.isEmpty()) {
+                    EmptyState(Icons.Filled.MenuBook, "لا يوجد طلاب في هذا الصف")
+                } else {
+                    DailyGradesPanel(app, school, cls, subject, students)
+                }
+                return@Column
+            }
             OptionChips(GradeField.inputs + ALL_FIELDS, field, { if (it == ALL_FIELDS) "كل الدرجات" else GradeField.label(it) }) { field = it }
             if (cls != null) {
                 Text(
@@ -199,7 +223,7 @@ private fun GradeCard(
                 Text("$index.", color = Muted, modifier = Modifier.width(28.dp))
                 Text(s.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (field != ALL_FIELDS) {
-                    GradeInput(values[field], maxMark, Modifier.width(84.dp)) { onChange(field, it) }
+                    GradeInput(values[field], maxMark.toDouble(), Modifier.width(84.dp)) { onChange(field, it) }
                 }
             }
             if (field == ALL_FIELDS) {
@@ -207,7 +231,7 @@ private fun GradeCard(
                 GradeField.inputs.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 3.dp)) {
                         row.forEach { f ->
-                            GradeInput(values[f], maxMark, Modifier.weight(1f), GradeField.label(f)) { onChange(f, it) }
+                            GradeInput(values[f], maxMark.toDouble(), Modifier.weight(1f), GradeField.label(f)) { onChange(f, it) }
                         }
                     }
                 }
@@ -237,7 +261,7 @@ private fun GradeCard(
 }
 
 @Composable
-private fun GradeInput(value: Double?, maxMark: Int, modifier: Modifier, label: String? = null, onValue: (Double?) -> Unit) {
+internal fun GradeInput(value: Double?, maxMark: Double, modifier: Modifier, label: String? = null, onValue: (Double?) -> Unit) {
     var text by remember(value) { mutableStateOf(value?.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() } ?: "") }
     var error by remember { mutableStateOf(false) }
     OutlinedTextField(

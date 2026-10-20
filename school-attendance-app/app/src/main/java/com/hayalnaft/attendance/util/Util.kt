@@ -115,6 +115,8 @@ object Dates {
     private fun parse(s: String): Date = runCatching { iso().parse(s) }.getOrNull() ?: Date()
     fun dayName(s: String): String = SimpleDateFormat("EEEE", Locale("ar")).format(parse(s))
     fun display(s: String): String = SimpleDateFormat("yyyy/MM/dd", Locale.US).format(parse(s))
+    /** Day and month, e.g. 20/10. */
+    fun short(s: String): String = SimpleDateFormat("dd/MM", Locale.US).format(parse(s))
     fun pretty(s: String): String = "${dayName(s)} ${display(s)}"
     fun clock(minutes: Int): String {
         val h = minutes / 60

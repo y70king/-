@@ -82,6 +82,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
     val totals = remember(v, studentId) { app.db.eventTotals(studentId) }
     val subjects = remember(v, student?.schoolId) { student?.let { app.db.subjects(it.schoolId) } ?: emptyList() }
     val grades = remember(v, studentId) { app.db.studentGrades(studentId) }
+    val daily = remember(v, studentId) { app.db.studentDailyScores(studentId) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var addNote by remember { mutableStateOf(false) }
@@ -243,6 +244,9 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    daily[sub.id]?.let { d ->
+                                        Tag("يومي: ${com.hayalnaft.attendance.data.dailyAverage(d, school.maxMark)}", LateOrange)
+                                    }
                                     Tag("ف1: ${r.semester1 ?: "-"}", Ink)
                                     Tag("نصف: ${grades[sub.id]?.get("mid")?.let { fmtGrade(it) } ?: "-"}", Ink)
                                     Tag("ف2: ${r.semester2 ?: "-"}", Ink)

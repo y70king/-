@@ -119,6 +119,21 @@ class ScreenshotTest {
         go(app, Screen.Import(null)); shot("08d-import-pick")
         rule.onNodeWithText(cls.name).performClick(); shot("08e-import-picked")
         go(app, Screen.Grades(cls.id)); shot("09-grades")
+        val quiz1 = app.db.saveDailyTest(com.hayalnaft.attendance.data.DailyTest(0, cls.id, subjects[0].id, today, "اختبار قصير", 10.0))
+        val quiz2 = app.db.saveDailyTest(com.hayalnaft.attendance.data.DailyTest(0, cls.id, subjects[0].id, today, "مشاركة", 5.0))
+        ids.forEachIndexed { i, id ->
+            app.db.setDailyMark(quiz1, id, (10 - i).toDouble())
+            if (i % 2 == 0) app.db.setDailyMark(quiz2, id, (5 - i / 2).toDouble())
+        }
+        app.changed()
+        go(app, Screen.Grades(cls.id))
+        rule.onNodeWithText("الدرجات اليومية").performClick(); shot("09b-daily-grades")
+        app.db.markAllPresent(cls.id, Dates.fromUtcMillis(Dates.toUtcMillis(today)), 0)
+        app.db.setStatus(ids[1], today, 0, Status.ABSENT)
+        app.db.setStatus(ids[4], today, 0, Status.LATE)
+        app.changed()
+        go(app, Screen.Attendance(cls.id)); shot("08f-rollcall-summary")
+        rule.onNodeWithText("إرسال أسماء الغائبين دفعة واحدة إلى واتساب").assertExists()
         go(app, Screen.StudentDetail(ids[0])); shot("10-student")
         go(app, Screen.Timetable); shot("11-timetable")
         go(app, Screen.PlanEditor(planId)); shot("12-plan")
@@ -167,6 +182,7 @@ class ScreenshotTest {
             "student-report" to Reports.studentReportDoc(app.db, s, c, app.db.student(ids[2])!!, month),
             "subject-sheet" to Reports.subjectSheetDoc(app.db, s, c, math),
             "class-sheet" to Reports.classSheetDoc(app.db, s, c),
+            "daily-sheet" to Reports.dailySheetDoc(app.db, s, c, subjects[0]),
         )
         for ((name, d) in docs) {
             com.hayalnaft.attendance.util.Export.docx(ctx, s, d).copyTo(File(exports, "$name.docx"), overwrite = true)

@@ -66,4 +66,11 @@ class GradesTest {
         assertNull(r.annual)
         assertEquals("", r.status)
     }
+
+    @Test
+    fun dailyAverageScalesEachTestToTheSchoolMaximum() {
+        // 8/10, 15/20 and 4/5 → 80%, 75%, 80% → 78.33 of 100, rounded up.
+        assertEquals(79, com.hayalnaft.attendance.data.dailyAverage(listOf(0.8, 0.75, 0.8), 100))
+        assertNull(com.hayalnaft.attendance.data.dailyAverage(emptyList(), 100))
+    }
 }

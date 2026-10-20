@@ -85,6 +85,43 @@ object Reports {
     fun subjectSheet(context: Context, db: Db, school: School, cls: SchoolClass, subject: Subject): File =
         pdf(context, school, subjectSheetDoc(db, school, cls, subject))
 
+    /** Every daily grade of a class in one subject, with each student's daily average. */
+    fun dailySheetDoc(db: Db, school: School, cls: SchoolClass, subject: Subject): ReportDoc {
+        val students = db.students(school.id, cls.id)
+        val tests = db.dailyTests(cls.id, subject.id)
+        val marks = db.dailyMarks(cls.id, subject.id)
+        val headers = listOf("ت", "اسم الطالب") +
+            tests.map { t -> "${t.title.ifBlank { "يومي" }}\n${Dates.short(t.date)} (${fmt(t.maxMark)})" } +
+            "المعدل اليومي (من ${school.maxMark})"
+        val pass = school.maxMark / 2.0
+        val averages = students.map { s ->
+            com.hayalnaft.attendance.data.dailyAverage(
+                tests.mapNotNull { t -> marks[t.id]?.get(s.id)?.takeIf { t.maxMark > 0 }?.let { it / t.maxMark } },
+                school.maxMark,
+            )
+        }
+        val rows = students.mapIndexed { i, s ->
+            listOf("${i + 1}", s.name) + tests.map { t -> fmt(marks[t.id]?.get(s.id)) } + fmt(averages[i])
+        }
+        return ReportDoc(
+            fileName = "الدرجات اليومية ${subject.name} ${cls.title}",
+            title = "كشف الدرجات اليومية — ${subject.name}",
+            subtitle = "${cls.title}${roomText(cls)}",
+            landscape = tests.size > 5,
+            blocks = listOf(
+                Block.Table(
+                    headers, rows, listOf(0.5f, 3f) + tests.map { 1f } + 1.3f,
+                    small = tests.size > 10,
+                    tint = { r, c ->
+                        if (c == headers.lastIndex) averages[r]?.let { if (it >= pass) 0x332E7D32 else 0x33C62828 } else null
+                    },
+                ),
+                Block.Para("عدد الدرجات اليومية: ${tests.size}. المعدل اليومي محسوب كنسبة من الدرجة العظمى لكل اختبار، ومنفصل عن درجات الأشهر."),
+            ),
+            signatures = listOf("مدرس المادة", "مدير المدرسة"),
+        )
+    }
+
     /** All subjects of a class side by side with the general average. */
     fun classSheetDoc(db: Db, school: School, cls: SchoolClass): ReportDoc {
         val students = db.students(school.id, cls.id)
@@ -165,16 +202,20 @@ object Reports {
         }
         val subjects = db.subjects(school.id)
         val grades = db.studentGrades(student.id)
-        if (subjects.isNotEmpty() && grades.isNotEmpty()) {
+        if (subjects.isNotEmpty() && (grades.isNotEmpty() || db.studentDailyScores(student.id).isNotEmpty())) {
             blocks += Block.Heading("الدرجات")
+            val daily = db.studentDailyScores(student.id)
             blocks += Block.Table(
-                listOf("المادة", "الفصل الأول", "نصف السنة", "الفصل الثاني", "السعي السنوي", "الدرجة النهائية", "النتيجة"),
+                listOf("المادة", "المعدل اليومي", "الفصل الأول", "نصف السنة", "الفصل الثاني", "السعي السنوي", "الدرجة النهائية", "النتيجة"),
                 subjects.map { sub ->
                     val v = grades[sub.id] ?: emptyMap()
                     val r = result(v, school, cls)
-                    listOf(sub.name, fmt(r.semester1), fmt(v[GradeField.MID]), fmt(r.semester2), fmt(r.annual), fmt(r.finalGrade), r.status)
+                    listOf(
+                        sub.name, fmt(com.hayalnaft.attendance.data.dailyAverage(daily[sub.id] ?: emptyList(), school.maxMark)),
+                        fmt(r.semester1), fmt(v[GradeField.MID]), fmt(r.semester2), fmt(r.annual), fmt(r.finalGrade), r.status,
+                    )
                 },
-                listOf(2f, 1f, 1f, 1f, 1f, 1.1f, 1f),
+                listOf(2f, 1f, 1f, 1f, 1f, 1f, 1.1f, 1f),
             )
         }
         val notes = db.events(student.id, range).filter { it.note.isNotBlank() || it.type != EventType.POINTS }.take(20)

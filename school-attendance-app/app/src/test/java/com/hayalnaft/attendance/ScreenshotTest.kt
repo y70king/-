@@ -173,6 +173,8 @@ class ScreenshotTest {
         tag = "student"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[0])!!)
         tag = "certificate"; Reports.certificate(ctx, s, c, app.db.student(ids[0])!!, listOf("الرياضيات" to 94))
         tag = "plan"; Reports.lessonPlan(ctx, s, app.db.plan(planId)!!)
+        tag = "one-test"; Reports.pdf(ctx, s, Reports.dailyTestDoc(app.db, s, c, subjects[0], app.db.dailyTests(c.id, subjects[0].id).first()))
+        tag = "one-month"; Reports.pdf(ctx, s, Reports.monthlyFieldDoc(app.db, s, c, math, com.hayalnaft.attendance.data.GradeField.M1))
         val month = com.hayalnaft.attendance.util.Periods.options(s.year)[2]
         tag = "class-report"; Reports.classReport(ctx, app.db, s, c, month)
         tag = "student-month"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[2])!!, month)
@@ -183,6 +185,8 @@ class ScreenshotTest {
             "subject-sheet" to Reports.subjectSheetDoc(app.db, s, c, math),
             "class-sheet" to Reports.classSheetDoc(app.db, s, c),
             "daily-sheet" to Reports.dailySheetDoc(app.db, s, c, subjects[0]),
+            "one-test" to Reports.dailyTestDoc(app.db, s, c, subjects[0], app.db.dailyTests(c.id, subjects[0].id).first()),
+            "one-month" to Reports.monthlyFieldDoc(app.db, s, c, math, com.hayalnaft.attendance.data.GradeField.M1),
         )
         for ((name, d) in docs) {
             com.hayalnaft.attendance.util.Export.docx(ctx, s, d).copyTo(File(exports, "$name.docx"), overwrite = true)

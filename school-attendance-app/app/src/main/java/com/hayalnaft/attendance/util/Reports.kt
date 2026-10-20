@@ -85,6 +85,79 @@ object Reports {
     fun subjectSheet(context: Context, db: Db, school: School, cls: SchoolClass, subject: Subject): File =
         pdf(context, school, subjectSheetDoc(db, school, cls, subject))
 
+    /**
+     * A sheet for one mark of a class: a single daily test or a single monthly grade.
+     * Shows each student's mark and percentage, with the highest, lowest, average and pass count.
+     */
+    private fun singleMarkDoc(
+        school: School, cls: SchoolClass, students: List<Student>, marks: Map<Long, Double>,
+        max: Double, title: String, fileName: String, subtitle: String,
+    ): ReportDoc {
+        val given = students.mapNotNull { marks[it.id] }
+        val pass = max / 2
+        val rows = students.mapIndexed { i, s ->
+            val m = marks[s.id]
+            listOf(
+                "${i + 1}", s.name, fmt(m),
+                m?.let { "${Math.round(it * 100 / max)}%" } ?: "",
+                when {
+                    m == null -> "لم يُختبر"
+                    m >= pass -> "ناجح"
+                    else -> "راسب"
+                },
+            )
+        }
+        val blocks = mutableListOf<Block>()
+        if (given.isNotEmpty()) {
+            blocks += Block.Stats(
+                listOf(
+                    Triple("عدد المختبرين", "${given.size} من ${students.size}", PdfBuilder.NAVY),
+                    Triple("المعدل", fmt(Math.round(given.average() * 10) / 10.0), PdfBuilder.GOLD),
+                    Triple("أعلى درجة", fmt(given.max()), PdfBuilder.GREEN),
+                    Triple("أدنى درجة", fmt(given.min()), PdfBuilder.RED),
+                    Triple("الناجحون", "${given.count { it >= pass }}", PdfBuilder.GREEN),
+                )
+            )
+        }
+        blocks += Block.Table(
+            listOf("ت", "اسم الطالب", "الدرجة (من ${fmt(max)})", "النسبة", "النتيجة"),
+            rows,
+            listOf(0.5f, 3f, 1.2f, 1f, 1f),
+            tint = { r, c ->
+                if (c == 4) when (rows[r][4]) {
+                    "ناجح" -> 0x332E7D32
+                    "راسب" -> 0x33C62828
+                    else -> null
+                } else null
+            },
+        )
+        return ReportDoc(fileName, title, subtitle, landscape = false, blocks = blocks, signatures = listOf("مدرس المادة"))
+    }
+
+    /** Sheet for one daily test (e.g. a single quiz). */
+    fun dailyTestDoc(db: Db, school: School, cls: SchoolClass, subject: Subject, test: com.hayalnaft.attendance.data.DailyTest): ReportDoc {
+        val name = test.title.ifBlank { "درجة يومية" }
+        return singleMarkDoc(
+            school, cls, db.students(school.id, cls.id), db.dailyMarks(cls.id, subject.id)[test.id] ?: emptyMap(), test.maxMark,
+            title = "$name — ${subject.name}",
+            fileName = "$name ${subject.name} ${cls.title} ${test.date}",
+            subtitle = "${cls.title} • ${Dates.pretty(test.date)}",
+        )
+    }
+
+    /** Sheet for one monthly grade column (e.g. the first month only). */
+    fun monthlyFieldDoc(db: Db, school: School, cls: SchoolClass, subject: Subject, field: String): ReportDoc {
+        val grades = db.classGrades(cls.id)
+        val students = db.students(school.id, cls.id)
+        val marks = students.mapNotNull { s -> grades[s.id]?.get(subject.id)?.get(field)?.let { s.id to it } }.toMap()
+        return singleMarkDoc(
+            school, cls, students, marks, school.maxMark.toDouble(),
+            title = "درجات ${GradeField.label(field)} — ${subject.name}",
+            fileName = "${GradeField.label(field)} ${subject.name} ${cls.title}",
+            subtitle = cls.title,
+        )
+    }
+
     /** Every daily grade of a class in one subject, with each student's daily average. */
     fun dailySheetDoc(db: Db, school: School, cls: SchoolClass, subject: Subject): ReportDoc {
         val students = db.students(school.id, cls.id)

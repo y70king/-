@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.TableView
 import androidx.compose.material3.Button
@@ -39,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -162,13 +164,26 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
             }
             OptionChips(GradeField.inputs + ALL_FIELDS, field, { if (it == ALL_FIELDS) "كل الدرجات" else GradeField.label(it) }) { field = it }
             if (cls != null) {
-                Text(
-                    "الدرجة العظمى ${school.maxMark} • درجة الإعفاء ${school.exemptMark}" +
-                        if (cls.ministerial) " • صف وزاري (بدون إعفاء)" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Muted,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "الدرجة العظمى ${school.maxMark} • درجة الإعفاء ${school.exemptMark}" +
+                            if (cls.ministerial) " • صف وزاري (بدون إعفاء)" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Muted,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (field != ALL_FIELDS && subject != null) {
+                        TextButton(onClick = {
+                            export = "كشف ${GradeField.label(field)} — ${subject.name}" to {
+                                Reports.monthlyFieldDoc(app.db, school, cls, subject, field)
+                            }
+                        }) {
+                            Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("إرسال كشف ${GradeField.label(field)}")
+                        }
+                    }
+                }
             }
             if (cls == null || subject == null || students.isEmpty()) {
                 EmptyState(Icons.Filled.MenuBook, "لا يوجد طلاب في هذا الصف")

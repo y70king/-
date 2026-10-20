@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -70,6 +71,7 @@ fun DailyGradesPanel(app: AppState, school: School, cls: SchoolClass, subject: S
     var selected by rememberSaveable(cls.id, subject.id) { mutableStateOf<Long?>(null) }
     val test = tests.firstOrNull { it.id == selected } ?: tests.lastOrNull()
     var editing by remember { mutableStateOf<DailyTest?>(null) }
+    var exporting by remember { mutableStateOf<DailyTest?>(null) }
 
     fun average(studentId: Long): Int? = dailyAverage(
         tests.mapNotNull { t -> marks[t.id]?.get(studentId)?.takeIf { t.maxMark > 0 }?.let { it / t.maxMark } },
@@ -106,6 +108,7 @@ fun DailyGradesPanel(app: AppState, school: School, cls: SchoolClass, subject: S
                         color = Muted,
                     )
                 }
+                IconButton(onClick = { exporting = test }) { Icon(Icons.Filled.Share, "إرسال كشف هذه الدرجة", tint = PresentGreen) }
                 IconButton(onClick = { editing = test }) { Icon(Icons.Filled.Edit, "تعديل", tint = Muted) }
                 IconButton(onClick = {
                     app.guard {
@@ -143,6 +146,12 @@ fun DailyGradesPanel(app: AppState, school: School, cls: SchoolClass, subject: S
                     }
                 }
             }
+        }
+    }
+
+    exporting?.let { t ->
+        ExportDialog(app, school, "كشف ${t.title.ifBlank { "الدرجة اليومية" }} — ${subject.name}", onDismiss = { exporting = null }) {
+            com.hayalnaft.attendance.util.Reports.dailyTestDoc(app.db, school, cls, subject, t)
         }
     }
 

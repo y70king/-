@@ -86,6 +86,7 @@ import com.hayalnaft.attendance.data.Stages
 import com.hayalnaft.attendance.data.Student
 import com.hayalnaft.attendance.data.StudentStats
 import com.hayalnaft.attendance.util.Dates
+import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.util.Periods
 import com.hayalnaft.attendance.util.Phone
 import com.hayalnaft.attendance.util.Reports
@@ -440,7 +441,9 @@ fun ClassPageScreen(app: AppState, classId: Long) {
                             }
                         }
                     }
-                    val all = app.db.students(sid, classId)
+                    val all = app.db.students(sid, classId, search)
+                    if (subjects.isNotEmpty()) item { SearchField(search, { search = it }) }
+                    if (subjects.isNotEmpty() && all.isEmpty() && search.isNotBlank()) item { NoSearchResults(search) }
                     if (subjects.isNotEmpty()) items(all, key = { it.id }) { s ->
                         GradeSummaryCard(school, s, subjects.map { sub -> sub.name to Reports.result(grades[s.id]?.get(sub.id), school, cls) }) {
                             app.go(Screen.StudentDetail(s.id))
@@ -473,7 +476,10 @@ fun ClassPageScreen(app: AppState, classId: Long) {
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
-                    items(stats, key = { it.student.id }) { st ->
+                    item { SearchField(search, { search = it }) }
+                    val shownStats = stats.filter { NameSearch.matches(it.student.name, search, it.student.phone) }
+                    if (shownStats.isEmpty() && search.isNotBlank()) item { NoSearchResults(search) }
+                    items(shownStats, key = { it.student.id }) { st ->
                         StudentPeriodRow(st, totals[st.student.id]?.points ?: 0) { reportFor = st.student }
                     }
                 }

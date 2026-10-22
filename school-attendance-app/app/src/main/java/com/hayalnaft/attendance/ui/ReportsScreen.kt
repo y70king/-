@@ -55,6 +55,7 @@ import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.StudentStats
 import com.hayalnaft.attendance.util.Dates
+import com.hayalnaft.attendance.util.NameSearch
 
 @Composable
 fun ReportsScreen(app: AppState) {
@@ -62,6 +63,7 @@ fun ReportsScreen(app: AppState) {
     val v = app.version
     val sid = app.schoolId
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var search by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf(Dates.today()) }
     var showDate by remember { mutableStateOf(false) }
     var monthOnly by rememberSaveable { mutableStateOf(true) }
@@ -108,12 +110,15 @@ fun ReportsScreen(app: AppState) {
                 if (day.isEmpty()) {
                     EmptyState(Icons.Filled.SentimentSatisfied, "لا توجد غيابات في هذا اليوم", "أو لم يتم تسجيل الحضور بعد")
                 } else {
+                    SearchField(search, { search = it }, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                    val shownDay = day.filter { NameSearch.matches(it.student.name, search, it.student.phone) }
+                    if (shownDay.isEmpty()) NoSearchResults(search)
                     LazyColumn(
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(day.size) { i ->
-                            val r = day[i]
+                        items(shownDay.size) { i ->
+                            val r = shownDay[i]
                             Card(
                                 onClick = { app.go(Screen.StudentDetail(r.student.id)) },
                                 colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -149,11 +154,14 @@ fun ReportsScreen(app: AppState) {
                 }
                 Spacer(Modifier.height(6.dp))
                 ClassChips(classes, cls?.id, { classId = it }, allLabel = "كل الصفوف")
+                SearchField(search, { search = it }, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                val shownStats = stats.filter { NameSearch.matches(it.student.name, search, it.student.phone) }
+                if (shownStats.isEmpty() && search.isNotBlank()) NoSearchResults(search)
                 LazyColumn(
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(stats, key = { it.student.id }) { s -> StatsCard(s) { app.go(Screen.StudentDetail(s.student.id)) } }
+                    items(shownStats, key = { it.student.id }) { s -> StatsCard(s) { app.go(Screen.StudentDetail(s.student.id)) } }
                 }
             }
         }

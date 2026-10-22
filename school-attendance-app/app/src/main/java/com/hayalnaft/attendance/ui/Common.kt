@@ -25,6 +25,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EventAvailable
@@ -713,5 +715,31 @@ fun ClassDialog(
             }) { Text("حفظ") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
+    )
+}
+
+/** Search box for student names; spelling differences such as أ / ا and ة / ه are ignored. */
+@Composable
+fun SearchField(query: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "بحث عن اسم طالب") {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onChange,
+        modifier = modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder) },
+        leadingIcon = { Icon(Icons.Filled.Search, null) },
+        trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Filled.Clear, "مسح") } },
+        singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+    )
+}
+
+/** Shown when a search hides every student. */
+@Composable
+fun NoSearchResults(query: String) {
+    Text(
+        "لا يوجد طالب باسم «$query»",
+        color = Muted,
+        modifier = Modifier.fillMaxWidth().padding(24.dp),
+        textAlign = TextAlign.Center,
     )
 }

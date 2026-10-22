@@ -164,6 +164,26 @@ object Periods {
     }
 }
 
+/** Name search that ignores the usual Arabic spelling differences (hamza forms, ta marbuta, alef maqsura, harakat). */
+object NameSearch {
+    private val marks = Regex("[\u064B-\u065F\u0670\u0640]")
+
+    fun normalize(s: String): String = s.replace(marks, "")
+        .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ٱ', 'ا')
+        .replace('ة', 'ه').replace('ى', 'ي').replace('ؤ', 'و').replace('ئ', 'ي')
+        .replace(Regex("\\s+"), " ").trim().lowercase()
+
+    /** True when every word of the query appears in the name (in any order), or the query matches the phone. */
+    fun matches(name: String, query: String, phone: String = ""): Boolean {
+        if (query.isBlank()) return true
+        val n = normalize(name)
+        val words = normalize(query).split(' ').filter { it.isNotEmpty() }
+        if (words.all { n.contains(it) }) return true
+        val digits = query.filter { it.isDigit() }
+        return digits.length >= 3 && phone.contains(digits)
+    }
+}
+
 object Templates {
     fun fill(template: String, student: Student?, school: String, date: String, subject: String = ""): String =
         template

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hayalnaft.attendance.AppState
+import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.Screen
 import com.hayalnaft.attendance.data.GradeField
 import com.hayalnaft.attendance.data.GradeResult
@@ -80,6 +82,7 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     var subjectSel by rememberSaveable { mutableStateOf<Long?>(null) }
     var field by rememberSaveable { mutableStateOf(GradeField.M1) }
     var daily by rememberSaveable { mutableStateOf(false) }
+    var search by rememberSaveable { mutableStateOf("") }
     val cls = classes.firstOrNull { it.id == classSel } ?: classes.firstOrNull { it.count > 0 } ?: classes.firstOrNull()
     val subject = subjects.firstOrNull { it.id == subjectSel } ?: subjects.firstOrNull()
     val students = remember(v, cls?.id) { cls?.let { app.db.students(sid, it.id) } ?: emptyList() }
@@ -189,11 +192,14 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
                 EmptyState(Icons.Filled.MenuBook, "لا يوجد طلاب في هذا الصف")
                 return@Column
             }
+            SearchField(search, { search = it }, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            val shown = students.withIndex().filter { NameSearch.matches(it.value.name, search) }
+            if (shown.isEmpty()) NoSearchResults(search)
             LazyColumn(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(students, key = { _, s -> s.id }) { i, s ->
+                items(shown, key = { it.value.id }) { (i, s) ->
                     val values = grades[s.id]?.get(subject.id) ?: emptyMap()
                     val r = Reports.result(values, school, cls)
                     GradeCard(i + 1, s, values, r, field, school.maxMark,

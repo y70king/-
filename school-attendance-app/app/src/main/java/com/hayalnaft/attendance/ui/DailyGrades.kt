@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hayalnaft.attendance.AppState
+import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.data.DailyTest
 import com.hayalnaft.attendance.data.School
 import com.hayalnaft.attendance.data.SchoolClass
@@ -71,6 +73,7 @@ fun DailyGradesPanel(app: AppState, school: School, cls: SchoolClass, subject: S
     var selected by rememberSaveable(cls.id, subject.id) { mutableStateOf<Long?>(null) }
     val test = tests.firstOrNull { it.id == selected } ?: tests.lastOrNull()
     var editing by remember { mutableStateOf<DailyTest?>(null) }
+    var search by rememberSaveable { mutableStateOf("") }
     var exporting by remember { mutableStateOf<DailyTest?>(null) }
 
     fun average(studentId: Long): Int? = dailyAverage(
@@ -118,11 +121,14 @@ fun DailyGradesPanel(app: AppState, school: School, cls: SchoolClass, subject: S
                     }
                 }) { Icon(Icons.Filled.Delete, "حذف", tint = AbsentRed) }
             }
+            SearchField(search, { search = it }, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            val shown = students.withIndex().filter { NameSearch.matches(it.value.name, search) }
+            if (shown.isEmpty()) NoSearchResults(search)
             LazyColumn(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(students, key = { _, s -> s.id }) { i, s ->
+                items(shown, key = { it.value.id }) { (i, s) ->
                     val avg = average(s.id)
                     val count = tests.count { marks[it.id]?.containsKey(s.id) == true }
                     Card(colors = CardDefaults.cardColors(containerColor = CardBg), shape = RoundedCornerShape(14.dp)) {

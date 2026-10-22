@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.util.ParsedStudent
 
 class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
@@ -287,13 +288,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
             sql.append(" AND st.class_id = ?")
             args.add(classId)
         }
-        if (search.isNotBlank()) {
-            sql.append(" AND (st.name LIKE ? OR st.phone LIKE ?)")
-            args.add("%${search.trim()}%")
-            args.add("%${search.trim()}%")
-        }
         sql.append(" ORDER BY c.id, st.id")
-        return query(sql.toString(), *args.toTypedArray()) { studentOf(it) }
+        val all = query(sql.toString(), *args.toTypedArray()) { studentOf(it) }
+        // Matching is done here rather than with LIKE so أحمد / احمد and ة / ه spellings find each other.
+        return if (search.isBlank()) all else all.filter { NameSearch.matches(it.name, search, it.phone) }
     }
 
     fun student(id: Long?): Student? {

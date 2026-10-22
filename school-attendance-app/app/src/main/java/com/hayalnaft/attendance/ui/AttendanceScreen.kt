@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -87,6 +88,7 @@ import com.hayalnaft.attendance.data.EventType
 import com.hayalnaft.attendance.data.Status
 import com.hayalnaft.attendance.data.Student
 import com.hayalnaft.attendance.util.Dates
+import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.util.Phone
 
 private val pointValues = listOf(1, 2, 5, 10)
@@ -113,6 +115,7 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
     var confirmSend by remember { mutableStateOf(false) }
     var whatsappList by remember { mutableStateOf(false) }
     var noteFor by remember { mutableStateOf<Student?>(null) }
+    var listSearch by rememberSaveable { mutableStateOf("") }
     var askNotify by remember { mutableStateOf<Pair<AttendanceRow, Int>?>(null) }
 
     val notifyLate = app.prefs.notifyLate
@@ -300,11 +303,14 @@ fun AttendanceScreen(app: AppState, initialClassId: Long?, initialSubjectId: Lon
                     Text("الباقون حاضرون", color = PresentGreen)
                 }
             }
+            SearchField(listSearch, { listSearch = it }, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            val shownRows = rows.withIndex().filter { NameSearch.matches(it.value.student.name, listSearch) }
+            if (shownRows.isEmpty()) NoSearchResults(listSearch)
             LazyColumn(
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                itemsIndexed(rows, key = { _, r -> r.student.id }) { i, r ->
+                items(shownRows, key = { it.value.student.id }) { (i, r) ->
                     AttendanceItem(
                         index = i + 1,
                         r = r,
@@ -598,10 +604,11 @@ private fun OneByOne(
     var index by rememberSaveable(key) {
         mutableIntStateOf(rows.indexOfFirst { it.status == Status.NONE }.let { if (it < 0) rows.size else it })
     }
+    var find by remember(key) { mutableStateOf("") }
     // The last choice, so a wrong tap can be undone: position, student, status before and after.
     var last by remember(key) { mutableStateOf<UndoInfo?>(null) }
     val counts = StatusUi.order.associateWith { s -> rows.count { it.status == s } }
-    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (index < rows.size) "الطالب ${index + 1} من ${rows.size}" else "انتهى التعداد",
@@ -619,7 +626,31 @@ private fun OneByOne(
             gapSize = 0.dp,
             drawStopIndicator = {},
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
+        // Jump straight to a student's card by name.
+        SearchField(find, { find = it }, placeholder = "ابحث عن طالب للانتقال إليه")
+        if (find.isNotBlank()) {
+            val found = rows.withIndex().filter { NameSearch.matches(it.value.student.name, find) }.take(6)
+            if (found.isEmpty()) NoSearchResults(find)
+            found.forEach { (i, fr) ->
+                Surface(
+                    onClick = {
+                        index = i
+                        find = ""
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = SoftBg,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}.", color = Muted, modifier = Modifier.width(30.dp))
+                        Text(fr.student.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        if (fr.status != Status.NONE) Tag(StatusUi.label(fr.status), StatusUi.color(fr.status))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         last?.let { u ->
             Surface(
                 color = StatusUi.color(u.newStatus).copy(alpha = 0.12f),

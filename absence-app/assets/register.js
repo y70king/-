@@ -12,9 +12,15 @@ const FIXED_HOLIDAYS = [[10, 3], [12, 10], [12, 25], [1, 1], [1, 6], [3, 21], [5
 const BLUE = '<w:shd w:val="clear" w:color="auto" w:fill="BDD6EE" w:themeFill="accent5" w:themeFillTint="66"/>';
 const PINK = '<w:shd w:val="clear" w:color="auto" w:fill="FBE4D5" w:themeFill="accent2" w:themeFillTint="33"/>';
 const GREEN = '<w:shd w:val="clear" w:color="auto" w:fill="E2EFD9" w:themeFill="accent6" w:themeFillTint="33"/>';
-const TW = 10985;               // table width (dxa)
-const ROWS_PER_PAGE = 32;       // like the new template: 32 numbered rows, spare ones stay blank for transfers
-const ROW_H = 430;              // twips; title 480 + header 440 + 32 rows fit an A4 page with the top spacer
+// Month-page layout copied from the user's template: September 1-15 is a full-width page with the names;
+// every other half-month is a half-width table on its own page (1-15 on the left, 16-end on the right).
+const TW = 10985;               // full table width (dxa)
+const HALF_TW = 5310;           // half table width (dxa)
+const DAY_W = 295;              // day / serial column width in half tables (dxa)
+const ROWS_PER_PAGE = 32;       // 32 numbered rows; spare ones stay blank for transferred students
+const ROW_H = 454;              // every row, as in the template
+const MONTH_MARGIN = 510;       // month pages use the template's 510-twip page margins (own section)
+const PAGE_W = 7560310, PAGE_H = 10692130;   // A4 in EMU
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -35,7 +41,7 @@ function cell(width, o = {}) {
   const font = name ? MAJOR : SULTAN;
   const run = text ? '<w:r>' + rpr(sz, bold, font) + '<w:t xml:space="preserve">' + esc(text) + '</w:t></w:r>' : '';
   return '<w:tc><w:tcPr><w:tcW w:w="' + width + '" w:type="dxa"/>' + (span > 1 ? '<w:gridSpan w:val="' + span + '"/>' : '') +
-    shd + '<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>' +
+    shd + '<w:noWrap/><w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>' +
     '<w:jc w:val="' + (name ? 'right' : 'center') + '"/>' + rpr(sz, bold, SULTAN) + '</w:pPr>' + run + '</w:p></w:tc>';
 }
 function row(cells, h) {
@@ -44,55 +50,81 @@ function row(cells, h) {
 }
 
 let docPrId = 700000;
-function backgroundParagraph() {
+function picture(rid, x, y, cx, cy) {
   const i = ++docPrId;
-  return '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:after="0" w:line="560" w:lineRule="exact"/><w:jc w:val="center"/></w:pPr>' +
-    '<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="' + (251600000 + i) +
+  return '<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="' + (251600000 + i) +
     '" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' +
-    '<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
-    '<wp:extent cx="7560310" cy="10692130"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="' + i + '" name="bg' + i + '"/>' +
+    '<wp:positionH relativeFrom="page"><wp:posOffset>' + x + '</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>' + y + '</wp:posOffset></wp:positionV>' +
+    '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="' + i + '" name="bg' + i + '"/>' +
     '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
     '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
     '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="' + i + '" name="bg' + i + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
-    '<pic:blipFill><a:blip r:embed="rId13"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
-    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="7560310" cy="10692130"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>' +
-    '</wp:anchor></w:drawing></w:r></w:p>';
+    '<pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>' +
+    '</wp:anchor></w:drawing></w:r>';
+}
+// The template's black thick-thin page frame.
+function frame(x, y, cx, cy) {
+  const i = ++docPrId;
+  return '<w:r><w:rPr><w:noProof/></w:rPr><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="' + (252600000 + i) +
+    '" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>' +
+    '<wp:positionH relativeFrom="page"><wp:posOffset>' + x + '</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>' + y + '</wp:posOffset></wp:positionV>' +
+    '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="19050" t="19050" r="40005" b="46355"/><wp:wrapNone/><wp:docPr id="' + i + '" name="frame' + i + '"/><wp:cNvGraphicFramePr/>' +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+    '<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>' +
+    '<a:ln w="60325" cmpd="thickThin"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr>' +
+    '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="ctr"><a:noAutofit/></wps:bodyPr></wps:wsp>' +
+    '</a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice></mc:AlternateContent></w:r>';
+}
+// Paragraph that starts a month page and carries its background and frame.
+function pageParagraph(layout, breakBefore) {
+  let art;
+  if (layout === 'full') {
+    art = picture('rId13', 0, 0, PAGE_W, PAGE_H) + frame((PAGE_W - 7146025) >> 1, (PAGE_H - 10223595) >> 1, 7146025, 10223595);
+  } else {
+    const bgW = 4023995, frW = 3541594, frH = 10203123, m = 323850; // m = 510-twip margin in EMU
+    const right = layout === 'right';
+    art = picture('rId17', right ? PAGE_W - bgW : 0, 0, bgW, PAGE_H) +
+      frame(right ? PAGE_W - m - frW + 87000 : m - 87000, (PAGE_H - frH) >> 1, frW, frH);
+  }
+  return '<w:p><w:pPr>' + (breakBefore ? '<w:pageBreakBefore/>' : '') +
+    '<w:spacing w:after="0" w:line="20" w:lineRule="exact"/><w:jc w:val="center"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr>' + art + '</w:p>';
 }
 
-// One page: title row, header row, and the given students (numbered from `start`).
-function monthTable(title, days, isOff, firstHalf, students, start, rowH, nameSz) {
+// pg: one entry of planMonthPages.
+function monthTable(pg) {
+  const n = pg.days.length;
   let widths;
-  if (firstHalf) {
-    widths = Array(days.length + 1).fill(368).concat([1000, 2700, 1000, 397]);
+  if (pg.layout === 'full') {
+    widths = Array(n + 1).fill(329).concat([1247, 2830, 1247, 397]);
     widths[0] += TW - widths.reduce((a, b) => a + b, 0);
   } else {
-    const rest = TW - 2830 - 397, n = days.length + 1, dw = Math.floor(rest / n);
-    widths = Array(n).fill(dw);
-    widths[0] += rest - dw * n;
-    widths = widths.concat([2830, 397]);
+    widths = [HALF_TW - DAY_W * (n + 1)].concat(Array(n + 1).fill(DAY_W)); // م takes what is left
   }
-  const nameW = firstHalf ? 2700 : 2830;
+  const total = widths.reduce((a, b) => a + b, 0);
   const grid = widths.map(x => '<w:gridCol w:w="' + x + '"/>').join('');
-  const dd = days.slice().reverse(); // right-to-left: day 1 on the right
-  const rows = [row([cell(TW, { text: title, shd: BLUE, span: widths.length, sz: 22, bold: true })], 480)];
-  const hdr = [cell(widths[0], { text: 'م', shd: BLUE })];
-  dd.forEach((d, k) => hdr.push(cell(widths[k + 1], { text: String(d), sz: 18, shd: isOff(d) ? PINK : BLUE })));
-  if (firstHalf) hdr.push(cell(1000, { text: 'التولد', shd: BLUE }), cell(nameW, { text: 'اسم الطالبـ/ ـة', shd: BLUE }),
-    cell(1000, { text: 'رقم القيد', shd: BLUE }), cell(397, { text: 'ت', shd: BLUE }));
-  else hdr.push(cell(nameW, { text: 'اسم الطالبـ/ ـة', shd: BLUE }), cell(397, { text: 'ت', shd: BLUE }));
-  rows.push(row(hdr, 440));
-  students.forEach((nm, j) => {
+  const dd = pg.days.slice().reverse(); // right-to-left: first day on the right
+  const daySz = 18; // 9pt keeps two-digit days on one line in the narrow columns
+  const rows = [row([cell(total, { text: pg.title, shd: BLUE, span: widths.length, sz: 24, bold: true })], ROW_H)];
+  const hdr = [cell(widths[0], { text: 'م', shd: BLUE, sz: daySz })];
+  dd.forEach((d, k) => hdr.push(cell(widths[k + 1], { text: String(d), sz: daySz, shd: pg.isOff(d) ? PINK : BLUE })));
+  if (pg.layout === 'full') hdr.push(cell(1247, { text: 'التولد', shd: BLUE, sz: 24 }), cell(2830, { text: 'اسم الطالبـ/ ـة', shd: BLUE, sz: 24 }),
+    cell(1247, { text: 'رقم القيد', shd: BLUE, sz: 24 }), cell(397, { text: 'ت', shd: BLUE, sz: 24 }));
+  else hdr.push(cell(DAY_W, { text: 'ت', shd: BLUE, sz: daySz }));
+  rows.push(row(hdr, ROW_H));
+  pg.students.forEach((nm, j) => {
     const cs = [cell(widths[0])];
-    dd.forEach((d, k) => cs.push(cell(widths[k + 1], { shd: isOff(d) ? PINK : '' })));
-    const sz = nm.length > 30 ? Math.min(nameSz, 16) : nameSz;
-    const nameCell = cell(nameW, { text: nm, sz, bold: true, name: true });
-    const num = cell(397, { text: String(start + j), shd: GREEN, sz: nameSz });
-    if (firstHalf) cs.push(cell(1000), nameCell, cell(1000), num);
-    else cs.push(nameCell, num);
-    rows.push(row(cs, rowH));
+    dd.forEach((d, k) => cs.push(cell(widths[k + 1], { shd: pg.isOff(d) ? PINK : '' })));
+    const num = cell(pg.layout === 'full' ? 397 : DAY_W, { text: String(pg.start + j), shd: GREEN, sz: daySz });
+    if (pg.layout === 'full') {
+      const sz = nm.length > 26 ? 18 : 22;
+      cs.push(cell(1247), cell(2830, { text: nm, sz, bold: true, name: true }), cell(1247), num);
+    } else cs.push(num);
+    rows.push(row(cs, ROW_H));
   });
-  return '<w:tbl><w:tblPr><w:tblStyle w:val="a3"/><w:tblW w:w="' + TW + '" w:type="dxa"/><w:jc w:val="center"/>' +
-    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="57" w:type="dxa"/><w:right w:w="57" w:type="dxa"/></w:tblCellMar>' +
+  const jc = pg.layout === 'full' ? 'center' : pg.layout;
+  return '<w:tbl><w:tblPr><w:tblStyle w:val="a3"/><w:tblW w:w="' + total + '" w:type="dxa"/><w:jc w:val="' + jc + '"/>' +
+    '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="28" w:type="dxa"/><w:right w:w="28" w:type="dxa"/></w:tblCellMar>' +
     '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>' +
     '<w:tblGrid>' + grid + '</w:tblGrid>' + rows.join('') + '</w:tbl>';
 }
@@ -118,18 +150,29 @@ function planMonthPages(names, startYear, extraHolidays) {
       for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
         const days = [];
         for (let d = a; d <= b; d++) days.push(d);
-        let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y + '     ( من ' + a + ' إلى ' + b + ' )';
-        if (sets > 1) title += '   -   الطلاب ' + start + ' - ' + (start + ROWS_PER_PAGE - 1);
-        out.push({ title, days, isOff, firstHalf, students, start, rowH: ROW_H, nameSz: 20 });
+        const layout = m === 9 && firstHalf ? 'full' : firstHalf ? 'left' : 'right';
+        let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y;
+        if (layout === 'full') {
+          title += '     ( من ' + a + ' إلى ' + b + ' )';
+          if (sets > 1) title += '   -   الطلاب ' + start + ' - ' + (start + ROWS_PER_PAGE - 1);
+        }
+        out.push({ title, days, isOff, layout, students, start });
       }
     }
   }
   return out;
 }
 
+// Month pages get their own section with the template's margins; the earlier pages keep theirs.
+const FRONT_SECTION = '<w:p><w:pPr><w:spacing w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>' +
+  '<w:sectPr><w:pgSz w:w="11906" w:h="16838" w:code="9"/><w:pgMar w:top="0" w:right="510" w:bottom="1276" w:left="510" w:header="0" w:footer="0" w:gutter="0"/>' +
+  '<w:cols w:space="720"/><w:docGrid w:linePitch="360"/></w:sectPr></w:pPr></w:p>';
+const BODY_MARGINS_OLD = '<w:pgMar w:top="0" w:right="510" w:bottom="1276" w:left="510" w:header="0" w:footer="0" w:gutter="0"/>';
+const BODY_MARGINS_NEW = '<w:pgMar w:top="' + MONTH_MARGIN + '" w:right="510" w:bottom="' + MONTH_MARGIN + '" w:left="510" w:header="0" w:footer="0" w:gutter="0"/>';
+
 function buildMonths(names, startYear, extraHolidays) {
-  return planMonthPages(names, startYear, extraHolidays).map(pg => backgroundParagraph() +
-    monthTable(pg.title, pg.days, pg.isOff, pg.firstHalf, pg.students, pg.start, pg.rowH, pg.nameSz)).join('');
+  return FRONT_SECTION + planMonthPages(names, startYear, extraHolidays)
+    .map((pg, i) => pageParagraph(pg.layout, i > 0) + monthTable(pg)).join('');
 }
 
 // Draws the green "٢٠٢٦ – ٢٠٢٧" cover image (390x250 like the template image) and returns base64 PNG.
@@ -190,6 +233,9 @@ async function buildRegister(templateBytes, opts) {
   const re = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?@@MONTHS@@[\s\S]*?<\/w:p>/;
   if (!re.test(doc)) throw new Error('template marker missing');
   doc = doc.replace(re, () => months);
+  if (doc.split(BODY_MARGINS_OLD).length !== 3) throw new Error('template margins changed');
+  const k = doc.lastIndexOf(BODY_MARGINS_OLD); // the body's final sectPr = the month section
+  doc = doc.slice(0, k) + BODY_MARGINS_NEW + doc.slice(k + BODY_MARGINS_OLD.length);
   zip.file('word/document.xml', doc);
   zip.file('word/media/image4.png', yearImageBase64(opts.startYear), { base64: true });
   return zip.generateAsync({ type: 'base64', compression: 'DEFLATE', compressionOptions: { level: 6 } });

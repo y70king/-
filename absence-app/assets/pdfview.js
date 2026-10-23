@@ -34,6 +34,7 @@ body { font-family: "Noto Naskh Arabic", "Noto Sans Arabic", "Sultan Medium", "T
   text-shadow: 0 2px 0 #fff, 0 4px 6px rgba(0,0,0,.35); }
 .cover-class { top: 166mm; font-size: 22pt; font-weight: bold; color: #0070C0; -webkit-text-stroke: .5px #0a3f78; }
 .frame { border: 3px solid #000; }
+.frame2 { border: 4.75pt double #000; z-index: 2; }
 .notes { right: 12mm; left: 12mm; top: 29mm; font-size: 12.4pt; line-height: 1.5; text-align: justify; direction: rtl; }
 .notes p { margin: 0 0 2.2mm; }
 .titlebox { top: 5mm; width: 97.7mm; height: 21.2mm; overflow: hidden; }
@@ -101,38 +102,48 @@ function transfersPage() {
     '</div>';
 }
 
+// Mirrors monthTable() in register.js: September 1-15 full width with names, the rest half width.
 function monthPage(pg) {
+  const n = pg.days.length, full = pg.layout === 'full';
   let widths;
-  if (pg.firstHalf) {
-    widths = Array(pg.days.length + 1).fill(368).concat([1000, 2700, 1000, 397]);
+  if (full) {
+    widths = Array(n + 1).fill(329).concat([1247, 2830, 1247, 397]);
     widths[0] += TW - widths.reduce((a, b) => a + b, 0);
   } else {
-    const rest = TW - 2830 - 397, n = pg.days.length + 1, dw = Math.floor(rest / n);
-    widths = Array(n).fill(dw);
-    widths[0] += rest - dw * n;
-    widths = widths.concat([2830, 397]);
+    widths = [HALF_TW - DAY_W * (n + 1)].concat(Array(n + 1).fill(DAY_W));
   }
-  const nameW = pg.firstHalf ? 2700 : 2830;
+  const total = widths.reduce((a, b) => a + b, 0);
   const dd = pg.days.slice().reverse();
-  const namePt = pg.nameSz / 2;
-  const rows = [htmlRow([htmlCell(TW, pg.title, { span: widths.length, bg: C_BLUE, pt: 11, bold: true })], 480)];
-  const hdr = [htmlCell(widths[0], 'م', { bg: C_BLUE, pt: 10 })];
-  dd.forEach((d, k) => hdr.push(htmlCell(widths[k + 1], d, { bg: pg.isOff(d) ? C_PINK : C_BLUE, pt: 9 })));
-  if (pg.firstHalf) hdr.push(htmlCell(1000, 'التولد', { bg: C_BLUE, pt: 10 }), htmlCell(nameW, 'اسم الطالبـ/ ـة', { bg: C_BLUE, pt: 10 }),
-    htmlCell(1000, 'رقم القيد', { bg: C_BLUE, pt: 10 }), htmlCell(397, 'ت', { bg: C_BLUE, pt: 10 }));
-  else hdr.push(htmlCell(nameW, 'اسم الطالبـ/ ـة', { bg: C_BLUE, pt: 10 }), htmlCell(397, 'ت', { bg: C_BLUE, pt: 10 }));
-  rows.push(htmlRow(hdr, 440));
+  const dayPt = full ? 11 : 10;
+  const rows = [htmlRow([htmlCell(total, pg.title, { span: widths.length, bg: C_BLUE, pt: 12, bold: true })], ROW_H)];
+  const hdr = [htmlCell(widths[0], 'م', { bg: C_BLUE, pt: dayPt })];
+  dd.forEach((d, k) => hdr.push(htmlCell(widths[k + 1], d, { bg: pg.isOff(d) ? C_PINK : C_BLUE, pt: dayPt })));
+  if (full) hdr.push(htmlCell(1247, 'التولد', { bg: C_BLUE, pt: 12 }), htmlCell(2830, 'اسم الطالبـ/ ـة', { bg: C_BLUE, pt: 12 }),
+    htmlCell(1247, 'رقم القيد', { bg: C_BLUE, pt: 12 }), htmlCell(397, 'ت', { bg: C_BLUE, pt: 12 }));
+  else hdr.push(htmlCell(DAY_W, 'ت', { bg: C_BLUE, pt: dayPt }));
+  rows.push(htmlRow(hdr, ROW_H));
   pg.students.forEach((nm, j) => {
     const cs = [htmlCell(widths[0], '')];
     dd.forEach((d, k) => cs.push(htmlCell(widths[k + 1], '', { bg: pg.isOff(d) ? C_PINK : '' })));
-    const nameCell = htmlCell(nameW, nm, { cls: 'name', pt: +(namePt * Math.min(1, 24 / Math.max(nm.length, 1))).toFixed(1) }); // shrink long names to fit
-    const num = htmlCell(397, pg.start + j, { bg: C_GREEN, pt: namePt });
-    if (pg.firstHalf) cs.push(htmlCell(1000, ''), nameCell, htmlCell(1000, ''), num);
-    else cs.push(nameCell, num);
-    rows.push(htmlRow(cs, pg.rowH));
+    const num = htmlCell(full ? 397 : DAY_W, pg.start + j, { bg: C_GREEN, pt: dayPt });
+    if (full) cs.push(htmlCell(1247, ''), htmlCell(2830, nm, { cls: 'name', pt: +(11 * Math.min(1, 24 / Math.max(nm.length, 1))).toFixed(1) }), htmlCell(1247, ''), num);
+    else cs.push(num);
+    rows.push(htmlRow(cs, ROW_H));
   });
-  return '<div class="page"><img class="bg" src="img/image6.png">' +
-    '<table class="abs center" style="top:10mm;width:' + mm(TW) + '">' + colgroup(widths) + rows.join('') + '</table></div>';
+  const top = mm(MONTH_MARGIN), side = mm(510);
+  let art, pos;
+  if (full) {
+    art = '<img class="bg" src="img/image6.png"><div class="abs frame2" style="left:6.5mm;right:6.5mm;top:7.2mm;bottom:7.2mm"></div>';
+    pos = 'left:0;right:0;margin:auto';
+  } else if (pg.layout === 'right') {
+    art = '<img class="bg" src="img/half.png" style="left:auto;right:0;width:111.8mm"><div class="abs frame2" style="right:6.6mm;width:98.4mm;top:6.8mm;bottom:6.8mm"></div>';
+    pos = 'right:' + side;
+  } else {
+    art = '<img class="bg" src="img/half.png" style="width:111.8mm"><div class="abs frame2" style="left:6.6mm;width:98.4mm;top:6.8mm;bottom:6.8mm"></div>';
+    pos = 'left:' + side;
+  }
+  return '<div class="page">' + art + '<table class="abs" style="top:' + top + ';' + pos + ';width:' + mm(total) + '">' +
+    colgroup(widths) + rows.join('') + '</table></div>';
 }
 
 // opts: same as buildRegister. baseHref: where img/ lives (omit inside the app).

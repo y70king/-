@@ -14,11 +14,13 @@ const PINK = '<w:shd w:val="clear" w:color="auto" w:fill="FBE4D5" w:themeFill="a
 const GREEN = '<w:shd w:val="clear" w:color="auto" w:fill="E2EFD9" w:themeFill="accent6" w:themeFillTint="33"/>';
 // Month-page layout copied from the user's template: September 1-15 is a full-width page with the names;
 // every other half-month is a half-width table on its own page (1-15 on the left, 16-end on the right).
-const TW = 10985;               // full table width (dxa)
+const TW = 10886;               // full table width = page width minus the 510 margins (dxa)
 const HALF_TW = 5310;           // half table width (dxa)
 const DAY_W = 295;              // day / serial column width in half tables (dxa)
 const ROWS_PER_PAGE = 32;       // 32 numbered rows; spare ones stay blank for transferred students
-const ROW_H = 454;              // every row, as in the template
+const ROW_H = 454;              // row height, as in the template
+const COMPACT_ROWS = 48;        // classes of 33-48 stay on one page with shorter rows
+const COMPACT_ROW_H = 308;      // (15818 page height - 2 x 454 title/header - spacer) / 48
 const MONTH_MARGIN = 510;       // month pages use the template's 510-twip page margins (own section)
 const PAGE_W = 7560310, PAGE_H = 10692130;   // A4 in EMU
 
@@ -102,28 +104,35 @@ function monthTable(pg) {
     widths = [HALF_TW - DAY_W * (n + 1)].concat(Array(n + 1).fill(DAY_W)); // م takes what is left
   }
   const total = widths.reduce((a, b) => a + b, 0);
-  const grid = widths.map(x => '<w:gridCol w:w="' + x + '"/>').join('');
+  // Half tables are padded to the full page width with a borderless empty column, so they sit on their
+  // half of the page in every viewer (some phone viewers ignore table alignment and centre the table).
+  const half = pg.layout !== 'full', spW = TW - total;
+  const spacer = () => '<w:tc><w:tcPr><w:tcW w:w="' + spW + '" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/>' + // schema order: top, left, bottom, right
+    (pg.layout === 'right' ? '<w:left w:val="nil"/><w:bottom w:val="nil"/>' : '<w:bottom w:val="nil"/><w:right w:val="nil"/>') +
+    '</w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:p></w:tc>';
+  const pad = cells => !half ? cells : pg.layout === 'right' ? [spacer()].concat(cells) : cells.concat([spacer()]);
+  const allW = !half ? widths : pg.layout === 'right' ? [spW].concat(widths) : widths.concat([spW]);
+  const grid = allW.map(x => '<w:gridCol w:w="' + x + '"/>').join('');
   const dd = pg.days.slice().reverse(); // right-to-left: first day on the right
   const daySz = 18; // 9pt keeps two-digit days on one line in the narrow columns
-  const rows = [row([cell(total, { text: pg.title, shd: BLUE, span: widths.length, sz: 24, bold: true })], ROW_H)];
+  const rows = [row(pad([cell(total, { text: pg.title, shd: BLUE, span: widths.length, sz: 24, bold: true })]), ROW_H)];
   const hdr = [cell(widths[0], { text: 'م', shd: BLUE, sz: daySz })];
   dd.forEach((d, k) => hdr.push(cell(widths[k + 1], { text: String(d), sz: daySz, shd: pg.isOff(d) ? PINK : BLUE })));
   if (pg.layout === 'full') hdr.push(cell(1247, { text: 'التولد', shd: BLUE, sz: 24 }), cell(2830, { text: 'اسم الطالبـ/ ـة', shd: BLUE, sz: 24 }),
     cell(1247, { text: 'رقم القيد', shd: BLUE, sz: 24 }), cell(397, { text: 'ت', shd: BLUE, sz: 24 }));
   else hdr.push(cell(DAY_W, { text: 'ت', shd: BLUE, sz: daySz }));
-  rows.push(row(hdr, ROW_H));
+  rows.push(row(pad(hdr), ROW_H));
   pg.students.forEach((nm, j) => {
     const cs = [cell(widths[0])];
     dd.forEach((d, k) => cs.push(cell(widths[k + 1], { shd: pg.isOff(d) ? PINK : '' })));
     const num = cell(pg.layout === 'full' ? 397 : DAY_W, { text: String(pg.start + j), shd: GREEN, sz: daySz });
     if (pg.layout === 'full') {
-      const sz = nm.length > 26 ? 18 : 22;
+      const sz = pg.rowH < ROW_H ? (nm.length > 26 ? 16 : 18) : (nm.length > 26 ? 18 : 22);
       cs.push(cell(1247), cell(2830, { text: nm, sz, bold: true, name: true }), cell(1247), num);
     } else cs.push(num);
-    rows.push(row(cs, ROW_H));
+    rows.push(row(pad(cs), pg.rowH));
   });
-  const jc = pg.layout === 'full' ? 'center' : pg.layout;
-  return '<w:tbl><w:tblPr><w:tblStyle w:val="a3"/><w:tblW w:w="' + total + '" w:type="dxa"/><w:jc w:val="' + jc + '"/>' +
+  return '<w:tbl><w:tblPr><w:tblStyle w:val="a3"/><w:tblW w:w="' + TW + '" w:type="dxa"/><w:jc w:val="left"/><w:tblInd w:w="0" w:type="dxa"/>' +
     '<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="28" w:type="dxa"/><w:right w:w="28" w:type="dxa"/></w:tblCellMar>' +
     '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>' +
     '<w:tblGrid>' + grid + '</w:tblGrid>' + rows.join('') + '</w:tbl>';
@@ -133,30 +142,37 @@ function monthTable(pg) {
 // The month pages of the register, shared by the Word and PDF outputs.
 function planMonthPages(names, startYear, extraHolidays) {
   const extra = new Set(extraHolidays.map(d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()));
-  // Students 1-32 get a full year of pages, then 33-64 another full year, and so on (as in the template).
-  const sets = Math.max(1, Math.ceil(names.length / ROWS_PER_PAGE));
-  const out = [];
+  // Up to 32 students: 32 rows. 33-48: all on one page with shorter rows. More: extra pages of 48
+  // follow right after the same half-month, so a class is never split across the year.
+  const compact = names.length > ROWS_PER_PAGE;
+  const perPage = compact ? COMPACT_ROWS : ROWS_PER_PAGE;
+  const rowH = compact ? COMPACT_ROW_H : ROW_H;
+  const sets = Math.max(1, Math.ceil(names.length / perPage));
+  const groups = [];
   for (let set = 0; set < sets; set++) {
-    const start = set * ROWS_PER_PAGE + 1;
-    const students = [];
-    for (let i = 0; i < ROWS_PER_PAGE; i++) students.push(names[start - 1 + i] || '');
-    for (const [m, mName, ordinal] of MONTHS) {
-      const y = m >= 9 ? startYear : startYear + 1;
-      const isOff = d => {
-        const wd = new Date(y, m - 1, d).getDay();
-        return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
-      };
-      const last = daysInMonth(y, m);
-      for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
-        const days = [];
-        for (let d = a; d <= b; d++) days.push(d);
-        const layout = m === 9 && firstHalf ? 'full' : firstHalf ? 'left' : 'right';
+    const start = set * perPage + 1, students = [];
+    for (let i = 0; i < perPage; i++) students.push(names[start - 1 + i] || '');
+    groups.push({ start, students });
+  }
+  const out = [];
+  for (const [m, mName, ordinal] of MONTHS) {
+    const y = m >= 9 ? startYear : startYear + 1;
+    const isOff = d => {
+      const wd = new Date(y, m - 1, d).getDay();
+      return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
+    };
+    const last = daysInMonth(y, m);
+    for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
+      const days = [];
+      for (let d = a; d <= b; d++) days.push(d);
+      const layout = m === 9 && firstHalf ? 'full' : firstHalf ? 'left' : 'right';
+      for (const g of groups) {
         let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y;
         if (layout === 'full') {
           title += '     ( من ' + a + ' إلى ' + b + ' )';
-          if (sets > 1) title += '   -   الطلاب ' + start + ' - ' + (start + ROWS_PER_PAGE - 1);
+          if (sets > 1) title += '   -   الطلاب ' + g.start + ' - ' + (g.start + perPage - 1);
         }
-        out.push({ title, days, isOff, layout, students, start });
+        out.push({ title, days, isOff, layout, students: g.students, start: g.start, rowH });
       }
     }
   }

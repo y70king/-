@@ -126,9 +126,10 @@ function monthPage(pg) {
     const cs = [htmlCell(widths[0], '')];
     dd.forEach((d, k) => cs.push(htmlCell(widths[k + 1], '', { bg: pg.isOff(d) ? C_PINK : '' })));
     const num = htmlCell(full ? 397 : DAY_W, pg.start + j, { bg: C_GREEN, pt: dayPt });
-    if (full) cs.push(htmlCell(1247, ''), htmlCell(2830, nm, { cls: 'name', pt: +(11 * Math.min(1, 24 / Math.max(nm.length, 1))).toFixed(1) }), htmlCell(1247, ''), num);
+    const basePt = pg.rowH < ROW_H ? 9 : 11;
+    if (full) cs.push(htmlCell(1247, ''), htmlCell(2830, nm, { cls: 'name', pt: +(basePt * Math.min(1, 24 / Math.max(nm.length, 1))).toFixed(1) }), htmlCell(1247, ''), num);
     else cs.push(num);
-    rows.push(htmlRow(cs, ROW_H));
+    rows.push(htmlRow(cs, pg.rowH));
   });
   const top = mm(MONTH_MARGIN), side = mm(510);
   let art, pos;

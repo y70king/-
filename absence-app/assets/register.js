@@ -99,7 +99,8 @@ function monthTable(title, days, isOff, firstHalf, students, start, rowH, nameSz
 }
 
 // extraHolidays: array of Date objects (local) to shade in addition to Fri/Sat and fixed holidays.
-function buildMonths(names, startYear, extraHolidays) {
+// The month pages of the register, shared by the Word and PDF outputs.
+function planMonthPages(names, startYear, extraHolidays) {
   const extra = new Set(extraHolidays.map(d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()));
   const pages = Math.ceil(names.length / MAX_ROWS_PER_PAGE);
   const perPage = Math.ceil(names.length / pages);
@@ -113,19 +114,23 @@ function buildMonths(names, startYear, extraHolidays) {
       return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
     };
     const last = daysInMonth(y, m);
-    for (const [first, a, b] of [[true, 1, 15], [false, 16, last]]) {
+    for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
       const days = [];
       for (let d = a; d <= b; d++) days.push(d);
       for (let p = 0; p < pages; p++) {
-        const chunk = names.slice(p * perPage, (p + 1) * perPage);
         let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y + '     ( من ' + a + ' إلى ' + b + ' )';
         if (pages > 1) title += '   -   صفحة ' + (p + 1) + ' من ' + pages;
-        out.push(backgroundParagraph());
-        out.push(monthTable(title, days, isOff, first, chunk, p * perPage + 1, rowH, nameSz));
+        out.push({ title, days, isOff, firstHalf, students: names.slice(p * perPage, (p + 1) * perPage),
+          start: p * perPage + 1, rowH, nameSz });
       }
     }
   }
-  return out.join('');
+  return out;
+}
+
+function buildMonths(names, startYear, extraHolidays) {
+  return planMonthPages(names, startYear, extraHolidays).map(pg => backgroundParagraph() +
+    monthTable(pg.title, pg.days, pg.isOff, pg.firstHalf, pg.students, pg.start, pg.rowH, pg.nameSz)).join('');
 }
 
 // Draws the green "٢٠٢٦ – ٢٠٢٧" cover image (390x250 like the template image) and returns base64 PNG.

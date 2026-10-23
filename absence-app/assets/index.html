@@ -23,6 +23,9 @@
   button { font:inherit; border:0; border-radius:10px; padding:12px 14px; cursor:pointer; }
   .primary { background:var(--green); color:#fff; width:100%; font-size:18px; padding:14px; }
   .primary:disabled { opacity:.5; }
+  .gen { display:flex; gap:10px; }
+  .gen .primary { flex:1; font-size:17px; padding:14px 8px; }
+  .primary.pdf { background:#c62828; }
   .secondary { background:var(--green2); color:var(--green); }
   .filebtn { display:block; text-align:center; background:#eef3fb; color:var(--blue); border:2px dashed #9bb8e0; border-radius:10px; padding:16px; font-weight:bold; }
   .filebtn input { display:none; }
@@ -85,19 +88,23 @@
     <textarea id="hol" style="min-height:90px" placeholder="مثال:&#10;9/3/2027 - 12/3/2027&#10;16/5/2027"></textarea>
   </section>
 
-  <button class="primary" id="go" type="button">إنشاء السجل</button>
+  <div class="gen">
+    <button class="primary" id="goWord" type="button">📝 تصدير Word</button>
+    <button class="primary pdf" id="goPdf" type="button">📕 تصدير PDF</button>
+  </div>
   <div id="outMsg" class="msg"></div>
   <div class="actions" id="actions">
     <button class="secondary" id="openBtn" type="button">فتح الملف</button>
     <button class="secondary" id="shareBtn" type="button">مشاركة</button>
   </div>
-  <p class="hint" style="text-align:center;margin:18px 0 8px">لحفظ نسخة PDF: افتح الملف في WPS Office أو Microsoft Word ثم اختر تصدير / حفظ بصيغة PDF.</p>
+  <p class="hint" style="text-align:center;margin:18px 0 8px">ملف Word قابل للتعديل لاحقاً، وملف PDF جاهز للطباعة مباشرة.</p>
 </main>
 
 <script src="jszip.min.js"></script>
 <script src="pdf.worker.min.js"></script>
 <script src="pdf.min.js"></script>
 <script src="register.js"></script>
+<script src="pdfview.js"></script>
 <script>
 (function () {
   const $ = id => document.getElementById(id);
@@ -188,7 +195,7 @@
     return new Uint8Array(await (await fetch('template.docx')).arrayBuffer());
   }
 
-  $('go').onclick = async () => {
+  async function generate(kind) {
     const list = names();
     const cls = $('cls').value === 'أخرى…' ? $('clsOther').value.trim() : $('cls').value;
     const out = $('outMsg');
@@ -199,20 +206,33 @@
     const hol = parseHolidays($('hol').value);
     if (hol.bad.length) return msg(out, 'err', 'تاريخ غير مفهوم في العطل: «' + hol.bad[0] + '». اكتبه هكذا: 9/3/2027 أو 9/3/2027 - 12/3/2027');
     save();
-    $('go').disabled = true;
+    $('goWord').disabled = $('goPdf').disabled = true;
     msg(out, 'info', 'جاري إنشاء السجل…');
     try {
       const startYear = +$('year').value;
-      const b64 = await buildRegister(await templateBytes(), {
-        names: list, className: cls, section: $('sec').value, school: $('school').value.trim(),
-        gov: $('gov').value.trim(), startYear, extraHolidays: hol.out,
-      });
-      const fname = ('سجل الغيابات - ' + cls + ' ' + $('sec').value + ' - ' + startYear + '-' + (startYear + 1) + '.docx').replace(/[\\\/:*?"<>|]/g, '');
+      const opts = { names: list, className: cls, section: $('sec').value, school: $('school').value.trim(),
+        gov: $('gov').value.trim(), startYear, extraHolidays: hol.out };
+      const base = ('سجل الغيابات - ' + cls + ' ' + $('sec').value + ' - ' + startYear + '-' + (startYear + 1)).replace(/[\\\/:*?"<>|]/g, '');
+      if (kind === 'pdf') {
+        const html = buildRegisterHtml(Object.assign({ title: base }, opts), isApp ? '' : location.href.replace(/[^\/]*$/, ''));
+        if (isApp) {
+          window.Android.printPdf(html, base);
+        } else {
+          const w = window.open('', '_blank');
+          if (!w) throw new Error('اسمح بالنوافذ المنبثقة');
+          w.document.write(html); w.document.close();
+          w.onload = () => w.print();
+        }
+        msg(out, 'ok', 'ستظهر شاشة الطباعة: اختر «حفظ بتنسيق PDF» (Save as PDF) ثم اضغط زر التنزيل (PDF) لحفظ الملف.');
+        return;
+      }
+      const b64 = await buildRegister(await templateBytes(), opts);
+      const fname = base + '.docx';
       if (isApp) {
         const r = window.Android.saveFile(b64, fname);
         if (r.indexOf('ERR:') === 0) throw new Error(r.slice(4));
-        if (r === 'PERM') { msg(out, 'err', 'اسمح للتطبيق بالوصول إلى التخزين ثم اضغط «إنشاء السجل» مرة أخرى.'); return; }
-        msg(out, 'ok', 'تم إنشاء السجل (' + list.length + ' طالب) وحُفظ في: ' + r);
+        if (r === 'PERM') { msg(out, 'err', 'اسمح للتطبيق بالوصول إلى التخزين ثم اضغط الزر مرة أخرى.'); return; }
+        msg(out, 'ok', 'تم إنشاء ملف Word (' + list.length + ' طالب) وحُفظ في: ' + r);
         $('actions').style.display = 'flex';
       } else {
         const bin = atob(b64), u = new Uint8Array(bin.length);
@@ -222,14 +242,16 @@
         a.href = url; a.download = fname;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        msg(out, 'ok', 'تم إنشاء السجل (' + list.length + ' طالب).');
+        msg(out, 'ok', 'تم إنشاء ملف Word (' + list.length + ' طالب).');
       }
     } catch (err) {
       msg(out, 'err', 'حدث خطأ أثناء الإنشاء: ' + err.message);
     } finally {
-      $('go').disabled = false;
+      $('goWord').disabled = $('goPdf').disabled = false;
     }
-  };
+  }
+  $('goWord').onclick = () => generate('docx');
+  $('goPdf').onclick = () => generate('pdf');
   $('openBtn').onclick = () => window.Android.openFile();
   $('shareBtn').onclick = () => window.Android.shareFile();
 })();

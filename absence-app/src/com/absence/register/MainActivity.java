@@ -12,6 +12,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.StrictMode;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -36,6 +39,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private ValueCallback<Uri[]> pendingFileCallback;
     private Uri lastSaved;
+    private WebView printView; // kept alive until the print job has read it
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -149,6 +153,36 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "ERR:" + e.getMessage();
             }
+        }
+
+        /** Lays the register out in an off-screen WebView and opens the system print screen ("Save as PDF"). */
+        @JavascriptInterface
+        public void printPdf(final String html, final String name) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    final WebView pv = new WebView(MainActivity.this);
+                    printView = pv;
+                    pv.getSettings().setAllowFileAccess(true);
+                    pv.setWebViewClient(new WebViewClient() {
+                        private boolean started;
+
+                        @Override
+                        public void onPageFinished(WebView view, String url) {
+                            if (started) return;
+                            started = true;
+                            PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
+                            PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(name);
+                            PrintAttributes attrs = new PrintAttributes.Builder()
+                                    .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                                    .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+                                    .build();
+                            pm.print(name, adapter, attrs);
+                        }
+                    });
+                    pv.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
+                }
+            });
         }
 
         @JavascriptInterface

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>سجل الغيابات</title>
+<style>
+  :root { --green:#1f7a3a; --green2:#e6f4ea; --blue:#1565c0; --bg:#f4f6f8; --card:#fff; --text:#1d2329; --muted:#5f6b76; --border:#d5dbe1; --err:#c62828; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Naskh Arabic","Noto Sans Arabic",Tahoma,sans-serif; font-size:16px; }
+  header { background:linear-gradient(135deg,#1f7a3a,#2e9d55); color:#fff; padding:18px 16px 16px; }
+  header h1 { margin:0; font-size:22px; }
+  header p { margin:4px 0 0; opacity:.9; font-size:14px; }
+  main { padding:12px; max-width:640px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .card h2 { margin:0 0 10px; font-size:17px; color:var(--green); display:flex; align-items:center; gap:8px; }
+  .step { background:var(--green); color:#fff; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:14px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:8px 0 4px; }
+  input[type=text], select, textarea { width:100%; font:inherit; padding:10px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--text); }
+  textarea { min-height:220px; line-height:1.7; resize:vertical; }
+  .row { display:flex; gap:10px; }
+  .row > div { flex:1; min-width:0; }
+  button { font:inherit; border:0; border-radius:10px; padding:12px 14px; cursor:pointer; }
+  .primary { background:var(--green); color:#fff; width:100%; font-size:18px; padding:14px; }
+  .primary:disabled { opacity:.5; }
+  .secondary { background:var(--green2); color:var(--green); }
+  .filebtn { display:block; text-align:center; background:#eef3fb; color:var(--blue); border:2px dashed #9bb8e0; border-radius:10px; padding:16px; font-weight:bold; }
+  .filebtn input { display:none; }
+  .hint { font-size:13px; color:var(--muted); margin-top:6px; line-height:1.6; }
+  .count { font-weight:bold; color:var(--green); }
+  .msg { padding:10px 12px; border-radius:8px; margin-top:10px; font-size:14px; line-height:1.6; display:none; }
+  .msg.ok { display:block; background:var(--green2); color:var(--green); }
+  .msg.err { display:block; background:#fdecea; color:var(--err); }
+  .msg.info { display:block; background:#eef3fb; color:var(--blue); }
+  .actions { display:none; gap:10px; margin-top:10px; }
+  .actions button { flex:1; }
+  ::placeholder { color:#a7b0b8; }
+  .tools { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .tools button { padding:8px 12px; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>سجل غيابات الطلاب</h1>
+  <p>أدخل قائمة الأسماء واختر الصف، وسيُجهَّز السجل كاملاً بملف Word</p>
+</header>
+<main>
+  <section class="card">
+    <h2><span class="step">1</span> بيانات المدرسة</h2>
+    <div class="row">
+      <div><label for="gov">المديرية العامة لتربية</label><input id="gov" type="text" value="صلاح الدين"></div>
+      <div><label for="year">العام الدراسي</label><select id="year"></select></div>
+    </div>
+    <label for="school">اسم المدرسة</label>
+    <input id="school" type="text" value="ثانوية حي النفط للبنين">
+  </section>
+
+  <section class="card">
+    <h2><span class="step">2</span> الصف والشعبة</h2>
+    <div class="row">
+      <div><label for="cls">الصف</label><select id="cls"></select></div>
+      <div style="flex:.5"><label for="sec">الشعبة</label><select id="sec"></select></div>
+    </div>
+    <div id="clsOtherWrap" style="display:none"><label for="clsOther">اكتب اسم الصف</label><input id="clsOther" type="text" placeholder="مثال: الخامس الأحيائي"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">3</span> قائمة الأسماء</h2>
+    <label class="filebtn">📄 اختيار ملف الأسماء (Word أو PDF)
+      <input id="file" type="file" accept=".docx,.pdf,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
+    </label>
+    <div class="hint">يُقبل ملف Word بصيغة ‎.docx‎ أو ملف PDF. يمكنك أيضاً كتابة الأسماء أو لصقها مباشرة، اسم واحد في كل سطر.</div>
+    <label for="names">الأسماء (<span id="count" class="count">0</span> طالب) — راجعها وصحّحها قبل الإنشاء</label>
+    <textarea id="names" placeholder="احمد ظاهر كريم محمد&#10;احمد عماد خلف فرحان&#10;..."></textarea>
+    <div class="tools">
+      <button class="secondary" id="sortBtn" type="button">ترتيب أبجدي</button>
+      <button class="secondary" id="clearBtn" type="button">مسح القائمة</button>
+    </div>
+    <div id="readMsg" class="msg"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">4</span> عطل إضافية (اختياري)</h2>
+    <div class="hint">أيام الجمعة والسبت والعطل الرسمية الثابتة (3/10، 10/12، 25/12، 1/1، 6/1، 21/3، 1/5) تُلوَّن تلقائياً. أضف هنا عطلاً أخرى مثل الأعياد وعطلة نصف السنة، كل تاريخ أو فترة في سطر:</div>
+    <textarea id="hol" style="min-height:90px" placeholder="مثال:&#10;9/3/2027 - 12/3/2027&#10;16/5/2027"></textarea>
+  </section>
+
+  <button class="primary" id="go" type="button">إنشاء السجل</button>
+  <div id="outMsg" class="msg"></div>
+  <div class="actions" id="actions">
+    <button class="secondary" id="openBtn" type="button">فتح الملف</button>
+    <button class="secondary" id="shareBtn" type="button">مشاركة</button>
+  </div>
+  <p class="hint" style="text-align:center;margin:18px 0 8px">لحفظ نسخة PDF: افتح الملف في WPS Office أو Microsoft Word ثم اختر تصدير / حفظ بصيغة PDF.</p>
+</main>
+
+<script src="jszip.min.js"></script>
+<script src="pdf.worker.min.js"></script>
+<script src="pdf.min.js"></script>
+<script src="register.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const isApp = typeof window.Android !== 'undefined';
+  const CLASSES = ['الأول المتوسط', 'الثاني المتوسط', 'الثالث المتوسط', 'الرابع العلمي', 'الرابع الأدبي', 'الرابع الإعدادي',
+    'الخامس العلمي', 'الخامس الأدبي', 'الخامس الأحيائي', 'الخامس التطبيقي', 'السادس العلمي', 'السادس الأدبي', 'السادس الأحيائي',
+    'السادس التطبيقي', 'الأول الابتدائي', 'الثاني الابتدائي', 'الثالث الابتدائي', 'الرابع الابتدائي', 'الخامس الابتدائي',
+    'السادس الابتدائي', 'أخرى…'];
+  const SECTIONS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز', 'ح', 'ط', 'ي', 'ك', 'ل'];
+
+  CLASSES.forEach(c => $('cls').add(new Option(c, c)));
+  SECTIONS.forEach(s => $('sec').add(new Option(s, s)));
+  const now = new Date();
+  const curStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  for (let y = curStart - 2; y <= curStart + 5; y++) $('year').add(new Option(y + ' - ' + (y + 1), y));
+  $('year').value = curStart;
+  $('cls').value = 'السادس العلمي';
+
+  // remember school details between uses
+  const KEYS = ['gov', 'school', 'cls', 'sec', 'clsOther'];
+  try { KEYS.forEach(k => { const v = localStorage.getItem('reg_' + k); if (v !== null) $(k).value = v; }); } catch (e) {}
+  const save = () => { try { KEYS.forEach(k => localStorage.setItem('reg_' + k, $(k).value)); } catch (e) {} };
+  const syncOther = () => { $('clsOtherWrap').style.display = $('cls').value === 'أخرى…' ? 'block' : 'none'; };
+  $('cls').addEventListener('change', syncOther); syncOther();
+
+  const names = () => $('names').value.split('\n').map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const updateCount = () => { $('count').textContent = names().length; };
+  $('names').addEventListener('input', updateCount);
+  $('sortBtn').onclick = () => { $('names').value = names().sort((a, b) => a.localeCompare(b, 'ar')).join('\n'); updateCount(); };
+  $('clearBtn').onclick = () => { $('names').value = ''; updateCount(); };
+
+  function msg(el, cls, text) { el.className = 'msg ' + cls; el.textContent = text; }
+
+  $('file').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    msg($('readMsg'), 'info', 'جاري قراءة الملف…');
+    try {
+      const buf = new Uint8Array(f.arrayBuffer ? await f.arrayBuffer() : await new Promise((ok, bad) => {
+        const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => bad(r.error); r.readAsArrayBuffer(f);
+      }));
+      const lower = f.name.toLowerCase();
+      let lines;
+      if (lower.endsWith('.pdf') || (buf[0] === 0x25 && buf[1] === 0x50)) lines = await linesFromPdf(buf);
+      else if (lower.endsWith('.docx') || (buf[0] === 0x50 && buf[1] === 0x4b)) lines = await linesFromDocx(buf);
+      else if (lower.endsWith('.doc')) throw new Error('DOC');
+      else lines = new TextDecoder('utf-8').decode(buf).split(/\r?\n/);
+      const found = namesFromLines(lines);
+      if (!found.length) {
+        msg($('readMsg'), 'err', 'لم أجد أسماء في هذا الملف. إذا كان الـ PDF صورة ممسوحة ضوئياً فلا يمكن قراءته؛ اكتب الأسماء يدوياً أو استخدم ملف Word.');
+      } else {
+        $('names').value = found.join('\n');
+        updateCount();
+        msg($('readMsg'), 'ok', 'تمت قراءة ' + found.length + ' اسماً. راجع القائمة واحذف أي سطر ليس اسم طالب.');
+      }
+    } catch (err) {
+      msg($('readMsg'), 'err', err.message === 'DOC'
+        ? 'صيغة ‎.doc‎ القديمة غير مدعومة. افتح الملف في Word واحفظه بصيغة ‎.docx‎ أو PDF.'
+        : 'تعذّرت قراءة الملف: ' + err.message);
+    }
+    e.target.value = '';
+  });
+
+  function parseHolidays(text) {
+    const out = [], bad = [];
+    const toDate = s => {
+      const m = s.trim().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+      if (!m) return null;
+      const d = new Date(+m[3], +m[2] - 1, +m[1]);
+      return d.getDate() === +m[1] ? d : null;
+    };
+    text.split('\n').map(s => s.trim()).filter(Boolean).forEach(line => {
+      const parts = line.split(/\s+[-–]\s+|\s+(?:الى|إلى)\s+/);
+      const a = toDate(parts[0]), b = parts[1] ? toDate(parts[1]) : a;
+      if (!a || !b || b < a) { bad.push(line); return; }
+      for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) out.push(new Date(d));
+    });
+    return { out, bad };
+  }
+
+  async function templateBytes() {
+    if (isApp) {
+      const b64 = window.Android.getTemplate();
+      const bin = atob(b64), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return u;
+    }
+    return new Uint8Array(await (await fetch('template.docx')).arrayBuffer());
+  }
+
+  $('go').onclick = async () => {
+    const list = names();
+    const cls = $('cls').value === 'أخرى…' ? $('clsOther').value.trim() : $('cls').value;
+    const out = $('outMsg');
+    $('actions').style.display = 'none';
+    if (!list.length) return msg(out, 'err', 'أدخل أسماء الطلاب أولاً.');
+    if (!cls) return msg(out, 'err', 'اكتب اسم الصف.');
+    if (!$('school').value.trim()) return msg(out, 'err', 'اكتب اسم المدرسة.');
+    const hol = parseHolidays($('hol').value);
+    if (hol.bad.length) return msg(out, 'err', 'تاريخ غير مفهوم في العطل: «' + hol.bad[0] + '». اكتبه هكذا: 9/3/2027 أو 9/3/2027 - 12/3/2027');
+    save();
+    $('go').disabled = true;
+    msg(out, 'info', 'جاري إنشاء السجل…');
+    try {
+      const startYear = +$('year').value;
+      const b64 = await buildRegister(await templateBytes(), {
+        names: list, className: cls, section: $('sec').value, school: $('school').value.trim(),
+        gov: $('gov').value.trim(), startYear, extraHolidays: hol.out,
+      });
+      const fname = ('سجل الغيابات - ' + cls + ' ' + $('sec').value + ' - ' + startYear + '-' + (startYear + 1) + '.docx').replace(/[\\\/:*?"<>|]/g, '');
+      if (isApp) {
+        const r = window.Android.saveFile(b64, fname);
+        if (r.indexOf('ERR:') === 0) throw new Error(r.slice(4));
+        if (r === 'PERM') { msg(out, 'err', 'اسمح للتطبيق بالوصول إلى التخزين ثم اضغط «إنشاء السجل» مرة أخرى.'); return; }
+        msg(out, 'ok', 'تم إنشاء السجل (' + list.length + ' طالب) وحُفظ في: ' + r);
+        $('actions').style.display = 'flex';
+      } else {
+        const bin = atob(b64), u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        msg(out, 'ok', 'تم إنشاء السجل (' + list.length + ' طالب).');
+      }
+    } catch (err) {
+      msg(out, 'err', 'حدث خطأ أثناء الإنشاء: ' + err.message);
+    } finally {
+      $('go').disabled = false;
+    }
+  };
+  $('openBtn').onclick = () => window.Android.openFile();
+  $('shareBtn').onclick = () => window.Android.shareFile();
+})();
+</script>
+</body>
+</html>

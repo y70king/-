@@ -19,8 +19,6 @@ const HALF_TW = 5310;           // half table width (dxa)
 const DAY_W = 295;              // day / serial column width in half tables (dxa)
 const ROWS_PER_PAGE = 32;       // 32 numbered rows; spare ones stay blank for transferred students
 const ROW_H = 454;              // row height, as in the template
-const COMPACT_ROWS = 48;        // classes of 33-48 stay on one page with shorter rows
-const COMPACT_ROW_H = 308;      // (15818 page height - 2 x 454 title/header - spacer) / 48
 const MONTH_MARGIN = 510;       // month pages use the template's 510-twip page margins (own section)
 const PAGE_W = 7560310, PAGE_H = 10692130;   // A4 in EMU
 
@@ -142,11 +140,10 @@ function monthTable(pg) {
 // The month pages of the register, shared by the Word and PDF outputs.
 function planMonthPages(names, startYear, extraHolidays) {
   const extra = new Set(extraHolidays.map(d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()));
-  // Up to 32 students: 32 rows. 33-48: all on one page with shorter rows. More: extra pages of 48
-  // follow right after the same half-month, so a class is never split across the year.
-  const compact = names.length > ROWS_PER_PAGE;
-  const perPage = compact ? COMPACT_ROWS : ROWS_PER_PAGE;
-  const rowH = compact ? COMPACT_ROW_H : ROW_H;
+  // 32 rows per page at the template's height; students past 32 continue on the next page, right
+  // after the same half-month, so a class is never split across the year.
+  const perPage = ROWS_PER_PAGE;
+  const rowH = ROW_H;
   const sets = Math.max(1, Math.ceil(names.length / perPage));
   const groups = [];
   for (let set = 0; set < sets; set++) {

@@ -58,12 +58,13 @@ function colgroup(widths) { return '<colgroup>' + widths.map(x => '<col style="w
 function htmlRow(cells, hTw) { return '<tr style="height:' + mm(hTw) + '">' + cells.join('') + '</tr>'; }
 
 function coverPage(o, yearB64) {
+  const c = coverTexts(o);
   return '<div class="page"><img class="bg" src="img/image1.png">' +
-    '<div class="abs cover-head"><div>المديرية العامة</div><div>لتربية</div><div>' + esc(o.gov) + '</div>' +
-    '<div style="margin-top:3mm">إدارة</div><div class="school">' + esc(o.school) + '</div></div>' +
+    '<div class="abs cover-head"><div>المديرية العامة</div><div>لتربية</div><div>' + esc(c.gov) + '</div>' +
+    '<div style="margin-top:3mm">إدارة</div><div class="school">' + esc(c.school) + '</div></div>' +
     '<img class="abs center" src="img/image2.png" style="top:94mm;width:50.3mm;height:35.2mm">' +
     '<div class="abs center cover-title">غيابات الطلاب</div>' +
-    '<div class="abs center cover-class">الصف  ' + esc(o.className) + '  -  الشعبة  ( ' + esc(o.section) + ' )</div>' +
+    '<div class="abs center cover-class">' + esc(c.classLine) + '</div>' +
     '<img class="abs center" src="img/image3.png" style="top:186mm;width:47.9mm;height:33.5mm">' +
     '<img class="abs center" src="data:image/png;base64,' + yearB64 + '" style="top:211mm;width:67.1mm;height:28.4mm">' +
     '</div>';
@@ -124,7 +125,7 @@ function monthPage(pg) {
   pg.students.forEach((nm, j) => {
     const cs = [htmlCell(widths[0], '')];
     dd.forEach((d, k) => cs.push(htmlCell(widths[k + 1], '', { bg: pg.isOff(d) ? C_PINK : '' })));
-    const nameCell = htmlCell(nameW, nm, { cls: 'name', pt: +(namePt * Math.min(1, 24 / nm.length)).toFixed(1) }); // shrink long names to fit
+    const nameCell = htmlCell(nameW, nm, { cls: 'name', pt: +(namePt * Math.min(1, 24 / Math.max(nm.length, 1))).toFixed(1) }); // shrink long names to fit
     const num = htmlCell(397, pg.start + j, { bg: C_GREEN, pt: namePt });
     if (pg.firstHalf) cs.push(htmlCell(1000, ''), nameCell, htmlCell(1000, ''), num);
     else cs.push(nameCell, num);

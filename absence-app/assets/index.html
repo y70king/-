@@ -72,7 +72,7 @@
     <label class="filebtn">📄 اختيار ملف الأسماء (Word أو PDF)
       <input id="file" type="file" accept=".docx,.pdf,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain">
     </label>
-    <div class="hint">يُقبل ملف Word بصيغة ‎.docx‎ أو ملف PDF. يمكنك أيضاً كتابة الأسماء أو لصقها مباشرة، اسم واحد في كل سطر.</div>
+    <div class="hint">يُقبل ملف Word بصيغة ‎.docx‎ أو ملف PDF. يمكنك أيضاً كتابة الأسماء أو لصقها مباشرة، اسم واحد في كل سطر. كل صفحة فيها 32 صفاً، والصفوف الزائدة تبقى فارغة للطلاب المنقولين. إذا تركت القائمة وبقية الحقول فارغة يُنشأ سجل فارغ يُكتب باليد.</div>
     <label for="names">الأسماء (<span id="count" class="count">0</span> طالب) — راجعها وصحّحها قبل الإنشاء</label>
     <textarea id="names" placeholder="احمد ظاهر كريم محمد&#10;احمد عماد خلف فرحان&#10;..."></textarea>
     <div class="tools">
@@ -115,7 +115,9 @@
     'السادس الابتدائي', 'أخرى…'];
   const SECTIONS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز', 'ح', 'ط', 'ي', 'ك', 'ل'];
 
+  $('cls').add(new Option('بدون (يُكتب باليد)', ''));
   CLASSES.forEach(c => $('cls').add(new Option(c, c)));
+  $('sec').add(new Option('بدون', ''));
   SECTIONS.forEach(s => $('sec').add(new Option(s, s)));
   const now = new Date();
   const curStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
@@ -200,9 +202,6 @@
     const cls = $('cls').value === 'أخرى…' ? $('clsOther').value.trim() : $('cls').value;
     const out = $('outMsg');
     $('actions').style.display = 'none';
-    if (!list.length) return msg(out, 'err', 'أدخل أسماء الطلاب أولاً.');
-    if (!cls) return msg(out, 'err', 'اكتب اسم الصف.');
-    if (!$('school').value.trim()) return msg(out, 'err', 'اكتب اسم المدرسة.');
     const hol = parseHolidays($('hol').value);
     if (hol.bad.length) return msg(out, 'err', 'تاريخ غير مفهوم في العطل: «' + hol.bad[0] + '». اكتبه هكذا: 9/3/2027 أو 9/3/2027 - 12/3/2027');
     save();
@@ -212,7 +211,8 @@
       const startYear = +$('year').value;
       const opts = { names: list, className: cls, section: $('sec').value, school: $('school').value.trim(),
         gov: $('gov').value.trim(), startYear, extraHolidays: hol.out };
-      const base = ('سجل الغيابات - ' + cls + ' ' + $('sec').value + ' - ' + startYear + '-' + (startYear + 1)).replace(/[\\\/:*?"<>|]/g, '');
+      const base = ['سجل الغيابات', [cls, $('sec').value].filter(Boolean).join(' '), startYear + '-' + (startYear + 1)]
+        .filter(Boolean).join(' - ').replace(/[\\\/:*?"<>|]/g, '');
       if (kind === 'pdf') {
         const html = buildRegisterHtml(Object.assign({ title: base }, opts), isApp ? '' : location.href.replace(/[^\/]*$/, ''));
         if (isApp) {
@@ -232,7 +232,7 @@
         const r = window.Android.saveFile(b64, fname);
         if (r.indexOf('ERR:') === 0) throw new Error(r.slice(4));
         if (r === 'PERM') { msg(out, 'err', 'اسمح للتطبيق بالوصول إلى التخزين ثم اضغط الزر مرة أخرى.'); return; }
-        msg(out, 'ok', 'تم إنشاء ملف Word (' + list.length + ' طالب) وحُفظ في: ' + r);
+        msg(out, 'ok', (list.length ? 'تم إنشاء ملف Word (' + list.length + ' طالب)' : 'تم إنشاء سجل فارغ') + ' وحُفظ في: ' + r);
         $('actions').style.display = 'flex';
       } else {
         const bin = atob(b64), u = new Uint8Array(bin.length);
@@ -242,7 +242,7 @@
         a.href = url; a.download = fname;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        msg(out, 'ok', 'تم إنشاء ملف Word (' + list.length + ' طالب).');
+        msg(out, 'ok', list.length ? 'تم إنشاء ملف Word (' + list.length + ' طالب).' : 'تم إنشاء سجل فارغ.');
       }
     } catch (err) {
       msg(out, 'err', 'حدث خطأ أثناء الإنشاء: ' + err.message);

@@ -13,9 +13,8 @@ const BLUE = '<w:shd w:val="clear" w:color="auto" w:fill="BDD6EE" w:themeFill="a
 const PINK = '<w:shd w:val="clear" w:color="auto" w:fill="FBE4D5" w:themeFill="accent2" w:themeFillTint="33"/>';
 const GREEN = '<w:shd w:val="clear" w:color="auto" w:fill="E2EFD9" w:themeFill="accent6" w:themeFillTint="33"/>';
 const TW = 10985;               // table width (dxa)
-const PAGE_ROWS_SPACE = 14000;  // vertical space for student rows on one page (twips)
-const MAX_ROW_H = 440;
-const MAX_ROWS_PER_PAGE = 38;
+const ROWS_PER_PAGE = 32;       // like the new template: 32 numbered rows, spare ones stay blank for transfers
+const ROW_H = 430;              // twips; title 480 + header 440 + 32 rows fit an A4 page with the top spacer
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -102,26 +101,26 @@ function monthTable(title, days, isOff, firstHalf, students, start, rowH, nameSz
 // The month pages of the register, shared by the Word and PDF outputs.
 function planMonthPages(names, startYear, extraHolidays) {
   const extra = new Set(extraHolidays.map(d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()));
-  const pages = Math.ceil(names.length / MAX_ROWS_PER_PAGE);
-  const perPage = Math.ceil(names.length / pages);
-  const rowH = Math.min(MAX_ROW_H, Math.floor(PAGE_ROWS_SPACE / perPage));
-  const nameSz = rowH >= 400 ? 20 : 18;
+  // Students 1-32 get a full year of pages, then 33-64 another full year, and so on (as in the template).
+  const sets = Math.max(1, Math.ceil(names.length / ROWS_PER_PAGE));
   const out = [];
-  for (const [m, mName, ordinal] of MONTHS) {
-    const y = m >= 9 ? startYear : startYear + 1;
-    const isOff = d => {
-      const wd = new Date(y, m - 1, d).getDay();
-      return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
-    };
-    const last = daysInMonth(y, m);
-    for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
-      const days = [];
-      for (let d = a; d <= b; d++) days.push(d);
-      for (let p = 0; p < pages; p++) {
+  for (let set = 0; set < sets; set++) {
+    const start = set * ROWS_PER_PAGE + 1;
+    const students = [];
+    for (let i = 0; i < ROWS_PER_PAGE; i++) students.push(names[start - 1 + i] || '');
+    for (const [m, mName, ordinal] of MONTHS) {
+      const y = m >= 9 ? startYear : startYear + 1;
+      const isOff = d => {
+        const wd = new Date(y, m - 1, d).getDay();
+        return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
+      };
+      const last = daysInMonth(y, m);
+      for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
+        const days = [];
+        for (let d = a; d <= b; d++) days.push(d);
         let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y + '     ( من ' + a + ' إلى ' + b + ' )';
-        if (pages > 1) title += '   -   صفحة ' + (p + 1) + ' من ' + pages;
-        out.push({ title, days, isOff, firstHalf, students: names.slice(p * perPage, (p + 1) * perPage),
-          start: p * perPage + 1, rowH, nameSz });
+        if (sets > 1) title += '   -   الطلاب ' + start + ' - ' + (start + ROWS_PER_PAGE - 1);
+        out.push({ title, days, isOff, firstHalf, students, start, rowH: ROW_H, nameSz: 20 });
       }
     }
   }
@@ -171,13 +170,22 @@ function yearImageBase64(startYear) {
   return small.toDataURL('image/png').split(',')[1];
 }
 
+// Empty fields become dotted lines to fill in by hand, as on the blank template.
+function coverTexts(o) {
+  return {
+    classLine: 'الصف  ' + (o.className || '.................') + '  -  الشعبة  ' + (o.section ? '( ' + o.section + ' )' : '.........'),
+    school: o.school || '.................................................',
+    gov: o.gov || '....................................',
+  };
+}
+
 async function buildRegister(templateBytes, opts) {
   const zip = await JSZip.loadAsync(templateBytes);
   let doc = await zip.file('word/document.xml').async('string');
-  const classLine = 'الصف  ' + opts.className + '  -  الشعبة  ( ' + opts.section + ' )';
-  doc = doc.split('@@CLASSLINE@@').join(esc(classLine))
-    .split('@@SCHOOL@@').join(esc(opts.school))
-    .split('@@GOV@@').join(esc(opts.gov));
+  const c = coverTexts(opts);
+  doc = doc.split('@@CLASSLINE@@').join(esc(c.classLine))
+    .split('@@SCHOOL@@').join(esc(c.school))
+    .split('@@GOV@@').join(esc(c.gov));
   const months = buildMonths(opts.names, opts.startYear, opts.extraHolidays || []);
   const re = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?@@MONTHS@@[\s\S]*?<\/w:p>/;
   if (!re.test(doc)) throw new Error('template marker missing');

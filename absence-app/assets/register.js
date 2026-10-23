@@ -144,7 +144,7 @@ function planMonthPages(names, startYear, extraHolidays) {
   // after the same half-month, so a class is never split across the year.
   const perPage = ROWS_PER_PAGE;
   const rowH = ROW_H;
-  const sets = Math.max(1, Math.ceil(names.length / perPage));
+  const sets = Math.max(2, Math.ceil(names.length / perPage)); // the template always has rows 1-32 and 33-64
   const groups = [];
   for (let set = 0; set < sets; set++) {
     const start = set * perPage + 1, students = [];

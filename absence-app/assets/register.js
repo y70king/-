@@ -140,36 +140,28 @@ function monthTable(pg) {
 // The month pages of the register, shared by the Word and PDF outputs.
 function planMonthPages(names, startYear, extraHolidays) {
   const extra = new Set(extraHolidays.map(d => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()));
-  // 32 rows per page at the template's height; students past 32 continue on the next page, right
-  // after the same half-month, so a class is never split across the year.
+  // As in the template: rows 1-32 get the whole year (September to May), then students 33-64 get
+  // their own lists for the whole year, and so on. The template always has both lists.
   const perPage = ROWS_PER_PAGE;
-  const rowH = ROW_H;
-  const sets = Math.max(2, Math.ceil(names.length / perPage)); // the template always has rows 1-32 and 33-64
-  const groups = [];
+  const sets = Math.max(2, Math.ceil(names.length / perPage));
+  const out = [];
   for (let set = 0; set < sets; set++) {
     const start = set * perPage + 1, students = [];
     for (let i = 0; i < perPage; i++) students.push(names[start - 1 + i] || '');
-    groups.push({ start, students });
-  }
-  const out = [];
-  for (const [m, mName, ordinal] of MONTHS) {
-    const y = m >= 9 ? startYear : startYear + 1;
-    const isOff = d => {
-      const wd = new Date(y, m - 1, d).getDay();
-      return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
-    };
-    const last = daysInMonth(y, m);
-    for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
-      const days = [];
-      for (let d = a; d <= b; d++) days.push(d);
-      const layout = m === 9 && firstHalf ? 'full' : firstHalf ? 'left' : 'right';
-      for (const g of groups) {
+    for (const [m, mName, ordinal] of MONTHS) {
+      const y = m >= 9 ? startYear : startYear + 1;
+      const isOff = d => {
+        const wd = new Date(y, m - 1, d).getDay();
+        return wd === 5 || wd === 6 || FIXED_HOLIDAYS.some(([hm, hd]) => hm === m && hd === d) || extra.has(y + '-' + m + '-' + d);
+      };
+      const last = daysInMonth(y, m);
+      for (const [firstHalf, a, b] of [[true, 1, 15], [false, 16, last]]) {
+        const days = [];
+        for (let d = a; d <= b; d++) days.push(d);
+        const layout = m === 9 && firstHalf ? 'full' : firstHalf ? 'left' : 'right';
         let title = 'شهر  ' + mName + '  -  ' + ordinal + '  ' + m + '  /  ' + y;
-        if (layout === 'full') {
-          title += '     ( من ' + a + ' إلى ' + b + ' )';
-          if (sets > 1) title += '   -   الطلاب ' + g.start + ' - ' + (g.start + perPage - 1);
-        }
-        out.push({ title, days, isOff, layout, students: g.students, start: g.start, rowH });
+        if (layout === 'full') title += '     ( من ' + a + ' إلى ' + b + ' )';
+        out.push({ title, days, isOff, layout, students, start, rowH: ROW_H });
       }
     }
   }

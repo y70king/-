@@ -109,6 +109,9 @@
 (function () {
   const $ = id => document.getElementById(id);
   const isApp = typeof window.Android !== 'undefined';
+  // Windows version: tell the local server the window is still open (it exits when pings stop).
+  const isDesktop = location.hostname === '127.0.0.1' && location.port === '47831';
+  if (isDesktop) { const ping = () => fetch('/__ping', { cache: 'no-store' }).catch(() => {}); ping(); setInterval(ping, 3000); }
   const CLASSES = ['الأول المتوسط', 'الثاني المتوسط', 'الثالث المتوسط', 'الرابع العلمي', 'الرابع الأدبي', 'الرابع الإعدادي',
     'الخامس العلمي', 'الخامس الأدبي', 'الخامس الأحيائي', 'الخامس التطبيقي', 'السادس العلمي', 'السادس الأدبي', 'السادس الأحيائي',
     'السادس التطبيقي', 'الأول الابتدائي', 'الثاني الابتدائي', 'الثالث الابتدائي', 'الرابع الابتدائي', 'الخامس الابتدائي',
@@ -221,7 +224,9 @@
           const w = window.open('', '_blank');
           if (!w) throw new Error('اسمح بالنوافذ المنبثقة');
           w.document.write(html); w.document.close();
-          w.onload = () => w.print();
+          // print once the pages and their images have loaded
+          const tryPrint = () => { if (w.closed) return; if (w.document.readyState === 'complete') { w.focus(); w.print(); } else setTimeout(tryPrint, 300); };
+          setTimeout(tryPrint, 600);
         }
         msg(out, 'ok', 'ستظهر شاشة الطباعة: اختر «حفظ بتنسيق PDF» (Save as PDF) ثم اضغط زر التنزيل (PDF) لحفظ الملف.');
         return;
@@ -233,6 +238,16 @@
         if (r.indexOf('ERR:') === 0) throw new Error(r.slice(4));
         if (r === 'PERM') { msg(out, 'err', 'اسمح للتطبيق بالوصول إلى التخزين ثم اضغط الزر مرة أخرى.'); return; }
         msg(out, 'ok', (list.length ? 'تم إنشاء ملف Word (' + list.length + ' طالب)' : 'تم إنشاء سجل فارغ') + ' وحُفظ في: ' + r);
+        $('actions').style.display = 'flex';
+      } else if (isDesktop) {
+        // the Windows program saves the file itself (browsers drop Arabic names from downloads)
+        const bin = atob(b64), u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        const r = await fetch('/__save?name=' + encodeURIComponent(fname), { method: 'POST', headers: { 'X-Absence': '1' }, body: u });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.status);
+        desktopPath = j.path;
+        msg(out, 'ok', (list.length ? 'تم إنشاء ملف Word (' + list.length + ' طالب)' : 'تم إنشاء سجل فارغ') + ' وحُفظ في: ' + j.path);
         $('actions').style.display = 'flex';
       } else {
         const bin = atob(b64), u = new Uint8Array(bin.length);
@@ -252,8 +267,14 @@
   }
   $('goWord').onclick = () => generate('docx');
   $('goPdf').onclick = () => generate('pdf');
-  $('openBtn').onclick = () => window.Android.openFile();
-  $('shareBtn').onclick = () => window.Android.shareFile();
+  let desktopPath = '';
+  const desktopShell = async (what) => {
+    const r = await fetch('/__' + what + '?path=' + encodeURIComponent(desktopPath), { method: 'POST', headers: { 'X-Absence': '1' } });
+    if (!r.ok) msg($('outMsg'), 'err', 'تعذّر فتح الملف: ' + ((await r.json()).error || r.status));
+  };
+  if (isDesktop) $('shareBtn').textContent = 'فتح المجلد';
+  $('openBtn').onclick = () => isDesktop ? desktopShell('open') : window.Android.openFile();
+  $('shareBtn').onclick = () => isDesktop ? desktopShell('reveal') : window.Android.shareFile();
 })();
 </script>
 </body>

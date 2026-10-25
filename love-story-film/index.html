@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>من أول وردة إلى خاتم العمر</title>
+<link rel="stylesheet" href="src/fonts.css">
+<style>
+  :root { --gold: #f4d27a; --ink: #0b0607; }
+  html, body { margin: 0; height: 100%; background: var(--ink); color: #f7ecd6; font-family: "Amiri", serif; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { width: min(100vw, calc(100vh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; display: block; background: #000; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(60,20,20,.55), rgba(0,0,0,.92)); cursor: pointer; border: 0; color: inherit; font: inherit; width: 100%; }
+  #start .t { font-family: "Aref Ruqaa", serif; font-size: clamp(28px, 6vw, 72px); color: var(--gold); text-shadow: 0 0 30px rgba(244,210,122,.5); }
+  #start .s { margin-top: 12px; font-size: clamp(16px, 2.4vw, 26px); opacity: .85; }
+  #bar { position: fixed; left: 16px; right: 16px; bottom: 12px; display: flex; gap: 12px; align-items: center; direction: ltr; opacity: 0; transition: opacity .4s; }
+  body:hover #bar, #bar:focus-within { opacity: 1; }
+  #bar button { background: rgba(0,0,0,.5); color: var(--gold); border: 1px solid rgba(244,210,122,.5); border-radius: 8px; padding: 6px 12px; font: 16px "Amiri", serif; cursor: pointer; }
+  #seek { flex: 1; accent-color: var(--gold); }
+  #time { font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+  body.rendering #bar, body.rendering #start { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="film"></canvas></div>
+<button id="start"><div><div class="t">من أول وردة... إلى خاتم العمر</div><div class="s">اضغط للتشغيل ▶</div></div></button>
+<div id="bar"><button id="play">⏸</button><input id="seek" type="range" min="0" step="0.01" value="0"><span id="time">0:00</span><button id="fs">⛶</button></div>
+<audio id="audio" src="audio/soundtrack.m4a" preload="auto"></audio>
+<script src="timeline.js"></script>
+<script src="src/core.js"></script>
+<script src="src/chars.js"></script>
+<script src="src/env.js"></script>
+<script src="src/scenes.js"></script>
+<script src="src/engine.js"></script>
+<script>
+'use strict';
+const q = new URLSearchParams(location.search);
+if (q.get('names')) window.FILM_NAMES = q.get('names');
+const canvas = document.getElementById('film');
+const audio = document.getElementById('audio');
+const seek = document.getElementById('seek');
+FILM.init(canvas, +q.get('scale') || Math.min(2, Math.max(1, devicePixelRatio || 1)));
+seek.max = FILM.total;
+const fonts = Promise.all(['700 40px "Aref Ruqaa"', '400 40px "Amiri"', '700 40px "Amiri"'].map(f => document.fonts.load(f, 'من أول وردة 2025')));
+
+// headless rendering hook (tools/render.js)
+window.renderFrame = async t => { await fonts; FILM.render(t); };
+if (q.has('render')) document.body.classList.add('rendering');
+
+let playing = false, clock0 = 0, offset = +q.get('t') || 0, hasAudio = true;
+audio.addEventListener('error', () => { hasAudio = false; });
+const now = () => hasAudio && !audio.paused ? audio.currentTime : offset + (playing ? (performance.now() - clock0) / 1000 : 0);
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function play() {
+  playing = true; clock0 = performance.now(); document.getElementById('play').textContent = '⏸';
+  if (hasAudio) { audio.currentTime = offset; audio.play().catch(() => { hasAudio = false; }); }
+}
+function pause() { offset = now(); playing = false; audio.pause(); document.getElementById('play').textContent = '▶'; }
+function frame() {
+  let t = now();
+  if (t >= FILM.total) { t = FILM.total; if (playing) pause(); offset = 0; }
+  FILM.render(t); seek.value = t; document.getElementById('time').textContent = `${fmt(t)} / ${fmt(FILM.total)}`;
+  requestAnimationFrame(frame);
+}
+fonts.then(() => { if (!q.has('render')) requestAnimationFrame(frame); else FILM.render(offset); });
+document.getElementById('start').onclick = e => { e.currentTarget.remove(); play(); };
+document.getElementById('play').onclick = () => playing ? pause() : play();
+seek.oninput = () => { offset = +seek.value; if (hasAudio) audio.currentTime = offset; clock0 = performance.now(); };
+document.getElementById('fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); } if (e.key === 'f') document.getElementById('fs').click(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2E86C1">
+<title>صانع الجدول المدرسي</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">📅 صانع الجدول المدرسي</div>
+  <input id="schoolName" class="school" placeholder="اسم المدرسة (اختياري)" autocomplete="off">
+  <button id="menuBtn" class="icon-btn" aria-label="المشروع">☰</button>
+</header>
+
+<nav class="steps" id="steps">
+  <button data-tab="days" class="active"><b>١</b><span>الأيام والحصص</span></button>
+  <button data-tab="teachers"><b>٢</b><span>المدرسون</span></button>
+  <button data-tab="classes"><b>٣</b><span>الصفوف والمواد</span></button>
+  <button data-tab="schedule"><b>٤</b><span>الجدول</span></button>
+</nav>
+
+<main>
+  <section id="tab-days" class="tab active"></section>
+  <section id="tab-teachers" class="tab"></section>
+  <section id="tab-classes" class="tab"></section>
+  <section id="tab-schedule" class="tab"></section>
+</main>
+
+<div id="toast" class="toast"></div>
+<div id="modals"></div>
+<input type="file" id="fileInput" accept=".json,application/json,text/plain,*/*" hidden>
+
+<datalist id="dlSubjects"></datalist>
+<datalist id="dlGrades"></datalist>
+
+<script src="js/model.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

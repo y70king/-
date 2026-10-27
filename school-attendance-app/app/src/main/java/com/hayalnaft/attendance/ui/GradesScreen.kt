@@ -62,13 +62,10 @@ import androidx.compose.ui.unit.sp
 import com.hayalnaft.attendance.AppState
 import com.hayalnaft.attendance.util.NameSearch
 import com.hayalnaft.attendance.Screen
-import com.hayalnaft.attendance.data.GradeField
-import com.hayalnaft.attendance.data.GradeResult
 import com.hayalnaft.attendance.data.Student
 import com.hayalnaft.attendance.util.Reports
 import java.io.File
 
-private const val ALL_FIELDS = "all"
 
 @Composable
 fun GradesScreen(app: AppState, initialClassId: Long? = null) {
@@ -80,13 +77,10 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
     val subjects = remember(v, sid) { app.db.subjects(sid) }
     var classSel by rememberSaveable { mutableStateOf(initialClassId) }
     var subjectSel by rememberSaveable { mutableStateOf<Long?>(null) }
-    var field by rememberSaveable { mutableStateOf(GradeField.M1) }
     var daily by rememberSaveable { mutableStateOf(false) }
-    var search by rememberSaveable { mutableStateOf("") }
     val cls = classes.firstOrNull { it.id == classSel } ?: classes.firstOrNull { it.count > 0 } ?: classes.firstOrNull()
     val subject = subjects.firstOrNull { it.id == subjectSel } ?: subjects.firstOrNull()
     val students = remember(v, cls?.id) { cls?.let { app.db.students(sid, it.id) } ?: emptyList() }
-    val grades = remember(v, cls?.id) { cls?.let { app.db.classGrades(it.id) } ?: emptyMap() }
     var menu by remember { mutableStateOf(false) }
     var pdf by remember { mutableStateOf<Pair<File, String>?>(null) }
     var export by remember { mutableStateOf<Pair<String, () -> com.hayalnaft.attendance.util.ReportDoc>?>(null) }
@@ -165,120 +159,27 @@ fun GradesScreen(app: AppState, initialClassId: Long? = null) {
                 }
                 return@Column
             }
-            OptionChips(GradeField.inputs + ALL_FIELDS, field, { if (it == ALL_FIELDS) "كل الدرجات" else GradeField.label(it) }) { field = it }
-            if (cls != null) {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "الدرجة العظمى ${school.maxMark} • درجة الإعفاء ${school.exemptMark}" +
-                            if (cls.ministerial) " • صف وزاري (بدون إعفاء)" else "",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Muted,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (field != ALL_FIELDS && subject != null) {
-                        TextButton(onClick = {
-                            export = "كشف ${GradeField.label(field)} — ${subject.name}" to {
-                                Reports.monthlyFieldDoc(app.db, school, cls, subject, field)
-                            }
-                        }) {
-                            Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("إرسال كشف ${GradeField.label(field)}")
-                        }
-                    }
-                }
-            }
             if (cls == null || subject == null || students.isEmpty()) {
                 EmptyState(Icons.Filled.MenuBook, "لا يوجد طلاب في هذا الصف")
                 return@Column
             }
-            SearchField(search, { search = it }, Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-            val shown = students.withIndex().filter { NameSearch.matches(it.value.name, search) }
-            if (shown.isEmpty()) NoSearchResults(search)
-            LazyColumn(
-                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(shown, key = { it.value.id }) { (i, s) ->
-                    val values = grades[s.id]?.get(subject.id) ?: emptyMap()
-                    val r = Reports.result(values, school, cls)
-                    GradeCard(i + 1, s, values, r, field, school.maxMark,
-                        onChange = { f, value ->
-                            app.db.setGrade(s.id, subject.id, f, value)
-                            app.changed()
-                        },
-                        onCertificate = {
-                            val exempt = subjects.mapNotNull { sub ->
-                                val rr = Reports.result(grades[s.id]?.get(sub.id), school, cls)
-                                if (rr.exempt) sub.name to (rr.annual ?: 0) else null
-                            }
-                            pdf = Reports.certificate(ctx, school, cls, s, exempt) to "شهادة تقديرية — ${s.name}"
-                        },
-                    )
-                }
-            }
+            MonthlyGradesPanel(
+                app, school, cls, subject, students,
+                onExport = { title, doc -> export = title to doc },
+                onCertificate = { s ->
+                    val all = app.db.classGrades(cls.id)
+                    val exempt = subjects.mapNotNull { sub ->
+                        val rr = Reports.result(all[sub.id], s.id, school, cls)
+                        if (rr.exempt) sub.name to (rr.annual ?: 0) else null
+                    }
+                    pdf = Reports.certificate(ctx, school, cls, s, exempt) to "شهادة تقديرية — ${s.name}"
+                },
+            )
         }
     }
 
     pdf?.let { (file, title) -> PdfDialog(app, file, title, onDismiss = { pdf = null }) }
     export?.let { (title, doc) -> ExportDialog(app, school, title, onDismiss = { export = null }, doc = doc) }
-}
-
-@Composable
-private fun GradeCard(
-    index: Int,
-    s: Student,
-    values: Map<String, Double>,
-    r: GradeResult,
-    field: String,
-    maxMark: Int,
-    onChange: (String, Double?) -> Unit,
-    onCertificate: () -> Unit,
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else CardBg),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Column(Modifier.padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$index.", color = Muted, modifier = Modifier.width(28.dp))
-                Text(s.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (field != ALL_FIELDS) {
-                    GradeInput(values[field], maxMark.toDouble(), Modifier.width(84.dp)) { onChange(field, it) }
-                }
-            }
-            if (field == ALL_FIELDS) {
-                Spacer(Modifier.height(6.dp))
-                GradeField.inputs.chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 3.dp)) {
-                        row.forEach { f ->
-                            GradeInput(values[f], maxMark.toDouble(), Modifier.weight(1f), GradeField.label(f)) { onChange(f, it) }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                r.semester1?.let { Tag("ف1: $it", Ink) }
-                r.semester2?.let { Tag("ف2: $it", Ink) }
-                r.annual?.let { Tag("السعي: $it", ExcusedBlue) }
-                r.finalGrade?.let { Tag("النهائية: $it", PresentGreen) }
-                if (r.status.isNotBlank()) {
-                    Tag(r.status, when (r.status) {
-                        "مكمل" -> AbsentRed
-                        "معفى" -> LateOrange
-                        else -> PresentGreen
-                    })
-                }
-                Spacer(Modifier.weight(1f))
-                if (r.exempt) {
-                    IconButton(onClick = onCertificate, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Filled.EmojiEvents, "شهادة تقديرية", tint = LateOrange)
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

@@ -52,4 +52,30 @@ class MigrationTest {
         assertEquals(mapOf(test to mapOf(1L to 8.0)), helper.dailyMarks(1, math))
         helper.close()
     }
+
+    /** Version 3 stored six fixed grades; they become columns out of the school maximum with the marks kept. */
+    @Test
+    fun movesFixedGradesIntoColumns() {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        ctx.getDatabasePath(Db.NAME).delete()
+        val helper = Db(ctx)
+        val sid = helper.schools().first().id
+        val cls = helper.classes(sid).first()
+        val student = helper.addStudent(sid, cls.id, "أحمد", "")
+        val math = helper.addSubject(sid, "الرياضيات")
+        val db = helper.writableDatabase
+        db.execSQL(
+            "CREATE TABLE grades(student_id INTEGER NOT NULL, subject_id INTEGER NOT NULL, field TEXT NOT NULL, " +
+                "value REAL NOT NULL, PRIMARY KEY(student_id, subject_id, field))"
+        )
+        db.execSQL("INSERT INTO grades VALUES($student, $math, 'm1', 70), ($student, $math, 'm2', 80), ($student, $math, 'mid', 60)")
+        helper.migrateFixedGrades(db)
+        val g = helper.subjectGrades(cls.id, math)
+        assertEquals(listOf("الشهر الأول", "الشهر الثاني", "نصف السنة"), g.columns.map { it.title })
+        assertEquals(listOf(100.0, 100.0, 100.0), g.columns.map { it.maxMark })
+        assertEquals(listOf(70.0, 80.0, 60.0), g.columns.map { g.marks[it.id]?.get(student) })
+        val gone = db.rawQuery("SELECT 1 FROM sqlite_master WHERE name = 'grades'", null).use { it.moveToFirst() }
+        assertEquals(false, gone)
+        helper.close()
+    }
 }

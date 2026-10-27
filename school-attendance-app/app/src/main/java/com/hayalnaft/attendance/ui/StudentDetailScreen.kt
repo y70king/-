@@ -235,7 +235,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                 else -> {
                     if (subjects.isEmpty()) item { EmptyState(Icons.Filled.MenuBook, "لم تُضف مواد دراسية") }
                     items(subjects, key = { it.id }) { sub ->
-                        val r = Reports.result(grades[sub.id], school, cls)
+                        val r = Reports.result(grades[sub.id], studentId, school, cls)
                         Card(colors = CardDefaults.cardColors(containerColor = if (r.exempt) Gold.copy(alpha = 0.12f) else CardBg), shape = RoundedCornerShape(12.dp)) {
                             Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,7 +248,7 @@ fun StudentDetailScreen(app: AppState, studentId: Long) {
                                         Tag("يومي: ${com.hayalnaft.attendance.data.dailyAverage(d, school.maxMark)}", LateOrange)
                                     }
                                     Tag("ف1: ${r.semester1 ?: "-"}", Ink)
-                                    Tag("نصف: ${grades[sub.id]?.get("mid")?.let { fmtGrade(it) } ?: "-"}", Ink)
+                                    Tag("نصف: ${r.mid ?: "-"}", Ink)
                                     Tag("ف2: ${r.semester2 ?: "-"}", Ink)
                                     Tag("السعي: ${r.annual ?: "-"}", ExcusedBlue)
                                     r.finalGrade?.let { Tag("النهائية: $it", PresentGreen) }

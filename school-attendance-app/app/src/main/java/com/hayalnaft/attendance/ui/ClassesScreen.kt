@@ -445,7 +445,7 @@ fun ClassPageScreen(app: AppState, classId: Long) {
                     if (subjects.isNotEmpty()) item { SearchField(search, { search = it }) }
                     if (subjects.isNotEmpty() && all.isEmpty() && search.isNotBlank()) item { NoSearchResults(search) }
                     if (subjects.isNotEmpty()) items(all, key = { it.id }) { s ->
-                        GradeSummaryCard(school, s, subjects.map { sub -> sub.name to Reports.result(grades[s.id]?.get(sub.id), school, cls) }) {
+                        GradeSummaryCard(school, s, subjects.map { sub -> sub.name to Reports.result(grades[sub.id], s.id, school, cls) }) {
                             app.go(Screen.StudentDetail(s.id))
                         }
                     }

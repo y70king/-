@@ -10,7 +10,9 @@ import android.text.Layout
 import com.hayalnaft.attendance.data.DateRange
 import com.hayalnaft.attendance.data.Db
 import com.hayalnaft.attendance.data.EventType
-import com.hayalnaft.attendance.data.GradeField
+import com.hayalnaft.attendance.data.GradeColumn
+import com.hayalnaft.attendance.data.GradeRole
+import com.hayalnaft.attendance.data.SubjectGrades
 import com.hayalnaft.attendance.data.GradeResult
 import com.hayalnaft.attendance.data.Grades
 import com.hayalnaft.attendance.data.LessonPlan
@@ -38,31 +40,42 @@ object Reports {
 
     private fun fmt(v: Int?) = v?.toString() ?: ""
 
-    fun result(values: Map<String, Double>?, school: School, cls: SchoolClass): GradeResult =
-        Grades.compute(values ?: emptyMap(), school.maxMark, school.exemptMark, cls.ministerial)
+    /** A student's Iraqi result in one subject from that subject's columns and marks. */
+    fun result(grades: SubjectGrades?, studentId: Long, school: School, cls: SchoolClass): GradeResult {
+        val g = grades ?: SubjectGrades.EMPTY
+        return Grades.compute(g.columns, g.of(studentId), school.maxMark, school.exemptMark, cls.ministerial)
+    }
 
     /** The grade a student finally holds in a subject: the final grade when known, otherwise the annual effort. */
     private fun bestGrade(r: GradeResult) = r.finalGrade ?: r.annual
 
-    /** Full grade sheet of one subject for one class. */
+    /**
+     * Full grade sheet of one subject for one class: every column the teacher added (with its maximum),
+     * semester averages after each semester's months, then annual effort, final grade and result.
+     */
     fun subjectSheetDoc(db: Db, school: School, cls: SchoolClass, subject: Subject): ReportDoc {
         val students = db.students(school.id, cls.id)
-        val grades = db.classGrades(cls.id)
-        val headers = listOf(
-            "ت", "اسم الطالب", "الشهر الأول", "الشهر الثاني", "معدل الفصل الأول", "نصف السنة",
-            "الشهر الأول ف2", "الشهر الثاني ف2", "معدل الفصل الثاني", "السعي السنوي", "الامتحان النهائي",
-            "الدرجة النهائية", "النتيجة",
-        )
-        val results = students.map { result(grades[it.id]?.get(subject.id), school, cls) }
-        val rows = students.mapIndexed { i, s ->
-            val v = grades[s.id]?.get(subject.id) ?: emptyMap()
-            val r = results[i]
-            listOf(
-                "${i + 1}", s.name, fmt(v[GradeField.M1]), fmt(v[GradeField.M2]), fmt(r.semester1), fmt(v[GradeField.MID]),
-                fmt(v[GradeField.M3]), fmt(v[GradeField.M4]), fmt(r.semester2), fmt(r.annual),
-                if (r.exempt) "معفى" else fmt(v[GradeField.FINAL]), fmt(r.finalGrade), r.status,
-            )
+        val g = db.subjectGrades(cls.id, subject.id)
+        val results = students.map { result(g, it.id, school, cls) }
+        // Each entry: header and the cell value for a student (by row index).
+        val cols = mutableListOf<Pair<String, (Int) -> String>>()
+        cols += "ت" to { i -> "${i + 1}" }
+        cols += "اسم الطالب" to { i -> students[i].name }
+        fun add(role: String) = g.columns.filter { it.role == role }.forEach { c ->
+            cols += "${c.title}\n(${fmt(c.maxMark)})" to { i ->
+                if (role == GradeRole.FINAL && results[i].exempt) "معفى" else fmt(g.marks[c.id]?.get(students[i].id))
+            }
         }
+        add(GradeRole.S1)
+        if (g.columns.any { it.role == GradeRole.S1 }) cols += "معدل الفصل الأول" to { i -> fmt(results[i].semester1) }
+        add(GradeRole.MID)
+        add(GradeRole.S2)
+        if (g.columns.any { it.role == GradeRole.S2 }) cols += "معدل الفصل الثاني" to { i -> fmt(results[i].semester2) }
+        cols += "السعي السنوي" to { i -> fmt(results[i].annual) }
+        add(GradeRole.FINAL)
+        cols += "الدرجة النهائية" to { i -> fmt(results[i].finalGrade) }
+        cols += "النتيجة" to { i -> results[i].status }
+        val rows = students.indices.map { i -> cols.map { it.second(i) } }
         val exempt = results.count { it.exempt }
         val graded = results.count { it.finalGrade != null }
         val passed = results.count { it.status == "ناجح" || it.exempt }
@@ -73,10 +86,15 @@ object Reports {
             landscape = true,
             blocks = listOf(
                 Block.Table(
-                    headers, rows, listOf(0.5f, 3.2f, 1f, 1f, 1.1f, 1f, 1f, 1f, 1.1f, 1f, 1.1f, 1.1f, 1f),
-                    tint = { r, c -> statusColor(results[r].status).takeIf { c == 12 } },
+                    cols.map { it.first }, rows, listOf(0.5f, 3.2f) + List(cols.size - 2) { 1f },
+                    small = cols.size > 14,
+                    tint = { r, c -> statusColor(results[r].status).takeIf { c == cols.lastIndex } },
                 ),
-                Block.Para("عدد الطلاب: ${students.size}   •   المعفون: $exempt   •   الناجحون: $passed من $graded", bold = true),
+                Block.Para(
+                    "عدد الطلاب: ${students.size}   •   المعفون: $exempt   •   الناجحون: $passed من $graded   •   " +
+                        "تُحسب كل درجة كنسبة من درجتها العظمى ثم تُحوَّل إلى ${school.maxMark}.",
+                    bold = true,
+                ),
             ),
             signatures = listOf("مدرس المادة", "مدير المدرسة"),
         )
@@ -145,15 +163,13 @@ object Reports {
         )
     }
 
-    /** Sheet for one monthly grade column (e.g. the first month only). */
-    fun monthlyFieldDoc(db: Db, school: School, cls: SchoolClass, subject: Subject, field: String): ReportDoc {
-        val grades = db.classGrades(cls.id)
-        val students = db.students(school.id, cls.id)
-        val marks = students.mapNotNull { s -> grades[s.id]?.get(subject.id)?.get(field)?.let { s.id to it } }.toMap()
+    /** Sheet for one grade column (e.g. the first month only), out of that column's maximum. */
+    fun gradeColumnDoc(db: Db, school: School, cls: SchoolClass, subject: Subject, column: GradeColumn): ReportDoc {
+        val marks = db.subjectGrades(cls.id, subject.id).marks[column.id] ?: emptyMap()
         return singleMarkDoc(
-            school, cls, students, marks, school.maxMark.toDouble(),
-            title = "درجات ${GradeField.label(field)} — ${subject.name}",
-            fileName = "${GradeField.label(field)} ${subject.name} ${cls.title}",
+            school, cls, db.students(school.id, cls.id), marks, column.maxMark,
+            title = "درجات ${column.title} — ${subject.name}",
+            fileName = "${column.title} ${subject.name} ${cls.title}",
             subtitle = cls.title,
         )
     }
@@ -203,7 +219,7 @@ object Reports {
         val headers = listOf("ت", "اسم الطالب") + subjects.map { it.name } + listOf("المعدل", "النتيجة")
         val pass = Grades.roundUp(school.maxMark / 2.0)
         val rows = students.mapIndexed { i, s ->
-            val marks = subjects.map { sub -> bestGrade(result(grades[s.id]?.get(sub.id), school, cls)) }
+            val marks = subjects.map { sub -> bestGrade(result(grades[sub.id], s.id, school, cls)) }
             val known = marks.filterNotNull()
             val avg = if (known.isEmpty()) null else Grades.roundUp(known.sum().toDouble() / known.size)
             val failed = known.count { it < pass }
@@ -281,11 +297,10 @@ object Reports {
             blocks += Block.Table(
                 listOf("المادة", "المعدل اليومي", "الفصل الأول", "نصف السنة", "الفصل الثاني", "السعي السنوي", "الدرجة النهائية", "النتيجة"),
                 subjects.map { sub ->
-                    val v = grades[sub.id] ?: emptyMap()
-                    val r = result(v, school, cls)
+                    val r = result(grades[sub.id], student.id, school, cls)
                     listOf(
                         sub.name, fmt(com.hayalnaft.attendance.data.dailyAverage(daily[sub.id] ?: emptyList(), school.maxMark)),
-                        fmt(r.semester1), fmt(v[GradeField.MID]), fmt(r.semester2), fmt(r.annual), fmt(r.finalGrade), r.status,
+                        fmt(r.semester1), fmt(r.mid), fmt(r.semester2), fmt(r.annual), fmt(r.finalGrade), r.status,
                     )
                 },
                 listOf(2f, 1f, 1f, 1f, 1f, 1f, 1.1f, 1f),
@@ -321,7 +336,7 @@ object Reports {
         val subjects = db.subjects(school.id)
         val grades = db.classGrades(cls.id)
         val averages = stats.associate { st ->
-            val marks = subjects.mapNotNull { sub -> result(grades[st.student.id]?.get(sub.id), school, cls).let(::bestGrade) }
+            val marks = subjects.mapNotNull { sub -> result(grades[sub.id], st.student.id, school, cls).let(::bestGrade) }
             st.student.id to (if (marks.isEmpty()) null else Grades.roundUp(marks.sum().toDouble() / marks.size))
         }
         val recorded = stats.sumOf { it.recorded }
@@ -442,7 +457,7 @@ object Reports {
             appendLine("الحضور: ${st?.present ?: 0} | الغياب: ${st?.absent ?: 0} | التأخر: ${st?.late ?: 0} | الإجازات: ${st?.excused ?: 0}")
             appendLine("نقاط النشاط: ${t.points} | سلوك جيد: ${t.good} | سلوك مشاغب: ${t.bad}")
             val lines = subjects.mapNotNull { sub ->
-                val r = result(grades[sub.id], school, cls)
+                val r = result(grades[sub.id], student.id, school, cls)
                 val g = bestGrade(r) ?: r.semester1 ?: return@mapNotNull null
                 "• ${sub.name}: $g${if (r.status.isNotBlank()) " (${r.status})" else ""}"
             }

@@ -12,7 +12,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
 
     companion object {
         const val NAME = "attendance.db"
-        const val VERSION = 3
+        const val VERSION = 4
         private const val CLASS_TITLE = "(c.name || CASE WHEN c.section <> '' THEN ' - ' || c.section ELSE '' END)"
         private const val STUDENT_COLS = "st.id, st.school_id, st.class_id, $CLASS_TITLE, st.name, st.phone"
         private const val SCHOOL_COLS =
@@ -55,6 +55,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
         db.execSQL("CREATE INDEX idx_messages_school ON messages(school_id, ts)")
         createV2Tables(db)
         createV3Tables(db)
+        createV4Tables(db)
         insertSchool(db, School(0, DEFAULT_SCHOOL), withClasses = true)
     }
 
@@ -79,11 +80,6 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
                 "ts INTEGER NOT NULL, type INTEGER NOT NULL, points INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '')"
         )
         db.execSQL("CREATE INDEX idx_events_student ON events(student_id, date)")
-        db.execSQL(
-            "CREATE TABLE grades(student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, " +
-                "subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE, field TEXT NOT NULL, " +
-                "value REAL NOT NULL, PRIMARY KEY(student_id, subject_id, field))"
-        )
         db.execSQL(
             "CREATE TABLE periods(id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                 "school_id INTEGER NOT NULL REFERENCES schools(id) ON DELETE CASCADE, day INTEGER NOT NULL, " +
@@ -142,6 +138,70 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
             createV2Tables(db)
         }
         if (oldVersion < 3) createV3Tables(db)
+        if (oldVersion < 4) {
+            createV4Tables(db)
+            migrateFixedGrades(db)
+        }
+    }
+
+    /** Grade columns the teacher adds per class and subject (months, mid-year, final), each with its own maximum. */
+    private fun createV4Tables(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE grade_columns(id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE, " +
+                "subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE, " +
+                "title TEXT NOT NULL, role TEXT NOT NULL, max_mark REAL NOT NULL, position INTEGER NOT NULL)"
+        )
+        db.execSQL("CREATE INDEX idx_grade_columns ON grade_columns(class_id, subject_id)")
+        db.execSQL(
+            "CREATE TABLE column_marks(column_id INTEGER NOT NULL REFERENCES grade_columns(id) ON DELETE CASCADE, " +
+                "student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE, value REAL NOT NULL, " +
+                "PRIMARY KEY(column_id, student_id))"
+        )
+    }
+
+    /**
+     * Version 3 kept six fixed grades per student and subject; they become columns of each class and subject,
+     * out of the school maximum, with every mark kept.
+     */
+    internal fun migrateFixedGrades(db: SQLiteDatabase) {
+        val exists = db.rawQuery("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'grades'", null).use { it.moveToFirst() }
+        if (!exists) return
+        val fields = listOf(
+            Triple("m1", "الشهر الأول", GradeRole.S1),
+            Triple("m2", "الشهر الثاني", GradeRole.S1),
+            Triple("mid", "نصف السنة", GradeRole.MID),
+            Triple("m3", "الشهر الأول - ف2", GradeRole.S2),
+            Triple("m4", "الشهر الثاني - ف2", GradeRole.S2),
+            Triple("final", "الامتحان النهائي", GradeRole.FINAL),
+        )
+        val used = mutableListOf<List<Any>>()
+        db.rawQuery(
+            "SELECT DISTINCT st.class_id, g.subject_id, g.field, sc.max_mark FROM grades g " +
+                "JOIN students st ON st.id = g.student_id JOIN schools sc ON sc.id = st.school_id",
+            null,
+        ).use { c -> while (c.moveToNext()) used.add(listOf(c.getLong(0), c.getLong(1), c.getString(2), c.getInt(3))) }
+        for ((key, rows) in used.groupBy { it[0] as Long to it[1] as Long }) {
+            val (classId, subjectId) = key
+            val present = rows.map { it[2] as String }.toSet()
+            val max = (rows.first()[3] as Int).toDouble()
+            fields.filter { it.first in present }.forEachIndexed { pos, (field, title, role) ->
+                val col = db.insertOrThrow("grade_columns", null, ContentValues().apply {
+                    put("class_id", classId)
+                    put("subject_id", subjectId)
+                    put("title", title)
+                    put("role", role)
+                    put("max_mark", max)
+                    put("position", pos)
+                })
+                db.execSQL(
+                    "INSERT INTO column_marks(column_id, student_id, value) SELECT ?, g.student_id, g.value FROM grades g " +
+                        "JOIN students st ON st.id = g.student_id WHERE st.class_id = ? AND g.subject_id = ? AND g.field = ?",
+                    arrayOf<Any>(col, classId, subjectId, field),
+                )
+            }
+        }
+        db.execSQL("DROP TABLE grades")
     }
 
     private val w: SQLiteDatabase get() = writableDatabase
@@ -498,45 +558,97 @@ class Db(context: Context) : SQLiteOpenHelper(context, NAME, null, VERSION) {
 
     // ---------- Grades ----------
 
-    fun setGrade(studentId: Long, subjectId: Long, field: String, value: Double?) {
+    private val columnOrder =
+        "ORDER BY CASE role WHEN '${GradeRole.S1}' THEN 0 WHEN '${GradeRole.MID}' THEN 1 WHEN '${GradeRole.S2}' THEN 2 ELSE 3 END, position, id"
+
+    private fun columnOf(c: Cursor) = GradeColumn(c.getLong(0), c.getLong(1), c.getLong(2), c.getString(3), c.getString(4), c.getDouble(5), c.getInt(6))
+
+    private fun columns(where: String, vararg args: Any?): List<GradeColumn> = query(
+        "SELECT id, class_id, subject_id, title, role, max_mark, position FROM grade_columns WHERE $where $columnOrder", *args,
+    ) { columnOf(it) }
+
+    fun gradeColumns(classId: Long, subjectId: Long): List<GradeColumn> = columns("class_id = ? AND subject_id = ?", classId, subjectId)
+
+    fun saveGradeColumn(c: GradeColumn): Long {
+        val v = ContentValues().apply {
+            put("class_id", c.classId)
+            put("subject_id", c.subjectId)
+            put("title", c.title)
+            put("role", c.role)
+            put("max_mark", c.maxMark)
+        }
+        return if (c.id == 0L) {
+            val next = query(
+                "SELECT IFNULL(MAX(position), -1) + 1 FROM grade_columns WHERE class_id = ? AND subject_id = ?", c.classId, c.subjectId,
+            ) { it.getInt(0) }.first()
+            w.insertOrThrow("grade_columns", null, v.apply { put("position", next) })
+        } else {
+            w.update("grade_columns", v, "id = ?", arrayOf(c.id.toString()))
+            c.id
+        }
+    }
+
+    fun deleteGradeColumn(id: Long) {
+        w.delete("grade_columns", "id = ?", arrayOf(id.toString()))
+    }
+
+    /** Adds the usual months, mid-year and final (those not already there), each out of [max]. */
+    fun addStandardColumns(classId: Long, subjectId: Long, max: Double) {
+        val have = gradeColumns(classId, subjectId).map { it.title }.toSet()
+        tx {
+            standardColumns.filter { it.first !in have }.forEach { (title, role) ->
+                saveGradeColumn(GradeColumn(0, classId, subjectId, title, role, max, 0))
+            }
+        }
+    }
+
+    fun setColumnMark(columnId: Long, studentId: Long, value: Double?) {
         if (value == null) {
-            w.delete(
-                "grades", "student_id = ? AND subject_id = ? AND field = ?",
-                arrayOf(studentId.toString(), subjectId.toString(), field),
-            )
+            w.delete("column_marks", "column_id = ? AND student_id = ?", arrayOf(columnId.toString(), studentId.toString()))
         } else {
             w.execSQL(
-                "INSERT OR REPLACE INTO grades(student_id, subject_id, field, value) VALUES(?, ?, ?, ?)",
-                arrayOf<Any>(studentId, subjectId, field, value),
+                "INSERT OR REPLACE INTO column_marks(column_id, student_id, value) VALUES(?, ?, ?)",
+                arrayOf<Any>(columnId, studentId, value),
             )
         }
     }
 
-    /** Grades of the class: student id → subject id → field → value. */
-    fun classGrades(classId: Long): Map<Long, Map<Long, Map<String, Double>>> {
-        val out = mutableMapOf<Long, MutableMap<Long, MutableMap<String, Double>>>()
-        query(
-            "SELECT g.student_id, g.subject_id, g.field, g.value FROM grades g " +
-                "JOIN students st ON st.id = g.student_id WHERE st.class_id = ?",
-            classId,
-        ) {
-            out.getOrPut(it.getLong(0)) { mutableMapOf() }.getOrPut(it.getLong(1)) { mutableMapOf() }[it.getString(2)] = it.getDouble(3)
+    private fun marksOf(columnIds: List<Long>, studentId: Long? = null): Map<Long, Map<Long, Double>> {
+        if (columnIds.isEmpty()) return emptyMap()
+        val out = mutableMapOf<Long, MutableMap<Long, Double>>()
+        val filter = if (studentId != null) " AND student_id = $studentId" else ""
+        query("SELECT column_id, student_id, value FROM column_marks WHERE column_id IN (${columnIds.joinToString(",")})$filter") {
+            out.getOrPut(it.getLong(0)) { mutableMapOf() }[it.getLong(1)] = it.getDouble(2)
         }
         return out
     }
 
-    fun studentGrades(studentId: Long): Map<Long, Map<String, Double>> {
-        val out = mutableMapOf<Long, MutableMap<String, Double>>()
-        query("SELECT subject_id, field, value FROM grades WHERE student_id = ?", studentId) {
-            out.getOrPut(it.getLong(0)) { mutableMapOf() }[it.getString(1)] = it.getDouble(2)
-        }
-        return out
+    /** Columns and marks of one subject in one class. */
+    fun subjectGrades(classId: Long, subjectId: Long): SubjectGrades {
+        val cols = gradeColumns(classId, subjectId)
+        return SubjectGrades(cols, marksOf(cols.map { it.id }))
     }
 
+    /** Every subject of a class: subject id → its columns and marks. */
+    fun classGrades(classId: Long): Map<Long, SubjectGrades> {
+        val cols = columns("class_id = ?", classId)
+        val marks = marksOf(cols.map { it.id })
+        return cols.groupBy { it.subjectId }.mapValues { (_, cs) -> SubjectGrades(cs, cs.associate { it.id to (marks[it.id] ?: emptyMap()) }) }
+    }
+
+    /** One student's grades: subject id → the class columns with only this student's marks. */
+    fun studentGrades(studentId: Long): Map<Long, SubjectGrades> {
+        val classId = query("SELECT class_id FROM students WHERE id = ?", studentId) { it.getLong(0) }.firstOrNull() ?: return emptyMap()
+        val cols = columns("class_id = ?", classId)
+        val marks = marksOf(cols.map { it.id }, studentId)
+        return cols.groupBy { it.subjectId }.mapValues { (_, cs) -> SubjectGrades(cs, cs.associate { it.id to (marks[it.id] ?: emptyMap()) }) }
+    }
+
+    /** Removes every mark of the subject in the class; the columns stay. */
     fun clearGrades(classId: Long, subjectId: Long) {
         w.execSQL(
-            "DELETE FROM grades WHERE subject_id = ? AND student_id IN (SELECT id FROM students WHERE class_id = ?)",
-            arrayOf<Any>(subjectId, classId),
+            "DELETE FROM column_marks WHERE column_id IN (SELECT id FROM grade_columns WHERE class_id = ? AND subject_id = ?)",
+            arrayOf<Any>(classId, subjectId),
         )
     }
 

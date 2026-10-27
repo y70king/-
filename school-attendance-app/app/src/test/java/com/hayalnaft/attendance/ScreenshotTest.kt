@@ -7,7 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.hayalnaft.attendance.data.EventType
-import com.hayalnaft.attendance.data.GradeField
 import com.hayalnaft.attendance.data.LessonPlan
 import com.hayalnaft.attendance.data.Period
 import com.hayalnaft.attendance.data.Status
@@ -79,10 +78,17 @@ class ScreenshotTest {
             listOf(85.0, 88.0, 80.0, 90.0, 86.0, 82.0),
             listOf(60.0, 66.0, 58.0, 70.0, 72.0, 61.0),
         )
-        for ((i, row) in marks.withIndex()) for (sub in subjects) for ((j, f) in GradeField.inputs.withIndex()) {
-            val m = row[j] ?: continue
-            app.db.setGrade(ids[i], sub.id, f, (m - sub.id % 3 * 2).coerceAtLeast(0.0))
+        for (sub in subjects) app.db.addStandardColumns(cls.id, sub.id, 100.0)
+        for ((i, row) in marks.withIndex()) for (sub in subjects) {
+            val cols = app.db.gradeColumns(cls.id, sub.id)
+            for ((j, c) in cols.withIndex()) {
+                val m = row[j] ?: continue
+                app.db.setColumnMark(c.id, ids[i], (m - sub.id % 3 * 2).coerceAtLeast(0.0))
+            }
         }
+        // A month marked out of 20 instead of 100.
+        app.db.gradeColumns(cls.id, math.id).first().let { c -> app.db.saveGradeColumn(c.copy(maxMark = 20.0)) }
+        app.db.gradeColumns(cls.id, math.id).first().let { c -> ids.forEachIndexed { i, id -> app.db.setColumnMark(c.id, id, 18.0 - i * 2) } }
         val day = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
         listOf(8 * 60 to math, 8 * 60 + 35 to subjects[2], 9 * 60 + 10 to subjects[0], 23 * 60 + 30 to subjects[3]).forEach { (t, s) ->
             app.db.savePeriod(Period(0, sid, day, t, 30, cls.id, s.id))
@@ -119,6 +125,8 @@ class ScreenshotTest {
         go(app, Screen.Import(null)); shot("08d-import-pick")
         rule.onNodeWithText(cls.name).performClick(); shot("08e-import-picked")
         go(app, Screen.Grades(cls.id)); shot("09-grades")
+        rule.onNodeWithText("الرياضيات").performClick()
+        shot("09a-grades-math")
         val quiz1 = app.db.saveDailyTest(com.hayalnaft.attendance.data.DailyTest(0, cls.id, subjects[0].id, today, "اختبار قصير", 10.0))
         val quiz2 = app.db.saveDailyTest(com.hayalnaft.attendance.data.DailyTest(0, cls.id, subjects[0].id, today, "مشاركة", 5.0))
         ids.forEachIndexed { i, id ->
@@ -174,7 +182,7 @@ class ScreenshotTest {
         tag = "certificate"; Reports.certificate(ctx, s, c, app.db.student(ids[0])!!, listOf("الرياضيات" to 94))
         tag = "plan"; Reports.lessonPlan(ctx, s, app.db.plan(planId)!!)
         tag = "one-test"; Reports.pdf(ctx, s, Reports.dailyTestDoc(app.db, s, c, subjects[0], app.db.dailyTests(c.id, subjects[0].id).first()))
-        tag = "one-month"; Reports.pdf(ctx, s, Reports.monthlyFieldDoc(app.db, s, c, math, com.hayalnaft.attendance.data.GradeField.M1))
+        tag = "one-month"; Reports.pdf(ctx, s, Reports.gradeColumnDoc(app.db, s, c, math, app.db.gradeColumns(c.id, math.id).first()))
         val month = com.hayalnaft.attendance.util.Periods.options(s.year)[2]
         tag = "class-report"; Reports.classReport(ctx, app.db, s, c, month)
         tag = "student-month"; Reports.studentReport(ctx, app.db, s, c, app.db.student(ids[2])!!, month)
@@ -186,7 +194,7 @@ class ScreenshotTest {
             "class-sheet" to Reports.classSheetDoc(app.db, s, c),
             "daily-sheet" to Reports.dailySheetDoc(app.db, s, c, subjects[0]),
             "one-test" to Reports.dailyTestDoc(app.db, s, c, subjects[0], app.db.dailyTests(c.id, subjects[0].id).first()),
-            "one-month" to Reports.monthlyFieldDoc(app.db, s, c, math, com.hayalnaft.attendance.data.GradeField.M1),
+            "one-month" to Reports.gradeColumnDoc(app.db, s, c, math, app.db.gradeColumns(c.id, math.id).first()),
         )
         for ((name, d) in docs) {
             com.hayalnaft.attendance.util.Export.docx(ctx, s, d).copyTo(File(exports, "$name.docx"), overwrite = true)

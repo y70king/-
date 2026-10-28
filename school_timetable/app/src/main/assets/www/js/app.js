@@ -281,7 +281,8 @@
     root.innerHTML =
       '<div class="two-col"><div>' +
       '<div class="card"><div class="row spread"><h3>المدرسون (' + tt.teachers.length + ')</h3>' +
-      '<button class="btn primary" id="addTeachers">➕ إضافة مدرسين</button></div>' +
+      '<div class="row"><button class="btn" id="importTeachers">📥 استيراد من ملف</button>' +
+      '<button class="btn primary" id="addTeachers">➕ إضافة مدرسين</button></div></div>' +
       '<p class="muted">النصاب الأسبوعي يظهر بالأحمر إذا تجاوز عدد حصص الأسبوع (' + S + '). اضغط على مدرس لعرض مواده وإسنادها.</p>' +
       (tt.teachers.length ?
         '<div class="table-wrap"><table class="list"><thead><tr><th>#</th><th>الاسم</th><th>الاختصاص</th><th>النصاب</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
@@ -290,6 +291,7 @@
       '<div class="row"><button class="btn" data-go="days">→ السابق</button><span class="grow"></span><button class="btn primary" data-go="classes">التالي: الصفوف والمواد ←</button></div>';
 
     $('#addTeachers').onclick = addTeachersDialog;
+    $('#importTeachers').onclick = importDialog;
     $$('tr[data-t]', root).forEach(function (tr) {
       var t = tr.dataset.t;
       tr.onclick = function (e) {
@@ -549,6 +551,7 @@
         '<div class="empty">لا توجد صفوف بعد. اضغط «إضافة صف».</div>') +
       '<div class="row" style="margin-top:10px">' +
       '<button class="btn primary" id="addClass">➕ إضافة صف</button>' +
+      '<button class="btn" id="importClasses">📥 استيراد من ملف</button>' +
       '<button class="btn" id="editClass"' + (c ? '' : ' disabled') + '>✎ تعديل الصف ومواده</button>' +
       '<button class="btn danger" id="delClass"' + (c ? '' : ' disabled') + '>🗑 حذف</button>' +
       '<button class="btn" id="copyClass"' + (c && tt.classes.length > 1 ? '' : ' disabled') + '>⧉ نسخ المواد إلى صفوف أخرى</button>' +
@@ -560,6 +563,7 @@
       b.onclick = function () { ui.classId = b.dataset.id; renderClasses(); };
     });
     $('#addClass').onclick = function () { classDialog(null); };
+    $('#importClasses').onclick = importDialog;
     $('#editClass').onclick = function () { if (c) classDialog(c); };
     $('#delClass').onclick = function () {
       confirmBox('حذف الصف «' + TT.classTitle(c) + '» مع مواده؟', 'حذف').then(function (ok) {
@@ -846,6 +850,135 @@
     });
   }
 
+  /* ================= الاستيراد من ملف ================= */
+
+  function importDialog() {
+    var sources = [], cur = null, roles = [], selected = [];
+    var body = el('<div>' +
+      '<p class="muted">اختر ملف Excel (xlsx) أو Word (docx) أو PDF أو CSV يحتوي على أسماء المدرسين (والاختصاص) أو الصفوف (والشعب أو عدد الشعب). ' +
+      'يتعرف التطبيق على الأعمدة تلقائياً، ويمكنك تغيير نوع كل عمود قبل الاستيراد.</p>' +
+      '<div class="row"><button class="btn primary pick">📂 اختيار ملف</button><button class="btn tpl">⬇ نموذج Excel جاهز</button>' +
+      '<span class="fname muted"></span></div>' +
+      '<input type="file" class="imp" accept=".xlsx,.docx,.pdf,.csv,.txt,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv,text/plain,*/*" hidden>' +
+      '<div class="src-box" style="margin-top:10px"></div><div class="sum"></div><div class="preview"></div></div>');
+    var inp = $('.imp', body), preview = $('.preview', body), sum = $('.sum', body), srcBox = $('.src-box', body);
+
+    $('.pick', body).onclick = function () { inp.value = ''; inp.click(); };
+    $('.tpl', body).onclick = function () {
+      saveFile('نموذج المدرسين والصفوف.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', TT.importTemplate());
+    };
+    inp.onchange = function () {
+      var f = inp.files[0];
+      if (!f) return;
+      $('.fname', body).textContent = f.name;
+      preview.innerHTML = '<div class="empty">⏳ جارٍ قراءة الملف...</div>';
+      sum.innerHTML = ''; srcBox.innerHTML = '';
+      TT.readImportFile(f).then(function (srcs) {
+        sources = srcs.filter(function (x) { return x.rows.length; });
+        if (!sources.length) { preview.innerHTML = '<div class="msg warn">لم يُعثر على بيانات في الملف.</div>'; return; }
+        // نبدأ بالمصدر الذي تعرّفنا على أعمدته
+        var best = 0, bestScore = -1;
+        sources.forEach(function (x, i) {
+          var d = TT.detectRoles(x.rows, tt.subject_catalog);
+          var score = d.roles.filter(function (r) { return r; }).length * 10 + (d.headerRow >= 0 ? 5 : 0) + Math.min(x.rows.length, 4);
+          if (score > bestScore) { bestScore = score; best = i; }
+        });
+        if (sources.length > 1) {
+          srcBox.innerHTML = '<label class="row">المصدر في الملف <select class="src">' + sources.map(function (x, i) {
+            return '<option value="' + i + '"' + (i === best ? ' selected' : '') + '>' + esc(x.name) + ' (' + x.rows.length + ' سطر)</option>';
+          }).join('') + '</select></label>';
+          $('.src', srcBox).onchange = function (e) { useSource(+e.target.value); };
+        }
+        useSource(best);
+      }).catch(function (err) {
+        preview.innerHTML = '<div class="msg err">✖ ' + esc(err && err.message || String(err)) + '</div>';
+      });
+    };
+
+    function useSource(i) {
+      cur = sources[i];
+      var d = TT.detectRoles(cur.rows, tt.subject_catalog);
+      roles = d.roles;
+      selected = cur.rows.map(function (r, ri) { return ri > d.headerRow; });
+      drawPreview();
+    }
+
+    function result() { return TT.buildImport(cur.rows, roles, selected, tt); }
+
+    function drawSummary() {
+      var r = result();
+      var hasRole = roles.some(function (x) { return x === 'teacher' || x === 'grade'; });
+      sum.innerHTML = !hasRole ?
+        '<div class="msg warn">حدد عموداً واحداً على الأقل كـ«اسم المدرس» أو «الصف».</div>' :
+        '<div class="msg ok">سيُضاف <b>' + r.teachers.length + '</b> مدرس و<b>' + r.classes.length + '</b> صف/شعبة' +
+        (r.dupT || r.dupC ? ' — تجاهل ' + (r.dupT + r.dupC) + ' موجود مسبقاً' : '') + '.' +
+        (r.classes.length ? '<br><small>' + esc(r.classes.slice(0, 12).map(TT.classTitle).join('، ')) + (r.classes.length > 12 ? '…' : '') + '</small>' : '') + '</div>';
+      var btn = document.getElementById('impGo');
+      if (btn) btn.disabled = !(r.teachers.length || r.classes.length);
+    }
+
+    function drawPreview() {
+      var ncol = 0;
+      cur.rows.forEach(function (r) { ncol = Math.max(ncol, r.length); });
+      var opts = function (sel) {
+        return TT.IMPORT_ROLES.map(function (o) {
+          return '<option value="' + o.id + '"' + (o.id === (sel || '') ? ' selected' : '') + '>' + o.label + '</option>';
+        }).join('');
+      };
+      var shown = cur.rows.slice(0, 300);
+      preview.innerHTML = (cur.pdf ? '<div class="msg warn">⚠ النص المستخرج من ملفات PDF قد يحتوي أخطاء في بعض الحروف العربية. راجع الأسماء (يمكنك الضغط على أي خلية لتصحيحها)، ويُفضَّل استخدام Excel أو Word إن توفر.</div>' : '<p class="muted">يمكنك الضغط على أي خلية لتصحيح النص قبل الاستيراد.</p>') +
+        '<div class="table-wrap" style="max-height:45vh"><table class="list imp-table"><thead><tr><th><input type="checkbox" class="allrows" checked></th>' +
+        (function () { var h = ''; for (var c = 0; c < ncol; c++) h += '<th><select class="role" data-c="' + c + '">' + opts(roles[c]) + '</select></th>'; return h; })() +
+        '</tr></thead><tbody>' + shown.map(function (r, ri) {
+          var h = '<tr data-r="' + ri + '" class="' + (selected[ri] ? '' : 'off') + '"><td><input type="checkbox" class="rowck"' + (selected[ri] ? ' checked' : '') + '></td>';
+          for (var c = 0; c < ncol; c++) h += '<td contenteditable="true" data-c="' + c + '">' + esc(r[c] || '') + '</td>';
+          return h + '</tr>';
+        }).join('') + '</tbody></table></div>' +
+        (cur.rows.length > 300 ? '<p class="muted">يُعرض أول 300 سطر فقط، وسيُستورد الكل.</p>' : '');
+      $$('select.role', preview).forEach(function (s) {
+        s.onchange = function () { roles[+s.dataset.c] = s.value; drawSummary(); };
+      });
+      $$('tr[data-r]', preview).forEach(function (tr) {
+        $('.rowck', tr).onchange = function (e) { selected[+tr.dataset.r] = e.target.checked; tr.classList.toggle('off', !e.target.checked); drawSummary(); };
+        $$('td[data-c]', tr).forEach(function (td) {
+          td.oninput = function () { cur.rows[+tr.dataset.r][+td.dataset.c] = td.textContent; drawSummary(); };
+          td.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); td.blur(); } };
+        });
+      });
+      $('.allrows', preview).onchange = function (e) {
+        selected = selected.map(function () { return e.target.checked; });
+        drawPreview();
+      };
+      drawSummary();
+    }
+
+    modal({
+      title: 'استيراد مدرسين وصفوف من ملف', body: body, wide: true,
+      buttons: [{
+        text: 'استيراد', cls: 'primary', id: 'impGo', onClick: function () {
+          if (!cur) return false;
+          var r = result();
+          if (!r.teachers.length && !r.classes.length) { toast('لا يوجد ما يُستورد', true); return false; }
+          r.teachers.forEach(function (t) {
+            tt.teachers.push(t.name);
+            if (t.spec) {
+              tt.teacher_specialty[t.name] = t.spec;
+              if (tt.subject_catalog.indexOf(t.spec) < 0) tt.subject_catalog.push(t.spec);
+            }
+          });
+          r.classes.forEach(function (c) {
+            var id = TT.uid();
+            while (findClass(id)) id = TT.uid();
+            tt.classes.push({ id: id, grade: c.grade, section: c.section, subjects: [] });
+          });
+          changed();
+          toast('تمت إضافة ' + r.teachers.length + ' مدرس و' + r.classes.length + ' صف/شعبة');
+        }
+      }, { text: 'إلغاء' }],
+      onOpen: function () { document.getElementById('impGo').disabled = true; }
+    });
+  }
+
   /* ================= التحليل ================= */
 
   function analysisDialog(autoGenerate) {
@@ -1056,10 +1189,11 @@
     html += (TT.isStale(tt) ? '<div class="banner">⚠ تم تعديل البيانات بعد إنشاء الجدول، أعد الإنشاء.</div>' : '') +
       '<div class="card"><div class="sched-bar">' +
       '<label class="row">عرض جدول <select id="viewSel">' +
-      '<option value="full"' + (ui.view === 'full' ? ' selected' : '') + '>الجدول الكامل (كل الصفوف والشعب)</option>' +
+      '<option value="full"' + (ui.view === 'full' ? ' selected' : '') + '>الجدول الكامل (الأيام أسطر)</option>' +
+      '<option value="fullc"' + (ui.view === 'fullc' ? ' selected' : '') + '>الجدول الكامل (الصفوف أسطر)</option>' +
       '<option value="class"' + (ui.view === 'class' ? ' selected' : '') + '>صف / شعبة معينة</option>' +
       '<option value="teacher"' + (ui.view === 'teacher' ? ' selected' : '') + '>مدرس معين</option></select></label>';
-    if (ui.view === 'full') {
+    if (ui.view === 'full' || ui.view === 'fullc') {
       html += '<label class="row">اليوم <select id="daySel"><option value="-1">كل الأيام</option>' +
         sch.days.map(function (d, i) { return '<option value="' + i + '"' + (ui.viewDay === i ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') + '</select></label>';
     } else if (ui.view === 'class') {
@@ -1112,7 +1246,8 @@
       hint.textContent = ui.sel ? 'اضغط على حصة أخرى لنفس الصف لتبديلهما، أو على نفس الحصة لإلغاء الاختيار.' :
         'للتعديل اليدوي: اضغط على حصة ثم على حصة أخرى لنفس الصف لتبديلهما.';
     }
-    if (ui.view === 'full') wrap.innerHTML = fullGridHtml(sch, conf);
+    if (ui.view === 'full') wrap.innerHTML = fullDaysGridHtml(sch, conf);
+    else if (ui.view === 'fullc') wrap.innerHTML = fullGridHtml(sch, conf);
     else if (ui.view === 'class') wrap.innerHTML = classGridHtml(sch, conf, ui.viewClass);
     else wrap.innerHTML = teacherGridHtml(sch, ui.viewTeacher);
   }
@@ -1126,6 +1261,35 @@
     var inner = j < 0 ? '<span class="s">فراغ</span>' :
       '<span class="s">' + esc(sch.classes[c].subjects[j].name) + '</span><span class="t">' + esc(sch.classes[c].subjects[j].teacher || '—') + '</span>';
     return '<td class="' + cls + '" data-c="' + c + '" data-s="' + s + '" style="background:#' + bg + '"' + title + '>' + inner + '</td>';
+  }
+
+  /* الجدول الكامل بالشكل الورقي: الأيام والحصص أسطر، ولكل صف عمودان (المادة | المدرس) */
+  function fullDaysGridHtml(sch, conf) {
+    var info = TT.slotInfo(sch.periods);
+    var days = ui.viewDay >= 0 && ui.viewDay < sch.days.length ? [ui.viewDay] : sch.days.map(function (_, i) { return i; });
+    var h = '<table class="grid dayrows"><thead><tr><th class="rowhead dcol" rowspan="2">اليوم</th><th class="rowhead pcol" rowspan="2">ت</th>';
+    sch.classes.forEach(function (c) { h += '<th class="clsstart" colspan="2">' + esc(c.title) + '</th>'; });
+    h += '</tr><tr>';
+    sch.classes.forEach(function () { h += '<th class="clsstart">المادة</th><th>المدرس</th>'; });
+    h += '</tr></thead><tbody>';
+    days.forEach(function (d) {
+      for (var k = 0; k < sch.periods[d]; k++) {
+        var s = info.start[d] + k;
+        h += '<tr' + (k === 0 ? ' class="daytop"' : '') + '>';
+        if (k === 0) h += '<td class="rowhead dcol dayname" rowspan="' + sch.periods[d] + '"><span>' + esc(sch.days[d]) + '</span></td>';
+        h += '<td class="rowhead pcol">' + (k + 1) + '</td>';
+        sch.classes.forEach(function (c, ci) {
+          var j = sch.grids[ci][s], cf = conf.cells[ci + ',' + s];
+          var cls = (j < 0 ? ' blank' : '') + (cf ? ' conflict' : '') + (ui.sel && ui.sel.c === ci && ui.sel.s === s ? ' sel' : '');
+          var attrs = ' data-c="' + ci + '" data-s="' + s + '" style="background:#' + TT.colorOf(ci) + '"' +
+            (cf ? ' title="تعارض: ' + esc(cf.teacher) + ' عنده حصة في ' + esc(cf.others.map(function (o) { return sch.classes[o].title; }).join('، ')) + '"' : '');
+          h += '<td class="cell subj clsstart' + cls + '"' + attrs + '>' + (j < 0 ? '<span class="s">فراغ</span>' : '<span class="s">' + esc(c.subjects[j].name) + '</span>') + '</td>';
+          h += '<td class="cell tch' + cls + '"' + attrs + '><span class="t">' + (j < 0 ? '' : esc(c.subjects[j].teacher || '—')) + '</span></td>';
+        });
+        h += '</tr>';
+      }
+    });
+    return h + '</tbody></table>';
   }
 
   function fullGridHtml(sch, conf) {
@@ -1263,7 +1427,8 @@
     if (!sch) return;
     var teachers = TT.scheduleTeachers(tt);
     var body = el('<div><div class="field"><div class="lbl">ماذا تريد أن تصدّر؟</div>' +
-      '<label class="row"><input type="radio" name="ek" value="full" checked> الجدول الكامل (A3 بالعرض)</label>' +
+      '<label class="row"><input type="radio" name="ek" value="full" checked> الجدول الكامل — الأيام أسطر (A3 بالعرض)</label>' +
+      '<label class="row"><input type="radio" name="ek" value="fullc"> الجدول الكامل — الصفوف أسطر (A3 بالعرض)</label>' +
       '<label class="row"><input type="radio" name="ek" value="class"> جدول صف / شعبة معينة (A4 بالعرض)</label>' +
       '<select class="ecls" style="margin:4px 28px 8px 0">' + sch.classes.map(function (c, i) { return '<option value="' + i + '">' + esc(c.title) + '</option>'; }).join('') + '</select>' +
       '<label class="row"><input type="radio" name="ek" value="teacher"> جدول مدرس معين (A4 بالعرض)</label>' +
@@ -1280,7 +1445,7 @@
         arg = $('.etch', body).value;
         if (!arg) { toast('لا يوجد مدرسون', true); return false; }
         label = 'المدرس ' + arg;
-      } else label = kind === 'full' ? 'الكامل' : 'كل الجداول';
+      } else label = { full: 'الكامل', fullc: 'الكامل (الصفوف)', all: 'كل الجداول' }[kind];
       try {
         var tables = TT.exportTables(tt, kind, arg);
         var name = ('جدول الدروس - ' + label).replace(/[\\\/:*?"<>|]/g, '-');
@@ -1309,6 +1474,7 @@
       '<button class="btn" data-a="new">🆕 مشروع جديد</button>' +
       '<button class="btn" data-a="open">📂 فتح ملف...</button>' +
       '<button class="btn" data-a="save">💾 حفظ نسخة...</button>' +
+      '<button class="btn" data-a="import">📥 استيراد مدرسين وصفوف من ملف (Excel / Word / PDF)</button>' +
       '<p class="muted">يُحفظ عملك تلقائياً بعد كل تغيير. استخدم «حفظ نسخة» لنقل البيانات إلى جهاز آخر (ملف JSON يعمل على الحاسوب والهاتف).</p></div>');
     modal({
       title: 'المشروع', body: body,
@@ -1333,6 +1499,8 @@
       var inp = $('#fileInput');
       inp.value = '';
       inp.click();
+    } else if (a === 'import') {
+      importDialog();
     } else if (a === 'save') {
       var name = (P.school_name ? P.school_name + ' - ' : '') + 'الجدول المدرسي.json';
       saveFile(name.replace(/[\\\/:*?"<>|]/g, '-'), 'application/json', new TextEncoder().encode(JSON.stringify(P, null, 1)));

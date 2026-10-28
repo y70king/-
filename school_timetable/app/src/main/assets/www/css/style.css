@@ -256,3 +256,21 @@ table.grid.big td.cell .t { font-size: 12px; }
   .steps button span { font-size: 11px; }
   main { padding: 8px; }
 }
+
+/* الجدول الكامل بالشكل الورقي (الأيام أسطر) */
+table.grid.dayrows td.cell { min-width: 0; height: 30px; }
+table.grid.dayrows td.cell.subj { min-width: 72px; font-weight: 700; }
+table.grid.dayrows td.cell.tch { min-width: 58px; }
+table.grid.dayrows td.cell.subj .s { font-size: 12px; }
+table.grid.dayrows .clsstart { border-right: 2px solid #1C2833; }
+table.grid.dayrows tr.daytop td { border-top: 3px solid #1C2833; }
+table.grid.dayrows .dcol { width: 34px; min-width: 34px; max-width: 34px; right: 0; background: var(--day); }
+table.grid.dayrows .pcol { width: 28px; min-width: 28px; max-width: 28px; right: 34px; background: var(--day); border-left: 2px solid #7F8C8D; }
+table.grid.dayrows thead .dcol, table.grid.dayrows thead .pcol { background: var(--primary); }
+table.grid.dayrows td.dayname span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; white-space: nowrap; }
+
+/* الاستيراد */
+table.imp-table td { white-space: nowrap; font-size: 13px; }
+table.imp-table tr.off td { color: #AAB7B8; text-decoration: line-through; }
+table.imp-table th select { min-width: 110px; color: var(--text); }
+table.imp-table td[contenteditable]:focus { outline: 2px solid var(--primary); background: #FEF9E7; }

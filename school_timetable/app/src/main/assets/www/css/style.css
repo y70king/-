@@ -274,3 +274,5 @@ table.imp-table td { white-space: nowrap; font-size: 13px; }
 table.imp-table tr.off td { color: #AAB7B8; text-decoration: line-through; }
 table.imp-table th select { min-width: 110px; color: var(--text); }
 table.imp-table td[contenteditable]:focus { outline: 2px solid var(--primary); background: #FEF9E7; }
+
+.preset-card { background: linear-gradient(135deg, #EBF5FB, #E8F8F5); border: 1px solid #AED6F1; }

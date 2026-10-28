@@ -216,7 +216,12 @@
 
   function renderDays() {
     var root = $('#tab-days');
+    var empty = !tt.teachers.length && !tt.classes.length;
     root.innerHTML =
+      (empty ? '<div class="card preset-card"><h3>📋 النموذج الجاهز لمدرستك</h3>' +
+        '<p>بيانات جاهزة من جدول المدرسة: <b>27</b> مدرساً، <b>13</b> شعبة (الأول المتوسط – السادس الإعدادي)، <b>13</b> مادة، ' +
+        'ولكل صف مواده ومدرسها وعدد حصصها، والدوام من الأحد إلى الخميس.</p>' +
+        '<button class="btn primary" id="loadPreset">تحميل النموذج الجاهز</button></div>' : '') +
       '<div class="card"><h3>أيام الدوام وعدد الحصص</h3>' +
       '<p class="muted">فعّل أيام الدوام وحدد عدد الحصص في كل يوم (1–12).</p>' +
       '<div class="day-list">' + tt.days.map(function (d, i) {
@@ -239,6 +244,7 @@
       $('.dec', row).onclick = function () { if (d.enabled) setP(d.periods - 1); };
       $('.inc', row).onclick = function () { if (d.enabled) setP(d.periods + 1); };
     });
+    if ($('#loadPreset')) $('#loadPreset').onclick = loadPreset;
     $('#unifyBtn').onclick = function () {
       var n = TT.clampInt($('#unifyN').value, 1, 12, 6);
       tt.days.forEach(function (d) { d.periods = n; });
@@ -1472,6 +1478,7 @@
   function projectMenu() {
     var body = el('<div class="menu-list">' +
       '<button class="btn" data-a="new">🆕 مشروع جديد</button>' +
+      '<button class="btn" data-a="preset">📋 تحميل النموذج الجاهز (بيانات المدرسة)</button>' +
       '<button class="btn" data-a="open">📂 فتح ملف...</button>' +
       '<button class="btn" data-a="save">💾 حفظ نسخة...</button>' +
       '<button class="btn" data-a="import">📥 استيراد مدرسين وصفوف من ملف (Excel / Word / PDF)</button>' +
@@ -1499,12 +1506,30 @@
       var inp = $('#fileInput');
       inp.value = '';
       inp.click();
+    } else if (a === 'preset') {
+      loadPreset();
     } else if (a === 'import') {
       importDialog();
     } else if (a === 'save') {
       var name = (P.school_name ? P.school_name + ' - ' : '') + 'الجدول المدرسي.json';
       saveFile(name.replace(/[\\\/:*?"<>|]/g, '-'), 'application/json', new TextEncoder().encode(JSON.stringify(P, null, 1)));
     }
+  }
+
+  function loadPreset() {
+    var hasData = tt.teachers.length || tt.classes.length;
+    var go = hasData ?
+      confirmBox('تحميل النموذج الجاهز سيستبدل البيانات الحالية (احفظ نسخة أولاً إن أردت). هل تريد المتابعة؟', 'تحميل') :
+      Promise.resolve(true);
+    go.then(function (ok) {
+      if (!ok) return;
+      var school = P.school_name;
+      setProject(TT.normalize(TT.buildSchoolPreset()));
+      if (school) { P.school_name = school; $('#schoolName').value = school; }
+      persist();
+      showTab('classes');
+      toast('تم تحميل النموذج الجاهز — راجع البيانات ثم أنشئ الجدول من الخطوة ٤');
+    });
   }
 
   function openFile(file) {

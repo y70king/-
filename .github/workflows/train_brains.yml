@@ -1,0 +1,68 @@
+name: Train Brains (Neuroevolution)
+
+# تشغيل يدوي من تبويب Actions → Train Brains → Run workflow
+# كل تشغيل يكمل من آخر جيل وصله (checkpoint محفوظ بالريبو).
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "مدة التدريب بالدقائق (أقصى شي ~330)"
+        default: "300"
+      fresh:
+        description: "ابدأ من الصفر؟ (yes/no)"
+        default: "no"
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    concurrency:
+      group: train-brains
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache market data
+        uses: actions/cache@v4
+        with:
+          path: evolution/data
+          key: market-data-${{ github.run_id }}
+          restore-keys: market-data-
+
+      - name: Download / update market data (Dukascopy)
+        run: python -m evolution.data
+
+      - name: Evolve brains
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          FRESH=""
+          if [ "${{ github.event.inputs.fresh }}" = "yes" ]; then FRESH="--fresh"; fi
+          python -m evolution.train --minutes "${{ github.event.inputs.minutes }}" --notify $FRESH
+
+      - name: Final exam (unseen data + monkey test)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m evolution.exam --notify
+
+      - name: Save brains to repo
+        if: always()
+        run: |
+          git config user.name "brain-trainer"
+          git config user.email "actions@github.com"
+          git add evolution/models
+          if git diff --cached --quiet; then echo "لا يوجد تغيير"; exit 0; fi
+          git commit -m "brains: training progress [skip ci]"
+          for i in 1 2 3 4; do git pull --rebase && git push && break; sleep 5; done

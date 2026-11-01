@@ -33,14 +33,24 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python gold_signal_bot.py
 
-      - name: Commit updated state (dedup)
+      - name: Paper trading brain (fake money)
+        if: hashFiles('evolution/models/champion.npz') != ''
+        continue-on-error: true
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m evolution.paper_trade
+
+      - name: Commit updated state (dedup + paper trading)
         run: |
           git config user.name "gold-signal-bot"
           git config user.email "actions@github.com"
-          if [ -f state.json ] && ! git diff --quiet -- state.json; then
-            git add state.json
-            git commit -m "state: update last signal [skip ci]"
-            git push
+          for f in state.json evolution/paper_state.json; do
+            [ -f "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "لا يوجد تغيير"
           else
-            echo "لا يوجد تغيير في state.json"
+            git commit -m "state: update [skip ci]"
+            for i in 1 2 3 4; do git pull --rebase && git push && break; sleep 5; done
           fi

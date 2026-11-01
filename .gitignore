@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# بيانات تجريبية (yahoo) وملفات مؤقتة — بيانات Dukascopy تنحفظ بالريبو عشان GitHub Actions ما يعيد تنزيلها
+evolution/data/*_yahoo.csv.gz
+evolution/data/*_5m.csv.gz
+*.tmp.npz

@@ -165,7 +165,14 @@ def main():
             vscore, _ = validate(top, valid)
             best = int(np.argmax(vscore))
             mres = monkey.test(top[best], valid.X, valid.ret, valid.cost_bps, seed=gen)
-            is_champ = bool(mres["passed"] and vscore[best] > champ_score)
+            others_ok = 0
+            if mres["passed"] and vscore[best] > champ_score:
+                for o in valid.others:
+                    r = monkey.test(top[best], o.X, o.ret, o.cost_bps, n_monkeys=300, seed=gen)
+                    others_ok += r["beats_monkeys_pct"] >= C.OTHERS_PASS_PERCENTILE and r["brain_return_pct"] > 0
+            need = int(np.ceil(len(valid.others) * C.OTHERS_PASS_FRACTION))
+            mres["other_markets_passed"] = f"{others_ok}/{len(valid.others)}"
+            is_champ = bool(mres["passed"] and vscore[best] > champ_score and others_ok >= need)
             if is_champ:
                 champ_score = float(vscore[best])
                 meta = {"generation": gen, "valid_score": champ_score, "valid": mres,
@@ -179,7 +186,9 @@ def main():
                          int(mres["passed"]), int(is_champ)])
             print(f"🧪 جيل {gen:5d} | تحقق: {mres['brain_return_pct']:+6.2f}% | "
                   f"تفوق على {mres['beats_monkeys_pct']:5.1f}% من القرود | "
-                  f"{mres['trades']} صفقة" + ("  🏆 بطل جديد!" if is_champ else ""))
+                  f"{mres['trades']} صفقة" +
+                  (f" | أسواق ثانية {mres['other_markets_passed']}" if mres["passed"] else "") +
+                  ("  🏆 بطل جديد!" if is_champ else ""))
             save_checkpoint(pop, gen, champ_score, rng)
         elif gen % 5 == 0:
             print(f"   جيل {gen:5d} | أفضل {fitness.max():+.3f} | متوسط {fitness.mean():+.3f} | "

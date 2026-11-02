@@ -6,7 +6,7 @@
 والأسواق الثانية تنقص عند بداية فترة التحقق، عشان العقل ما يشوف أي شي
 من المستقبل ولا حتى عن طريق سوق ثاني (مثلاً الفضة تتحرك مع الذهب).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ class Series:
     ret: np.ndarray
     index: pd.DatetimeIndex
     cost_bps: float
+    others: list = field(default_factory=list)  # (للتحقق) نفس الفترة من الأسواق الثانية
 
     def slice(self, a, b):
         return Series(self.name, self.X[a:b], self.ret[a:b], self.index[a:b], self.cost_bps)
@@ -37,6 +38,7 @@ def load_all(verbose=True):
     t0 = int(n * (1 - C.TEST_FRACTION))
     train_gold, valid, test = gold.slice(0, v0), gold.slice(v0, t0), gold.slice(t0, n)
     cutoff = gold.index[v0]
+    test_start = gold.index[t0]
 
     train = [train_gold]
     weights = [C.MARKETS[C.TARGET_MARKET]["weight"]]
@@ -49,6 +51,9 @@ def load_all(verbose=True):
             if verbose:
                 print(f"[WARN] ما فيه بيانات {sym}، نتخطاه")
             continue
+        vmask = (idx >= cutoff) & (idx < test_start)
+        if vmask.sum() > 1000:
+            valid.others.append(Series(sym, X[vmask], r[vmask], idx[vmask], cfg["cost_bps"]))
         keep = idx < cutoff
         if keep.sum() < C.WINDOW_BARS + 10:
             continue
@@ -59,6 +64,7 @@ def load_all(verbose=True):
         for s in train:
             print(f"  تدريب  {s.name:14s} {len(s.ret):>7,} شمعة  ({s.index[0]:%Y-%m-%d} → {s.index[-1]:%Y-%m-%d})")
         print(f"  تحقق   {valid.name:14s} {len(valid.ret):>7,} شمعة  ({valid.index[0]:%Y-%m-%d} → {valid.index[-1]:%Y-%m-%d})")
+        print(f"  تحقق إضافي على نفس الفترة: {', '.join(o.name for o in valid.others)}")
         print(f"  اختبار {test.name:14s} {len(test.ret):>7,} شمعة  ({test.index[0]:%Y-%m-%d} → {test.index[-1]:%Y-%m-%d})")
 
     w = np.array(weights, dtype=float)

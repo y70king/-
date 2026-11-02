@@ -63,6 +63,7 @@ jobs:
           git config user.name "brain-trainer"
           git config user.email "actions@github.com"
           git add evolution/models
+          git checkout -- evolution/data   # البيانات المحدثة محفوظة بالكاش، ما نرفعها كل مرة
           if git diff --cached --quiet; then echo "لا يوجد تغيير"; exit 0; fi
           git commit -m "brains: training progress [skip ci]"
-          for i in 1 2 3 4; do git pull --rebase && git push && break; sleep 5; done
+          for i in 1 2 3 4; do git pull --rebase --autostash && git push && break; sleep 5; done

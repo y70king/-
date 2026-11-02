@@ -2,7 +2,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 import numpy as np
 SRC=sys.argv[1]; OUT=sys.argv[2]
-S=3
+S=4
 orig=Image.open(SRC).convert('RGB')
 W,H=orig.size
 big=orig.resize((W*S,H*S),Image.LANCZOS)
@@ -38,51 +38,46 @@ for i,(y0,y1) in enumerate(Rr):
 mask=mask.resize((W*S,H*S),Image.LANCZOS).filter(ImageFilter.GaussianBlur(5))
 big.paste(T,(0,0),mask)
 
-# --- photo frames: 10cm x 15cm (2:3 portrait) ---
-FW,FH=60,90          # px in original scale  -> 6 px = 1 cm
-GX,GY=14,13
+# --- photo frames: white photo area exactly 10cm x 15cm ---
+# scale: 5 px (original) = 1 cm  ->  poster prints at 320 x 192 cm
+IW,IH=50,75          # white photo area = 10 x 15 cm
+B=5                  # gold border thickness (1 cm)
+FW,FH=IW+2*B,IH+2*B  # outer frame 12 x 17 cm
+GX,GY=14,18
 def gold(w,h):
-    g=np.zeros((h,w,3))
     yy,xx=np.mgrid[0:h,0:w]
     t=(xx/w*0.4+yy/h*0.6)
     wave=0.5+0.5*np.cos(t*np.pi*4)
     dark=np.array([150,80,10]); light=np.array([255,214,110])
-    g=dark+(light-dark)*wave[...,None]
-    return Image.fromarray(g.astype('uint8'))
+    return Image.fromarray((dark+(light-dark)*wave[...,None]).astype('uint8'))
 
 def frame(cx,cy):
     w,h=FW*S,FH*S
-    x0=int(cx*S-w/2); y0=int(cy*S-h/2)
-    pad=30
-    # shadow / glow
+    x0=round(cx*S-w/2); y0=round(cy*S-h/2)
+    k=S/3; pad=int(30*k); R=int(30*k)
     sh=Image.new('L',(w+2*pad,h+2*pad),0)
-    ImageDraw.Draw(sh).rounded_rectangle((pad,pad+6,pad+w,pad+h+6),radius=30,fill=200)
-    sh=sh.filter(ImageFilter.GaussianBlur(10))
-    big.paste((0,0,0),(x0-pad,y0-pad),sh)
+    ImageDraw.Draw(sh).rounded_rectangle((pad,pad+int(6*k),pad+w,pad+h+int(6*k)),radius=R,fill=200)
+    big.paste((0,0,0),(x0-pad,y0-pad),sh.filter(ImageFilter.GaussianBlur(10*k)))
     glow=Image.new('L',(w+2*pad,h+2*pad),0)
-    ImageDraw.Draw(glow).rounded_rectangle((pad,pad,pad+w,pad+h),radius=30,fill=90)
-    glow=glow.filter(ImageFilter.GaussianBlur(8))
-    big.paste((230,150,40),(x0-pad,y0-pad),glow)
-    # dark outer edge
-    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((0,0,w-1,h-1),radius=30,fill=255)
+    ImageDraw.Draw(glow).rounded_rectangle((pad,pad,pad+w,pad+h),radius=R,fill=90)
+    big.paste((230,150,40),(x0-pad,y0-pad),glow.filter(ImageFilter.GaussianBlur(8*k)))
+    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((0,0,w-1,h-1),radius=R,fill=255)
     big.paste((25,15,5),(x0,y0),m)
-    # gold ring
-    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((3,3,w-4,h-4),radius=28,fill=255)
+    e=int(3*k)
+    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((e,e,w-1-e,h-1-e),radius=R-e,fill=255)
     big.paste(gold(w,h),(x0,y0),m)
-    # thin dark inner line
-    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((12,12,w-13,h-13),radius=22,fill=255)
+    b=B*S; e=int(3*k)  # thin dark line just outside the photo area
+    m=Image.new('L',(w,h),0); ImageDraw.Draw(m).rounded_rectangle((b-e,b-e,w-1-b+e,h-1-b+e),radius=int(20*k),fill=255)
     big.paste((30,20,15),(x0,y0),m)
-    # white photo area with soft gradient
-    iw,ih=w-30,h-30
+    iw,ih=IW*S,IH*S
     yy=np.linspace(0,1,ih)[:,None]*np.ones((1,iw))
     top=np.array([246,240,238]); bot=np.array([236,226,224])
     fill=(top+(bot-top)*yy[...,None]).astype('uint8')
-    m=Image.new('L',(iw,ih),0); ImageDraw.Draw(m).rounded_rectangle((0,0,iw-1,ih-1),radius=18,fill=255)
-    big.paste(Image.fromarray(fill),(x0+15,y0+15),m)
-    # inner top shadow for depth
-    s=Image.new('L',(iw,ih),0); ImageDraw.Draw(s).rounded_rectangle((-4,-4,iw+3,8),radius=18,fill=70)
-    s=s.filter(ImageFilter.GaussianBlur(4)); s=Image.fromarray(np.minimum(np.array(s),np.array(m)))
-    big.paste((120,90,80),(x0+15,y0+15),s)
+    m=Image.new('L',(iw,ih),0); ImageDraw.Draw(m).rounded_rectangle((0,0,iw-1,ih-1),radius=int(16*k),fill=255)
+    big.paste(Image.fromarray(fill),(x0+b,y0+b),m)
+    sm=Image.new('L',(iw,ih),0); ImageDraw.Draw(sm).rounded_rectangle((-4,-4,iw+3,int(8*k)),radius=int(16*k),fill=70)
+    sm=Image.fromarray(np.minimum(np.array(sm.filter(ImageFilter.GaussianBlur(4*k))),np.array(m)))
+    big.paste((120,90,80),(x0+b,y0+b),sm)
 
 def block(cx,top,rows):
     n=0
@@ -92,8 +87,8 @@ def block(cx,top,rows):
         for c in range(cols):
             frame(cx-tw/2+FW/2+c*(FW+GX),y); n+=1
     return n
-top=306
+top=307
 n=block(443,top,[5,5,5,4])+block(1196,top,[5,5,5,4])
 print('frames:',n)
-big.save(OUT,quality=95,dpi=(45.72,45.72))
+big.save(OUT,quality=95,dpi=(50.8,50.8))
 big.resize((W,H),Image.LANCZOS).save(OUT.replace('.jpg','_preview.jpg'),quality=92)

@@ -1,15 +1,14 @@
 """
-التداول التجريبي (فلوس وهمية) 💵 — يشتغل على GitHub Actions كل 5 دقائق.
+التداول التجريبي (فلوس وهمية) 💵 — يشتغل على GitHub Actions مع بوت الإشارات.
 
-البطل (champion) يقرأ آخر شموع الذهب 5 دقائق ويقرر: شراء / بيع / بدون صفقة.
-الرصيد الوهمي يبدأ بألف دولار، وكل صفقة تنرسل على تيليجرام مع ملخص يومي.
-الحالة تنحفظ بملف evolution/paper_state.json.
+البطل (champion) يقرأ شموع الذهب الحية، ويقرر بنفسه: الاتجاه، الحجم، الوقف، الهدف،
+ومتى يطلع. ذاكرته وصفقته المفتوحة تنحفظ بين كل تشغيل والثاني، وكل صفقة توصلك على
+تيليجرام مع ملخص يومي. الحالة بملف evolution/paper_state_<الفريم>m.json
 
     python -m evolution.paper_trade
 """
 import os
 import json
-import datetime as dt
 
 import numpy as np
 import pandas as pd
@@ -21,15 +20,17 @@ from .train import CHAMPION
 
 SYMBOLS = ("GC=F", "XAUUSD=X")
 SIDE = {1: "شراء 🟢", -1: "بيع 🔴", 0: "بدون صفقة ⚪"}
+REASON = {"tp": "🎯 ضرب الهدف", "sl": "🛑 ضرب الوقف", "brain": "🧠 العقل قرر يطلع",
+          "dead": "☠️ خسارة كبيرة", "end": "إغلاق"}
+WARMUP_BARS = 200   # شموع يمر عليها العقل قبل ما يبدأ، عشان تتكون ذاكرته
 
 
 def fetch():
     for sym in SYMBOLS:
         try:
             df = yf.download(sym, period="10d" if C.BAR_MINUTES <= 5 else "90d",
-                             interval=f"{C.BAR_MINUTES}m",
-                             progress=False, auto_adjust=False)
-            if df is None or len(df) < features.WARMUP + 50:
+                             interval=f"{C.BAR_MINUTES}m", progress=False, auto_adjust=False)
+            if df is None or len(df) < features.WARMUP + WARMUP_BARS:
                 continue
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = [c[0] for c in df.columns]
@@ -57,75 +58,88 @@ def fmt_time(ts):
     return pd.Timestamp(ts).tz_convert("Asia/Baghdad").strftime("%m-%d %H:%M")
 
 
+def step(eng, genome, X, px, i):
+    pre = brain.precompute(genome[None], X[i: i + 1])[0]
+    eng.process_bar(i, pre, px["open"][i], px["high"][i], px["low"][i], px["close"][i], px["atr"][i])
+
+
 def main():
     if not os.path.exists(CHAMPION):
-        print("[INFO] ما فيه بطل مدرّب بعد (evolution/models/champion.npz) — التداول التجريبي متوقف.")
+        print("[INFO] ما فيه بطل مدرّب بعد — التداول التجريبي متوقف.")
         return
     genome, meta = brain.load(CHAMPION)
+    if genome.shape[0] != brain.GENOME_SIZE:
+        print("[INFO] البطل المحفوظ من نسخة قديمة من العقل — التداول التجريبي متوقف.")
+        return
     exam_file = os.path.join(C.MODELS_DIR, "exam.json")
     exam = json.load(open(exam_file, encoding="utf-8")) if os.path.exists(exam_file) else {}
     if C.PAPER_REQUIRE_EXAM and not (exam.get("passed") and exam.get("generation") == meta["generation"]):
         print(f"[INFO] بطل الجيل {meta['generation']} ما نجح بالامتحان النهائي بعد — التداول التجريبي متوقف.")
         return
-    cost = C.MARKETS[C.TARGET_MARKET]["cost_bps"] / 1e4
+    cost = C.MARKETS[C.TARGET_MARKET]["cost_bps"]
 
     df = fetch()
-    X, _ret, idx = features.build(df)
-    close = df["close"].reindex(idx).values
+    X, _ret, idx, px = features.build(df, return_prices=True)
     now = pd.Timestamp.now(tz="UTC")
     closed = np.where(idx + pd.Timedelta(minutes=C.BAR_MINUTES) <= now)[0]
-    if len(closed) == 0:
+    if len(closed) < WARMUP_BARS:
         return
 
     st = load_state()
+    eng = brain.Engine(genome[None], cost, death_level=1e-9, record=True)
+    messages = []
+
     if st.get("champion_generation") != meta["generation"]:
+        # عقل جديد يستلم الحساب: يمر على آخر الشموع عشان تتكون ذاكرته، وبعدين يبدأ بدون صفقة
+        last = closed[-1]
+        for i in range(last - WARMUP_BARS, last + 1):
+            step(eng, genome, X, px, i)
+        keep_h = eng.h.copy()
+        eng = brain.Engine(genome[None], cost, death_level=1e-9, record=True)
+        eng.h = keep_h
+        equity = st.get("equity", C.START_CAPITAL)
         if st:
-            notify.send(f"🔄 بطل جديد (الجيل {meta['generation']}) استلم الحساب التجريبي.")
-        # البطل الجديد يكمل بنفس الرصيد، بس يبدأ بدون مركز مفتوح
+            messages.append(f"🔄 بطل جديد (الجيل {meta['generation']}) استلم الحساب التجريبي.")
         st = {
             "champion_generation": meta["generation"],
             "started": st.get("started", str(now)),
-            "start_price": st.get("start_price", float(close[closed[-1]])),
-            "equity": st.get("equity", C.START_CAPITAL),
-            "position": 0, "entry_price": None, "entry_time": None, "entry_equity": None,
-            "last_bar": str(idx[closed[-2]]) if len(closed) > 1 else None,
-            "last_close": float(close[closed[-2]]) if len(closed) > 1 else None,
+            "start_price": st.get("start_price", float(px["close"][last])),
+            "equity_base": equity,
+            "equity": equity,
+            "engine": eng.state_dict(),
+            "last_bar": str(idx[last]),
             "trades": st.get("trades", []),
             "last_summary": st.get("last_summary"),
         }
-
-    last_bar = pd.Timestamp(st["last_bar"]) if st.get("last_bar") else None
-    todo = [i for i in closed if last_bar is None or idx[i] > last_bar]
-    messages = []
+        todo = []
+    else:
+        eng.load_state(st["engine"])
+        last_bar = pd.Timestamp(st["last_bar"])
+        todo = [i for i in closed if idx[i] > last_bar]
 
     for i in todo:
-        price = float(close[i])
-        pos = st["position"]
-        if st.get("last_close"):
-            st["equity"] *= 1 + pos * (price / st["last_close"] - 1)
+        step(eng, genome, X, px, i)
+        st["last_bar"] = str(idx[i])
 
-        new = int(brain.decide(genome[None], X[i], np.array([pos], dtype=np.float32))[0])
-        if new != pos:
-            st["equity"] *= 1 - abs(new - pos) * cost
-            if pos != 0:
-                pnl = (st["equity"] / st["entry_equity"] - 1) * 100
-                st["trades"].append({
-                    "side": pos, "entry_time": st["entry_time"], "exit_time": str(idx[i]),
-                    "entry": st["entry_price"], "exit": price, "pnl_pct": round(pnl, 3),
-                })
-                st["trades"] = st["trades"][-200:]
-                messages.append(f"{'✅' if pnl > 0 else '❌'} إغلاق {SIDE[pos]} @ {price:.2f} "
-                                f"({fmt_time(idx[i])}) → {pnl:+.2f}%")
-            if new != 0:
-                st.update(entry_price=price, entry_time=str(idx[i]), entry_equity=st["equity"])
-                messages.append(f"🧠 فتح {SIDE[new]} @ {price:.2f} ({fmt_time(idx[i])})")
-            else:
-                st.update(entry_price=None, entry_time=None, entry_equity=None)
-        st["position"] = new
-        st["last_bar"], st["last_close"] = str(idx[i]), price
+    for e in eng.events:
+        t = fmt_time(idx[e["t"]])
+        if e["type"] == "open":
+            messages.append(
+                f"🧠 فتح {SIDE[e['dir']]} @ {e['entry']:.2f} ({t})\n"
+                f"   الحجم: {e['size'] * 100:.0f}% من الحساب\n"
+                f"   🛑 الوقف: {e['sl']:.2f} ({e['sl_atr']:.1f}×ATR)\n"
+                f"   🎯 الهدف: {e['tp']:.2f} ({e['tp_atr']:.1f}×ATR)")
+        else:
+            messages.append(f"{'✅' if e['pnl_pct'] > 0 else '❌'} إغلاق {SIDE[e['dir']]} @ {e['exit']:.2f} ({t}) — "
+                            f"{REASON.get(e['reason'], e['reason'])} → {e['pnl_pct']:+.2f}%")
+            st["trades"].append({k: e[k] for k in ("dir", "size", "entry", "exit", "reason", "pnl_pct", "bars")}
+                                | {"exit_time": str(idx[e["t"]])})
+    st["trades"] = st["trades"][-300:]
+    st["engine"] = eng.state_dict()
+    st["equity"] = st["equity_base"] * float(np.exp(eng.log_eq[0]))
 
     if messages:
-        notify.send("💵 تداول تجريبي — ذهب\n" + "\n".join(messages) +
+        notify.send("💵 تداول تجريبي — ذهب\n\n" + "\n\n".join(messages) +
                     f"\n\nالرصيد الوهمي: ${st['equity']:.2f}")
 
     # ملخص يومي بعد الساعة 21:00 UTC
@@ -133,19 +147,20 @@ def main():
     if now.hour >= 21 and st.get("last_summary") != today:
         tr = st["trades"]
         wins = sum(t["pnl_pct"] > 0 for t in tr)
-        gold_chg = (float(close[closed[-1]]) / st["start_price"] - 1) * 100
+        gold_chg = (float(px["close"][closed[-1]]) / st["start_price"] - 1) * 100
+        d = int(np.sign(eng.dir[0]))
         notify.send(
             f"📊 ملخص يومي — العقل التجريبي (بطل الجيل {st['champion_generation']})\n"
             f"الرصيد: ${st['equity']:.2f} ({(st['equity'] / C.START_CAPITAL - 1) * 100:+.2f}%)\n"
             f"الذهب من البداية: {gold_chg:+.2f}%\n"
             f"الصفقات: {len(tr)} (رابحة {wins})\n"
-            f"المركز الحالي: {SIDE[st['position']]}\n"
+            f"المركز الحالي: {SIDE[d]}" + (f" — وقف {eng.sl[0]:.2f} / هدف {eng.tp[0]:.2f}" if d else "") + "\n"
             f"منذ: {st['started'][:10]}"
         )
         st["last_summary"] = today
 
     save_state(st)
-    print(f"[INFO] الرصيد ${st['equity']:.2f} | المركز {st['position']} | شموع جديدة {len(todo)}")
+    print(f"[INFO] الرصيد ${st['equity']:.2f} | المركز {int(eng.dir[0])} | شموع جديدة {len(todo)}")
 
 
 if __name__ == "__main__":

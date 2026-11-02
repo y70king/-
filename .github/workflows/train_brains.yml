@@ -11,6 +11,9 @@ on:
       fresh:
         description: "ابدأ من الصفر؟ (yes/no)"
         default: "no"
+      timeframe:
+        description: "فريم العقل بالدقائق (60 = ساعة، 5 = خمس دقائق)"
+        default: "60"
 
 permissions:
   contents: write
@@ -19,6 +22,8 @@ jobs:
   train:
     runs-on: ubuntu-latest
     timeout-minutes: 355
+    env:
+      BRAIN_TIMEFRAME: ${{ github.event.inputs.timeframe || '60' }}
     concurrency:
       group: train-brains
       cancel-in-progress: false

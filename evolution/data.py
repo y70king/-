@@ -78,7 +78,13 @@ def resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
 
 
 def cache_path(sym: str) -> str:
-    return os.path.join(C.DATA_DIR, f"{sym}_{C.BAR_MINUTES}m_{C.DATA_SOURCE}.csv.gz")
+    return os.path.join(C.DATA_DIR, f"{sym}_{C.BASE_MINUTES}m_{C.DATA_SOURCE}.csv.gz")
+
+
+def load_raw(sym: str) -> pd.DataFrame:
+    df = pd.read_csv(cache_path(sym), index_col=0)
+    df.index = pd.to_datetime(df.index, utc=True)
+    return df
 
 
 def load(sym: str) -> pd.DataFrame:
@@ -87,13 +93,15 @@ def load(sym: str) -> pd.DataFrame:
         raise FileNotFoundError(f"ما فيه بيانات لـ {sym}. شغّل: python -m evolution.data")
     df = pd.read_csv(path, index_col=0)
     df.index = pd.to_datetime(df.index, utc=True)
+    if C.BAR_MINUTES != C.BASE_MINUTES:
+        df = resample(df, C.BAR_MINUTES)
     return df
 
 
 def update_yahoo(sym: str) -> pd.DataFrame:
     import yfinance as yf
     os.makedirs(C.DATA_DIR, exist_ok=True)
-    df = yf.download(C.YAHOO_SYMBOLS[sym], period="60d", interval=f"{C.BAR_MINUTES}m",
+    df = yf.download(C.YAHOO_SYMBOLS[sym], period="60d", interval=f"{C.BASE_MINUTES}m",
                      progress=False, auto_adjust=False)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [c[0] for c in df.columns]
@@ -101,7 +109,7 @@ def update_yahoo(sym: str) -> pd.DataFrame:
     df.index = pd.to_datetime(df.index, utc=True)
     new = df
     if os.path.exists(cache_path(sym)):  # نجمع مع القديم عشان التاريخ يكبر مع الوقت
-        df = pd.concat([load(sym), new])
+        df = pd.concat([load_raw(sym), new])
         df = df[~df.index.duplicated(keep="last")].sort_index()
     df.to_csv(cache_path(sym), float_format="%.8g", compression="gzip")
     print(f"[{sym}] yahoo: {len(df):,} شمعة ({df.index[0]:%Y-%m-%d} → {df.index[-1]:%Y-%m-%d})")
@@ -130,7 +138,7 @@ def update(sym: str, days: int = C.HISTORY_DAYS, workers: int = 3, deadline: flo
     today = dt.datetime.now(dt.timezone.utc).date()
     first_day = today - dt.timedelta(days=days)
 
-    df = load(sym) if os.path.exists(cache_path(sym)) else None
+    df = load_raw(sym) if os.path.exists(cache_path(sym)) else None
     # نعيد تنزيل آخر يومين احتياطاً (ممكن كانوا ناقصين)
     start = first_day if df is None else max(first_day, df.index[-1].date() - dt.timedelta(days=2))
     all_days = [start + dt.timedelta(days=i) for i in range((today - start).days)]
@@ -143,7 +151,7 @@ def update(sym: str, days: int = C.HISTORY_DAYS, workers: int = 3, deadline: flo
         parts = _download_days(sym, all_days[c: c + 60], scale, workers)
         if not parts:
             continue
-        new = resample(pd.concat(parts), C.BAR_MINUTES)
+        new = resample(pd.concat(parts), C.BASE_MINUTES)
         df = new if df is None else pd.concat([df, new])
         df = df[~df.index.duplicated(keep="last")].sort_index()
         df = df[df.index >= pd.Timestamp(first_day, tz="UTC")]

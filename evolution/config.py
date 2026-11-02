@@ -5,8 +5,10 @@ import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "data")          # بيانات الشموع (كاش، ما ترفع للريبو)
-MODELS_DIR = os.path.join(ROOT, "models")      # العقول المحفوظة + نقطة الاستكمال
-PAPER_STATE = os.path.join(ROOT, "paper_state.json")
+# فريم العقل بالدقائق: 60 = ساعة (الافتراضي)، 5 = خمس دقائق. يتغير بمتغير البيئة BRAIN_TIMEFRAME
+BAR_MINUTES = int(os.environ.get("BRAIN_TIMEFRAME", "60"))
+MODELS_DIR = os.path.join(ROOT, "models", f"{BAR_MINUTES}m")   # العقول المحفوظة + نقطة الاستكمال (لكل فريم مجلد)
+PAPER_STATE = os.path.join(ROOT, f"paper_state_{BAR_MINUTES}m.json")
 
 # ------------------------------------------------------------------ البيانات
 # الأسواق اللي نتدرب عليها. التدريب على أسواق كثيرة = العقل يتعلم "يفهم" بدل ما "يحفظ".
@@ -27,7 +29,7 @@ DATA_SOURCE = os.environ.get("BRAIN_DATA_SOURCE", "dukascopy")
 YAHOO_SYMBOLS = {"XAUUSD": "GC=F", "XAGUSD": "SI=F", "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X",
                  "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "USA500IDXUSD": "ES=F"}
 HISTORY_DAYS = 730          # كم يوم بيانات ننزل (سنتين)
-BAR_MINUTES = 5             # فريم العقل: 5 دقائق
+BASE_MINUTES = 5            # البيانات تنحفظ 5 دقائق، وتتحول لفريم العقل وقت التحميل
 
 # تقسيم بيانات الذهب زمنياً (العقل ما يشوف التحقق والاختبار أبداً وقت التدريب)
 #   [ ........ تدريب ........ | تحقق | اختبار نهائي ]
@@ -46,7 +48,8 @@ MUTATION_SIGMA = 0.08       # قوة الطفرة
 MUTATION_RATE = 0.15        # نسبة الأوزان اللي تتغير بكل طفرة
 
 WINDOWS_PER_GEN = 4         # كل جيل يتداول على 4 فترات عشوائية (أسواق مختلفة)
-WINDOW_BARS = 2500          # طول كل فترة (~9 أيام تداول على 5 دقائق)
+# طول كل فترة تداول بالتدريب: ~9 أيام على 5 دقائق، ~2.5 شهر على الساعة
+WINDOW_BARS = 2500 if BAR_MINUTES <= 5 else max(400, 60000 // BAR_MINUTES)
 START_CAPITAL = 1000.0      # كل عقل يبدأ بألف دولار
 DEATH_LEVEL = 0.6           # إذا نزل الرصيد تحت 60% من البداية → العقل يموت (يوقف تداول)
 

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>مُخطِّط المعلم</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar no-print">
+  <div class="brand">📘 مُخطِّط المعلم</div>
+  <div id="aiBadge" class="badge">...</div>
+</header>
+
+<main>
+  <!-- 1) واجهة المدرس -->
+  <section class="card no-print" id="teacherCard">
+    <h2>👤 بيانات المدرس</h2>
+    <div class="grid">
+      <label>اسم المدرس<input id="tName" placeholder="مثال: أ. محمد أحمد"></label>
+      <label>اسم المادة<input id="tSubject" placeholder="مثال: العلوم"></label>
+      <label>الصف<input id="tGrade" placeholder="مثال: الصف الخامس الابتدائي"></label>
+      <label>اسم المدرسة<input id="tSchool" placeholder="مثال: مدرسة النور"></label>
+      <label>العام الدراسي / الفصل<input id="tYear" placeholder="مثال: 2026 - 2027 / الفصل الأول"></label>
+    </div>
+    <button class="btn" id="saveTeacher">حفظ البيانات</button>
+    <span class="hint" id="teacherSaved"></span>
+  </section>
+
+  <!-- 2) رفع الكتاب -->
+  <section class="card no-print">
+    <h2>📄 الكتاب</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="bookFile" accept="application/pdf" hidden>
+      <span id="dropText">اضغط هنا أو اسحب ملف الكتاب (PDF)</span>
+    </label>
+    <div id="bookInfo" class="hint"></div>
+  </section>
+
+  <!-- 3) إعدادات الخطة -->
+  <section class="card no-print">
+    <h2>⚙️ إعدادات الخطة</h2>
+    <div class="grid">
+      <label>عدد الصفحات لكل يوم<input type="number" id="ppd" min="1" value="2"></label>
+      <label>من صفحة<input type="number" id="startPage" min="1" value="1"></label>
+      <label>إلى صفحة<input type="number" id="endPage" min="1"></label>
+      <label>تاريخ بداية الخطة<input type="date" id="startDate"></label>
+    </div>
+    <div class="days" id="studyDays"></div>
+    <label class="full">أيام العطل (تاريخ في كل سطر بصيغة 2026-11-20)<textarea id="holidays" rows="2"></textarea></label>
+    <button class="btn primary" id="makePlan">إنشاء الخطة</button>
+    <span class="hint" id="planMsg"></span>
+  </section>
+
+  <!-- 4) الخطة -->
+  <section class="card" id="planCard" hidden>
+    <div class="plan-toolbar no-print">
+      <div class="tabs" id="tabs">
+        <button data-view="daily" class="active">يومية</button>
+        <button data-view="weekly">أسبوعية</button>
+        <button data-view="monthly">شهرية</button>
+        <button data-view="yearly">سنوية</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="summarizeAll">✨ شرح كل الدروس</button>
+        <button class="btn" id="printBtn">🖨️ طباعة / PDF</button>
+        <button class="btn" id="csvBtn">📊 تصدير Excel</button>
+      </div>
+    </div>
+    <div id="progress" class="progress no-print" hidden><div></div><span></span></div>
+    <div class="nav no-print" id="nav"></div>
+
+    <div class="print-header" id="printHeader"></div>
+    <div id="view"></div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -4,3 +4,7 @@ __pycache__/
 evolution/data/*_yahoo.csv.gz
 evolution/data/*_5m.csv.gz
 *.tmp.npz
+
+# مُخطِّط المعلم: الكتب المرفوعة
+teacher_planner/uploads/*
+!teacher_planner/uploads/.gitkeep

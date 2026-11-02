@@ -52,5 +52,5 @@ jobs:
             echo "لا يوجد تغيير"
           else
             git commit -m "state: update [skip ci]"
-            for i in 1 2 3 4; do git pull --rebase && git push && break; sleep 5; done
+            for i in 1 2 3 4; do git pull --rebase --autostash && git push && break; sleep 5; done
           fi

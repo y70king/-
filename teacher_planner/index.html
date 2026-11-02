@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2d50">
+  <title>مُخطِّط المعلم</title>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">📘 مُخطِّط المعلم</div>
+  <button class="icon" id="openSettings" title="الإعدادات">⚙️</button>
+</header>
+
+<main>
+  <!-- بيانات المدرس -->
+  <details class="card" id="teacherCard" open>
+    <summary><h2>👤 بيانات المدرس</h2><span class="sum" id="teacherSummary"></span></summary>
+    <div class="grid">
+      <label>اسم المدرس<input id="tName" placeholder="مثال: أ. محمد أحمد"></label>
+      <label>اسم المادة<input id="tSubject" placeholder="مثال: العلوم"></label>
+      <label>الصف والشعبة<input id="tGrade" placeholder="مثال: الخامس الابتدائي / أ"></label>
+      <label>اسم المدرسة<input id="tSchool" placeholder="مثال: مدرسة النور الابتدائية"></label>
+      <label>العام الدراسي<input id="tYear" placeholder="مثال: 2026 – 2027"></label>
+    </div>
+    <label class="full">الترويسة الرسمية (تظهر أعلى يمين الخطة، سطر لكل جهة)
+      <textarea id="tLetterhead" rows="3"></textarea></label>
+    <button class="btn" id="saveTeacher">حفظ البيانات</button>
+    <span class="hint" id="teacherSaved"></span>
+  </details>
+
+  <!-- الكتاب -->
+  <section class="card">
+    <h2>📄 الكتاب</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="bookFile" accept="application/pdf" hidden>
+      <span id="dropText">اضغط هنا لاختيار ملف الكتاب (PDF)</span>
+    </label>
+    <div id="bookInfo" class="hint"></div>
+  </section>
+
+  <!-- إعدادات الخطة -->
+  <section class="card">
+    <h2>🗓️ إنشاء خطة</h2>
+    <div class="seg" id="planType">
+      <button data-v="daily">يومية</button><button data-v="weekly">أسبوعية</button>
+      <button data-v="monthly">شهرية</button><button data-v="yearly">سنوية</button>
+    </div>
+    <div class="grid">
+      <label>من صفحة<input type="number" inputmode="numeric" id="fromPage" min="1" value="1"></label>
+      <label>إلى صفحة<input type="number" inputmode="numeric" id="toPage" min="1"></label>
+      <label>تاريخ البداية<input type="date" id="startDate"></label>
+      <label id="endDateWrap">تاريخ نهاية العام الدراسي<input type="date" id="endDate"></label>
+    </div>
+    <div class="radio">
+      <label><input type="radio" name="mode" value="auto" checked> توزيع الصفحات تلقائياً على أيام الفترة</label>
+      <label><input type="radio" name="mode" value="fixed"> عدد صفحات ثابت لكل يوم:
+        <input type="number" inputmode="numeric" id="ppd" min="1" value="2" class="mini"></label>
+    </div>
+    <div class="hint" id="modeHint"></div>
+    <div class="days" id="studyDays"></div>
+    <label class="full">أيام العطل (اختياري — تاريخ في كل سطر مثل 2026-11-20)<textarea id="holidays" rows="2"></textarea></label>
+    <button class="btn primary wide" id="makePlan">إنشاء الخطة</button>
+    <div class="msg" id="planMsg"></div>
+  </section>
+
+  <!-- الخطة -->
+  <section class="card" id="planCard" hidden>
+    <div class="plan-head">
+      <h2 id="planTitle"></h2>
+      <div class="tabs" id="tabs">
+        <button data-view="daily">يومي</button><button data-view="weekly">أسبوعي</button>
+        <button data-view="monthly">شهري</button><button data-view="all">الكل</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="summarizeAll">✨ شرح كل الدروس</button>
+      <button class="btn primary" id="openExport">⬇️ تصدير PDF / Word</button>
+    </div>
+    <div id="progress" class="progress" hidden><div></div><span></span></div>
+    <div class="nav" id="nav"></div>
+    <div id="view"></div>
+  </section>
+</main>
+
+<!-- نافذة التصدير -->
+<dialog id="exportDlg">
+  <form method="dialog" class="dlg">
+    <h2>⬇️ تصدير الخطة</h2>
+    <div class="seg" id="expFormat"><button type="button" data-v="pdf" class="active">PDF</button><button type="button" data-v="docx">Word</button></div>
+    <label>ما الذي تريد تصديره؟
+      <select id="expScope"></select></label>
+    <label>الخط<select id="expFont"></select></label>
+    <label class="check"><input type="checkbox" id="expDetails" checked> إرفاق الشرح الكامل لكل درس</label>
+    <div class="msg" id="expMsg"></div>
+    <div class="dlg-actions">
+      <button class="btn" value="cancel">إلغاء</button>
+      <button class="btn primary" type="button" id="doExport">تصدير</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- الإعدادات -->
+<dialog id="settingsDlg">
+  <form method="dialog" class="dlg">
+    <h2>⚙️ الإعدادات</h2>
+    <label>مفتاح Claude API (للشرح الذكي)
+      <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" dir="ltr"></label>
+    <p class="hint">يُحفظ المفتاح على جهازك فقط، ويُرسل إلى Anthropic عند طلب الشرح. بدون مفتاح يعمل التطبيق بتلخيص محلي بسيط.
+      احصل على مفتاح من console.anthropic.com</p>
+    <label>النموذج<input id="model" dir="ltr"></label>
+    <div class="dlg-actions">
+      <button class="btn" id="resetAll" type="button">🗑️ مسح كل البيانات</button>
+      <button class="btn primary" id="saveSettings" value="ok">حفظ</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

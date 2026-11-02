@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">مخطط المعلم</string>
+    <string name="title_activity_main">مخطط المعلم</string>
+    <string name="package_name">com.teacherplanner.app</string>
+    <string name="custom_url_scheme">com.teacherplanner.app</string>
+</resources>

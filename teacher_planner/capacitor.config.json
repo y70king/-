@@ -1,0 +1,6 @@
+{
+  "appId": "com.teacherplanner.app",
+  "appName": "مخطط المعلم",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false }
+}

@@ -1,0 +1,36 @@
+name: Teacher Planner APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "teacher_planner/**"
+      - "!teacher_planner/release/**"
+      - ".github/workflows/teacher_planner_apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: teacher_planner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: teacher_planner/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm test
+      - run: npx vite build && npx cap sync android
+      - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-planner-apk
+          path: teacher_planner/android/app/build/outputs/apk/debug/app-debug.apk

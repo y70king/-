@@ -26,7 +26,8 @@ SIDE = {1: "شراء 🟢", -1: "بيع 🔴", 0: "بدون صفقة ⚪"}
 def fetch():
     for sym in SYMBOLS:
         try:
-            df = yf.download(sym, period="10d", interval=f"{C.BAR_MINUTES}m",
+            df = yf.download(sym, period="10d" if C.BAR_MINUTES <= 5 else "90d",
+                             interval=f"{C.BAR_MINUTES}m",
                              progress=False, auto_adjust=False)
             if df is None or len(df) < features.WARMUP + 50:
                 continue

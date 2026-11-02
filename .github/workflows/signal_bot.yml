@@ -34,7 +34,7 @@ jobs:
         run: python gold_signal_bot.py
 
       - name: Paper trading brain (fake money)
-        if: hashFiles('evolution/models/champion.npz') != ''
+        if: hashFiles('evolution/models/**/champion.npz') != ''
         continue-on-error: true
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -45,7 +45,7 @@ jobs:
         run: |
           git config user.name "gold-signal-bot"
           git config user.email "actions@github.com"
-          for f in state.json evolution/paper_state.json; do
+          for f in state.json evolution/paper_state*.json; do
             [ -f "$f" ] && git add "$f"
           done
           if git diff --cached --quiet; then

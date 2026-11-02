@@ -35,8 +35,8 @@ def main():
     _train, _w, valid, test = load_all(verbose=False)
     lines = [f"🎓 الامتحان النهائي — بطل الجيل {meta['generation']}"]
     lines.append(monkey.report(f"تحقق ({valid.index[0]:%Y-%m-%d} → {valid.index[-1]:%Y-%m-%d})",
-                               monkey.test(genome, valid.X, valid.ret, valid.cost_bps)))
-    res = monkey.test(genome, test.X, test.ret, test.cost_bps, seed=123)
+                               monkey.test(genome, valid)))
+    res = monkey.test(genome, test, seed=123)
     lines.append(monkey.report(f"اختبار لم يُرَ ({test.index[0]:%Y-%m-%d} → {test.index[-1]:%Y-%m-%d})", res))
     lines.append("الخلاصة: " + ("العقل جاهز للتداول التجريبي (فلوس وهمية) 👍" if res["passed"]
                                 else "العقل ما نجح بالامتحان النهائي — لا تعتمد عليه، كمّل تدريب."))

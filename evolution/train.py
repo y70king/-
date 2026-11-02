@@ -49,16 +49,17 @@ def evaluate(pop, train, weights, rng):
         a = rng.integers(0, len(s.ret) - C.WINDOW_BARS)
         X = s.X[a: a + C.WINDOW_BARS].copy()
         ret = s.ret[a: a + C.WINDOW_BARS]
+        px = {k: v[a: a + C.WINDOW_BARS] for k, v in s.px.items()}
         # إخفاء معلومات: نطفي بعض الحواس كاملة لهالفترة + ضجيج على الباقي
         mask = rng.random(X.shape[1]) >= C.FEATURE_DROPOUT
         X = X * mask + rng.normal(0, C.FEATURE_NOISE, X.shape).astype(np.float32)
-        res = brain.simulate(pop, X, ret, s.cost_bps)
+        res = brain.simulate(pop, X, px, s.cost_bps)
         total += window_score(res, ret)
     return total / C.WINDOWS_PER_GEN
 
 
 def validate(genomes, valid):
-    res = brain.simulate(genomes, valid.X, valid.ret, valid.cost_bps, death_level=1e-9)
+    res = brain.simulate(genomes, valid.X, valid.px, valid.cost_bps, death_level=1e-9)
     return window_score(res, valid.ret), res
 
 
@@ -164,11 +165,11 @@ def main():
             top = pop[np.argsort(-fitness)[:10]]
             vscore, _ = validate(top, valid)
             best = int(np.argmax(vscore))
-            mres = monkey.test(top[best], valid.X, valid.ret, valid.cost_bps, seed=gen)
+            mres = monkey.test(top[best], valid, seed=gen)
             others_ok = 0
             if mres["passed"] and vscore[best] > champ_score:
                 for o in valid.others:
-                    r = monkey.test(top[best], o.X, o.ret, o.cost_bps, n_monkeys=300, seed=gen)
+                    r = monkey.test(top[best], o, n_monkeys=300, seed=gen)
                     others_ok += r["beats_monkeys_pct"] >= C.OTHERS_PASS_PERCENTILE and r["brain_return_pct"] > 0
             need = int(np.ceil(len(valid.others) * C.OTHERS_PASS_FRACTION))
             mres["other_markets_passed"] = f"{others_ok}/{len(valid.others)}"

@@ -22,16 +22,18 @@ class Series:
     ret: np.ndarray
     index: pd.DatetimeIndex
     cost_bps: float
+    px: dict = None                              # open/high/low/close/atr
     others: list = field(default_factory=list)  # (للتحقق) نفس الفترة من الأسواق الثانية
 
     def slice(self, a, b):
-        return Series(self.name, self.X[a:b], self.ret[a:b], self.index[a:b], self.cost_bps)
+        return Series(self.name, self.X[a:b], self.ret[a:b], self.index[a:b], self.cost_bps,
+                      {k: v[a:b] for k, v in self.px.items()})
 
 
 def load_all(verbose=True):
     gold_df = data.load(C.TARGET_MARKET)
-    gX, gr, gi = features.build(gold_df)
-    gold = Series(C.TARGET_MARKET, gX, gr, gi, C.MARKETS[C.TARGET_MARKET]["cost_bps"])
+    gX, gr, gi, gpx = features.build(gold_df, return_prices=True)
+    gold = Series(C.TARGET_MARKET, gX, gr, gi, C.MARKETS[C.TARGET_MARKET]["cost_bps"], gpx)
 
     n = len(gr)
     v0 = int(n * (1 - C.VALID_FRACTION - C.TEST_FRACTION))
@@ -46,18 +48,20 @@ def load_all(verbose=True):
         if sym == C.TARGET_MARKET:
             continue
         try:
-            X, r, idx = features.build(data.load(sym))
+            X, r, idx, px = features.build(data.load(sym), return_prices=True)
         except FileNotFoundError:
             if verbose:
                 print(f"[WARN] ما فيه بيانات {sym}، نتخطاه")
             continue
         vmask = (idx >= cutoff) & (idx < test_start)
         if vmask.sum() > 1000:
-            valid.others.append(Series(sym, X[vmask], r[vmask], idx[vmask], cfg["cost_bps"]))
+            valid.others.append(Series(sym, X[vmask], r[vmask], idx[vmask], cfg["cost_bps"],
+                                       {k: v[vmask] for k, v in px.items()}))
         keep = idx < cutoff
         if keep.sum() < C.WINDOW_BARS + 10:
             continue
-        train.append(Series(sym, X[keep], r[keep], idx[keep], cfg["cost_bps"]))
+        train.append(Series(sym, X[keep], r[keep], idx[keep], cfg["cost_bps"],
+                            {k: v[keep] for k, v in px.items()}))
         weights.append(cfg["weight"])
 
     if verbose:

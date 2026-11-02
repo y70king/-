@@ -7,8 +7,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "data")          # بيانات الشموع (كاش، ما ترفع للريبو)
 # فريم العقل بالدقائق: 60 = ساعة (الافتراضي)، 5 = خمس دقائق. يتغير بمتغير البيئة BRAIN_TIMEFRAME
 BAR_MINUTES = int(os.environ.get("BRAIN_TIMEFRAME", "60"))
-MODELS_DIR = os.path.join(ROOT, "models", f"{BAR_MINUTES}m")   # العقول المحفوظة + نقطة الاستكمال (لكل فريم مجلد)
-PAPER_STATE = os.path.join(ROOT, f"paper_state_{BAR_MINUTES}m.json")
+MODELS_DIR = os.path.join(ROOT, "models", f"{BAR_MINUTES}m_pro")   # العقول المحترفة + نقطة الاستكمال (لكل فريم مجلد)
+PAPER_STATE = os.path.join(ROOT, f"paper_state_{BAR_MINUTES}m_pro.json")
 
 # ------------------------------------------------------------------ البيانات
 # الأسواق اللي نتدرب عليها. التدريب على أسواق كثيرة = العقل يتعلم "يفهم" بدل ما "يحفظ".

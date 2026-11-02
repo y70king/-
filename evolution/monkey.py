@@ -10,7 +10,7 @@
 import numpy as np
 
 from . import config as C
-from .brain import simulate
+from .brain import simulate, personality, describe
 
 
 def monkeys(ret: np.ndarray, cost_bps: float, change_prob: float, n: int, rng: np.random.Generator,
@@ -39,14 +39,14 @@ def monkeys(ret: np.ndarray, cost_bps: float, change_prob: float, n: int, rng: n
     return out
 
 
-def test(genome: np.ndarray, X: np.ndarray, ret: np.ndarray, cost_bps: float,
-         n_monkeys: int = C.MONKEYS, seed: int = 0) -> dict:
-    """يشغل العقل والقرود على نفس البيانات ويرجع النتيجة."""
+def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) -> dict:
+    """يشغل العقل والقرود على نفس البيانات (series من dataset) ويرجع النتيجة."""
     rng = np.random.default_rng(seed)
-    r = simulate(genome[None], X, ret, cost_bps, death_level=1e-9, record=True)
+    X, ret, cost_bps = series.X, series.ret, series.cost_bps
+    r = simulate(genome[None], X, series.px, cost_bps, death_level=1e-9, record=True)
     brain_ret = float(r["log_return"][0])
     trades = int(r["trades"][0])
-    pos = r["positions"][:, 0]
+    pos = np.sign(r["positions"][:, 0])
     side_probs = np.array([(pos == -1).mean(), (pos == 0).mean(), (pos == 1).mean()]) + 1e-3
     side_probs /= side_probs.sum()
     change_prob = max(trades / len(ret), 1.0 / len(ret))
@@ -66,6 +66,7 @@ def test(genome: np.ndarray, X: np.ndarray, ret: np.ndarray, cost_bps: float,
         "beats_hold": brain_ret > hold,
         "passed": bool(pct >= C.MONKEY_PASS_PERCENTILE and trades >= 10 and brain_ret > hold),
         "bars": int(len(ret)),
+        "personality": personality(r["events"]),
     }
 
 
@@ -78,5 +79,6 @@ def report(name: str, res: dict) -> str:
         f"  القرود: الوسط {res['monkey_median_pct']:+.2f}%  | أفضل قرد {res['monkey_best_pct']:+.2f}%\n"
         f"  شراء/بيع واحتفاظ طول الفترة: {res['hold_pct']:+.2f}% → "
         f"{'العقل أفضل ✅' if res['beats_hold'] else 'العقل أسوأ ❌'}\n"
-        f"  العقل تفوق على {res['beats_monkeys_pct']:.1f}% من القرود → {verdict}"
+        f"  العقل تفوق على {res['beats_monkeys_pct']:.1f}% من القرود → {verdict}\n"
+        + describe(res.get("personality", {}))
     )

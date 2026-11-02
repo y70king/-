@@ -1,0 +1,17 @@
+{
+  "generation": 10775,
+  "passed": false,
+  "test": {
+    "brain_return_pct": -0.20606197726917203,
+    "brain_max_dd_pct": 0.9160741438210218,
+    "trades": 50,
+    "exposure_pct": 0.4469353007945516,
+    "monkey_median_pct": 0.0,
+    "monkey_best_pct": 4.131430897486998,
+    "beats_monkeys_pct": 12.8,
+    "hold_pct": 15.8816185370998,
+    "beats_hold": false,
+    "passed": false,
+    "bars": 14096
+  }
+}

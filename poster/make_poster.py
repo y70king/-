@@ -2,7 +2,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 import numpy as np
 SRC=sys.argv[1]; OUT=sys.argv[2]
-S=4
+S=int(sys.argv[3]) if len(sys.argv)>3 else 4
 orig=Image.open(SRC).convert('RGB')
 W,H=orig.size
 big=orig.resize((W*S,H*S),Image.LANCZOS)
@@ -35,7 +35,7 @@ for i,(y0,y1) in enumerate(Rr):
     for j,(x0,x1) in enumerate(Rc):
         if i==3 and j==4: continue
         d.rounded_rectangle((x0-10,y0-10,x1+10,y1+10),radius=14,fill=255)
-mask=mask.resize((W*S,H*S),Image.LANCZOS).filter(ImageFilter.GaussianBlur(5))
+mask=mask.resize((W*S,H*S),Image.LANCZOS).filter(ImageFilter.GaussianBlur(5*S/3))
 big.paste(T,(0,0),mask)
 
 # --- photo frames: white photo area exactly 10cm x 15cm ---
@@ -90,5 +90,9 @@ def block(cx,top,rows):
 top=307
 n=block(443,top,[5,5,5,4])+block(1196,top,[5,5,5,4])
 print('frames:',n)
-big.save(OUT,quality=95,dpi=(50.8,50.8))
-big.resize((W,H),Image.LANCZOS).save(OUT.replace('.jpg','_preview.jpg'),quality=92)
+DPI=S*5*2.54  # 5 px per cm in source scale
+if OUT.endswith(".pdf"):
+    big.save(OUT,"PDF",resolution=DPI,quality=95)
+else:
+    big.save(OUT,quality=95,dpi=(DPI,DPI))
+if OUT.endswith(".jpg"): big.resize((W,H),Image.LANCZOS).save(OUT.replace('.jpg','_preview.jpg'),quality=92)

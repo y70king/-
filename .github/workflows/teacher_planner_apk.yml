@@ -28,7 +28,7 @@ jobs:
       - uses: android-actions/setup-android@v3
       - run: npm ci
       - run: npm test
-      - run: npx vite build && npx cap sync android
+      - run: npm run build && npx cap sync android
       - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:

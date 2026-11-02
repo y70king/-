@@ -1,13 +1,15 @@
 {
   "name": "teacher-planner",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-ocr.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-ocr.mjs",
     "build": "vite build",
     "test": "node --test tests/*.test.js",
-    "android": "vite build && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "android": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",
@@ -18,11 +20,13 @@
     "@fontsource/amiri": "^5.3.0",
     "@fontsource/noto-naskh-arabic": "^5.3.0",
     "@fontsource/tajawal": "^5.3.0",
+    "@tesseract.js-data/ara": "^1.0.0",
     "docx": "^9.15.1",
     "html2canvas-pro": "^2.6.0",
     "jspdf": "^4.2.1",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.5.438"
+    "pdfjs-dist": "^6.5.438",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

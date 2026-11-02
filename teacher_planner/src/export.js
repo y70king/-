@@ -1,6 +1,6 @@
 // تصدير الخطة إلى PDF و Word بتنسيق رسمي
 import {
-  AlignmentType, BorderStyle, Document, Footer, Packer, PageNumber, PageOrientation, Paragraph,
+  AlignmentType, BorderStyle, Document, Footer, ImageRun, Packer, PageNumber, PageOrientation, Paragraph,
   ShadingType, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
 } from "docx";
 import { jsPDF } from "jspdf";
@@ -64,8 +64,15 @@ function para(text, font, opts = {}) {
   return new Paragraph({ bidirectional: true, alignment: opts.align || AlignmentType.RIGHT, spacing: { after: opts.after ?? 40, line: 276 },
     children: [run(text, font, opts)] });
 }
+const b64bytes = (dataUrl) => Uint8Array.from(atob(dataUrl.split(",")[1]), (c) => c.charCodeAt(0));
+/** صورة مقصوصة من الكتاب داخل ملف وورد؛ maxW بالبكسل */
+function imagePara(x, maxW, align = AlignmentType.CENTER) {
+  const w0 = x.w * 96 / 72, h0 = x.h * 96 / 72, k = Math.min(1, maxW / w0);
+  return new Paragraph({ alignment: align, spacing: { after: 60 },
+    children: [new ImageRun({ type: "png", data: b64bytes(x.img), transformation: { width: Math.round(w0 * k), height: Math.round(h0 * k) } })] });
+}
 function cellParas(v, font, size) {
-  if (Array.isArray(v)) return v.length ? v.map((x) => para("• " + x, font, { size, after: 0 })) : [para("", font, { size })];
+  if (Array.isArray(v)) return v.length ? v.map((x) => (typeof x === "string" ? para("• " + x, font, { size, after: 0 }) : imagePara(x, 150, AlignmentType.RIGHT))) : [para("", font, { size })];
   return [para(v ?? "", font, { size, after: 0, align: AlignmentType.CENTER })];
 }
 
@@ -103,10 +110,20 @@ export async function toWord(model, font) {
       const sec = (title, val) => {
         if (!val || (Array.isArray(val) && !val.length)) return;
         details.push(para(title, font, { size: 12, bold: true, after: 20 }));
-        if (Array.isArray(val)) val.forEach((x) => details.push(para("• " + x, font, { size: 12, after: 0 })));
+        if (Array.isArray(val)) val.forEach((x) => details.push(typeof x === "string" ? para("• " + x, font, { size: 12, after: 0 }) : imagePara(x, 620, AlignmentType.RIGHT)));
         else String(val).split(/\n+/).forEach((p) => details.push(para(p, font, { size: 12 })));
       };
-      sec("الأهداف:", s.objectives); sec("الشرح:", s.explanation || "لم يُنشأ الشرح بعد."); sec("أهم النقاط:", s.key_points);
+      const figs = (title, arr) => {
+        if (!arr?.length) return;
+        details.push(para(title, font, { size: 12, bold: true, after: 20 }));
+        for (const x of arr) {
+          if (x.label) details.push(para(x.label, font, { size: 12, color: "1F2D50", after: 20 }));
+          details.push(imagePara(x, 620));
+          if (x.note) details.push(para(x.note, font, { size: 11 }));
+        }
+      };
+      sec("الأهداف:", s.objectives); sec("الشرح:", s.explanation || "لم يُنشأ الشرح بعد.");
+      figs("القوانين والعلاقات (من الكتاب):", s.laws); figs("أمثلة محلولة (من الكتاب):", s.examples); sec("أهم النقاط:", s.key_points);
       sec("المصطلحات:", s.keywords?.length ? [s.keywords.join("، ")] : null); sec("الأنشطة:", s.activities); sec("أسئلة التقويم:", s.questions);
       details.push(para("", font));
     }
@@ -134,7 +151,13 @@ export async function toWord(model, font) {
 const PAGE = { w: 1123, h: 794, pad: 40 }; // A4 أفقي بدقة 96
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const cellHtml = (v) => (Array.isArray(v) ? v.map((x) => `<div class="fp-li">• ${esc(x)}</div>`).join("") : esc(v));
+// أبعاد صريحة حتى يُحسب ارتفاع الصورة قبل تحميلها (مهم لتقسيم الصفحات)
+const imgHtml = (x, maxH) => {
+  let w = x.w * 1.33, h = x.h * 1.33;
+  if (maxH && h > maxH) { w *= maxH / h; h = maxH; }
+  return `<img src="${x.img}" width="${Math.round(w)}" height="${Math.round(h)}" style="max-width:100%;height:auto">`;
+};
+const cellHtml = (v) => (Array.isArray(v) ? v.map((x) => (typeof x === "string" ? `<div class="fp-li">• ${esc(x)}</div>` : `<div class="fp-li">${imgHtml(x, 70)}</div>`)).join("") : esc(v));
 
 function pdfCss(fontCss) {
   return `
@@ -153,6 +176,8 @@ function pdfCss(fontCss) {
   .fp-h2{text-align:center;font-size:19px;font-weight:700;color:#1f2d50;margin:6px 0 10px}
   .fp-lesson{font-size:16px;font-weight:700;color:#1f2d50;border-bottom:1px solid #c9d2e3;margin:10px 0 4px}
   .fp-sec{font-weight:700;margin-top:4px}.fp-p{margin:0 0 4px;text-align:justify}
+  .fp-fig{text-align:center;margin:4px 0 8px}.fp-fig img{border:1px solid #bbb;padding:3px}.fp-cap{font-weight:700;color:#1f2d50;text-align:right}
+  .fp-li img{display:inline-block;vertical-align:middle}
   .fp-sigs{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;margin-top:28px;font-weight:700}
   .fp-sigs span{display:block;font-weight:400;margin-top:30px}
   .fp-num{position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:12px;color:#555}`;
@@ -208,10 +233,16 @@ export async function toPdf(model, fontKey, onProgress) {
       const sec = (title, val) => {
         if (!val || (Array.isArray(val) && !val.length)) return;
         place(div("fp-sec", esc(title)));
-        if (Array.isArray(val)) val.forEach((x) => place(div("fp-li", `• ${esc(x)}`)));
+        if (Array.isArray(val)) val.forEach((x) => place(div("fp-li", typeof x === "string" ? `• ${esc(x)}` : imgHtml(x, 420))));
         else String(val).split(/\n+/).forEach((p) => place(div("fp-p", esc(p))));
       };
-      sec("الأهداف:", s.objectives); sec("الشرح:", s.explanation || "لم يُنشأ الشرح بعد."); sec("أهم النقاط:", s.key_points);
+      const figs = (title, arr) => {
+        if (!arr?.length) return;
+        // العنوان يبقى مع أول صورة في نفس الصفحة
+        arr.forEach((x, k) => place(div("fp-fig", `${k === 0 ? `<div class="fp-sec" style="text-align:right">${esc(title)}</div>` : ""}${x.label ? `<div class="fp-cap">${esc(x.label)}</div>` : ""}${imgHtml(x, 420)}${x.note ? `<div>${esc(x.note)}</div>` : ""}`)));
+      };
+      sec("الأهداف:", s.objectives); sec("الشرح:", s.explanation || "لم يُنشأ الشرح بعد.");
+      figs("القوانين والعلاقات (من الكتاب):", s.laws); figs("أمثلة محلولة (من الكتاب):", s.examples); sec("أهم النقاط:", s.key_points);
       sec("المصطلحات:", s.keywords?.length ? [s.keywords.join("، ")] : null); sec("الأنشطة:", s.activities); sec("أسئلة التقويم:", s.questions);
     }
   }
@@ -224,6 +255,7 @@ export async function toPdf(model, fontKey, onProgress) {
   for (let i = 0; i < pages.length; i++) {
     const num = document.createElement("div"); num.className = "fp-num"; num.textContent = `صفحة ${i + 1} من ${pages.length}`;
     pages[i].appendChild(num);
+    await Promise.all([...pages[i].querySelectorAll("img")].map((im) => im.decode().catch(() => {})));
     const canvas = await html2canvas(pages[i], { scale: 2, backgroundColor: "#ffffff", logging: false });
     if (i) pdf.addPage();
     pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, W, H);

@@ -16,18 +16,20 @@ function idb() {
     r.onerror = () => rej(r.error);
   });
 }
-export async function saveBookBytes(bytes) {
+export async function idbSet(key, value) {
   try {
     const db = await idb();
-    await new Promise((res, rej) => { const tx = db.transaction("files", "readwrite"); tx.objectStore("files").put(bytes, "book"); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
-  } catch {}
+    await new Promise((res, rej) => { const tx = db.transaction("files", "readwrite"); tx.objectStore("files").put(value, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  } catch (e) { console.warn("idbSet", e); }
 }
-export async function loadBookBytes() {
+export async function idbGet(key) {
   try {
     const db = await idb();
-    return await new Promise((res) => { const r = db.transaction("files").objectStore("files").get("book"); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); });
+    return await new Promise((res) => { const r = db.transaction("files").objectStore("files").get(key); r.onsuccess = () => res(r.result ?? null); r.onerror = () => res(null); });
   } catch { return null; }
 }
+export const saveBookBytes = (bytes) => idbSet("book", bytes);
+export const loadBookBytes = () => idbGet("book");
 
 const blobToBase64 = (blob) => new Promise((res, rej) => {
   const fr = new FileReader();

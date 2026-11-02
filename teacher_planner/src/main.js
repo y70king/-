@@ -8,16 +8,17 @@ import "./style.css";
 
 import { buildPlan, DAY_NAMES, PLAN_TYPES, periodEnd, studyDates, toISO, fromISO } from "./schedule.js";
 import { openBook, rangeText, extractPagesBase64 } from "./pdfbook.js";
-import { localSummary } from "./summary.js";
+import { analyzeLesson } from "./analyzer.js";
 import { explainWithClaude, friendlyError, DEFAULT_MODEL } from "./ai.js";
 import { buildDocModel, FONTS, monthLabel, toPdf, toWord } from "./export.js";
-import { store, saveBookBytes, loadBookBytes, saveFile } from "./storage.js";
+import { store, saveBookBytes, loadBookBytes, saveFile, idbGet, idbSet } from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("ar-IQ", { weekday: undefined, day: "numeric", month: "long", year: "numeric" });
 const fmtHijri = (iso) => { try { return new Date(iso + "T00:00:00").toLocaleDateString("ar-SA-u-ca-islamic", { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
 const pages = (l) => (l.startPage === l.endPage ? `ص ${l.startPage}` : `ص ${l.startPage} – ${l.endPage}`);
+const img = (x) => (x?.img ? `<img src="${x.img}" alt="" width="${Math.round(x.w * 1.4)}" height="${Math.round(x.h * 1.4)}">` : "");
 const list = (a) => (a && a.length ? `<ul>${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
 const groupBy = (arr, key) => { const m = new Map(); for (const x of arr) { if (!m.has(x[key])) m.set(x[key], []); m.get(x[key]).push(x); } return [...m.entries()]; };
 
@@ -25,10 +26,10 @@ const DEFAULT_LETTERHEAD = "جمهورية العراق\nوزارة التربي
 
 const state = {
   teacher: store.get("teacher", { letterhead: DEFAULT_LETTERHEAD }),
-  settings: store.get("settings", { apiKey: "", model: DEFAULT_MODEL }),
+  settings: { theme: "auto", apiKey: "", model: DEFAULT_MODEL, ...store.get("settings", {}) },
   book: store.get("book", null), // {name, pages}
   plan: store.get("plan", null), // {planType, lessons, opts}
-  summaries: store.get("summaries", {}),
+  summaries: {}, // تُحمَّل من IndexedDB (فيها صور)
   view: "weekly",
   cursor: { daily: 0, weekly: 0, monthly: 0 },
   bytes: null, doc: null,
@@ -141,7 +142,7 @@ $("makePlan").onclick = () => {
     state.summaries = {};
     for (const l of lessons) { const k = `${l.startPage}-${l.endPage}`; if (old[k]) state.summaries[l.index] = old[k]; }
     state.plan = { planType: f.planType, lessons, fromPage: f.fromPage, toPage: f.toPage };
-    store.set("plan", state.plan); store.set("summaries", state.summaries);
+    store.set("plan", state.plan); saveSummaries();
     state.cursor = { daily: 0, weekly: 0, monthly: 0 };
     state.view = { daily: "daily", weekly: "weekly", monthly: "monthly", yearly: "all" }[f.planType];
     const last = lessons[lessons.length - 1];
@@ -155,29 +156,33 @@ $("makePlan").onclick = () => {
 };
 
 // ================================================================ الشرح
-async function summarize(lesson) {
+function saveSummaries() { idbSet("summaries", state.summaries); }
+
+/** شرح الدرس: التحليل التلقائي بدون إنترنت دائماً، ثم Claude (إن وُجد مفتاح) لكتابة شرح أوسع */
+async function summarize(lesson, onStatus) {
   const doc = await ensureDoc();
+  const offline = await analyzeLesson(doc, lesson.startPage, lesson.endPage, onStatus);
+  let s = offline;
   const { apiKey, model } = state.settings;
-  let s;
   if (apiKey) {
+    onStatus?.("كتابة الشرح بالذكاء الاصطناعي...");
     try {
       const pdfBase64 = await extractPagesBase64(state.bytes, lesson.startPage, lesson.endPage);
-      s = await explainWithClaude({ apiKey, model, pdfBase64, startPage: lesson.startPage, endPage: lesson.endPage,
+      const ai = await explainWithClaude({ apiKey, model, pdfBase64, startPage: lesson.startPage, endPage: lesson.endPage,
         subject: state.teacher.subject, grade: state.teacher.grade });
+      // صور القوانين والأمثلة تبقى من الكتاب نفسه
+      s = { ...ai, laws: offline.laws, examples: offline.examples, source: "ai" };
     } catch (e) {
-      s = localSummary(await rangeText(doc, lesson.startPage, lesson.endPage));
-      s.warning = `تعذّر الشرح الذكي (${friendlyError(e)}) — تم استخدام التلخيص المحلي.`;
+      s = { ...offline, warning: `تعذّر الشرح بالذكاء الاصطناعي (${friendlyError(e)}) — تم استخدام التحليل التلقائي.` };
     }
-  } else {
-    s = localSummary(await rangeText(doc, lesson.startPage, lesson.endPage));
   }
   state.summaries[lesson.index] = s;
-  store.set("summaries", state.summaries);
+  saveSummaries();
   return s;
 }
 window.summarizeOne = async (idx, btn) => {
-  btn.disabled = true; btn.textContent = "⏳ جاري الشرح...";
-  try { await summarize(state.plan.lessons.find((l) => l.index === idx)); render(); }
+  btn.disabled = true; btn.textContent = "⏳ جاري التحليل...";
+  try { await summarize(state.plan.lessons.find((l) => l.index === idx), (m) => (btn.textContent = "⏳ " + m)); render(); }
   catch (e) { btn.disabled = false; btn.textContent = "❌ " + (e.message || e); }
 };
 window.redo = (idx, btn) => { delete state.summaries[idx]; window.summarizeOne(idx, btn); };
@@ -185,13 +190,13 @@ window.redo = (idx, btn) => { delete state.summaries[idx]; window.summarizeOne(i
 $("summarizeAll").onclick = async () => {
   const todo = state.plan.lessons.filter((l) => !state.summaries[l.index]);
   if (!todo.length) return alert("كل الدروس مشروحة بالفعل");
-  if (!state.settings.apiKey && !confirm("لم تُضف مفتاح Claude، سيتم استخدام التلخيص المحلي البسيط. متابعة؟")) return;
   const btn = $("summarizeAll"); btn.disabled = true;
   const bar = $("progress"); bar.hidden = false;
   let done = 0, failed = 0;
   for (const l of todo) {
     bar.querySelector("span").textContent = `جاري شرح الدرس ${l.index} (${done}/${todo.length})`;
-    try { await summarize(l); } catch { failed++; }
+    try { await summarize(l, (m) => (bar.querySelector("span").textContent = `الدرس ${l.index} (${done}/${todo.length}): ${m}`)); }
+    catch (e) { console.error(e); failed++; }
     done++;
     bar.querySelector("div").style.width = `${(100 * done) / todo.length}%`;
     if (done % 3 === 0) render();
@@ -218,11 +223,13 @@ function lessonCard(l) {
     : `${s.warning ? `<p class="warn">${esc(s.warning)}</p>` : ""}
       ${s.objectives?.length ? `<h4>🎯 الأهداف</h4>${list(s.objectives)}` : ""}
       <h4>📖 الشرح</h4><div class="explain">${esc(s.explanation)}</div>
+      ${s.laws?.length ? `<h4>📐 القوانين والعلاقات (من الكتاب)</h4>${s.laws.map((x) => `<figure class="crop"><figcaption>${esc(x.label)}</figcaption>${img(x)}${x.note ? `<small>${esc(x.note)}</small>` : ""}</figure>`).join("")}` : ""}
+      ${s.examples?.length ? `<h4>✏️ أمثلة محلولة (من الكتاب)</h4>${s.examples.map((x) => `<figure class="crop"><figcaption>${esc(x.label)}</figcaption>${img(x)}</figure>`).join("")}` : ""}
       ${s.key_points?.length ? `<h4>📌 أهم النقاط</h4>${list(s.key_points)}` : ""}
       ${s.keywords?.length ? `<h4>🔑 المصطلحات</h4><div>${s.keywords.map((k) => `<span class="tag">${esc(k)}</span>`).join("")}</div>` : ""}
       ${s.activities?.length ? `<h4>🧩 أنشطة مقترحة</h4>${list(s.activities)}` : ""}
-      ${s.questions?.length ? `<h4>❓ أسئلة التقويم</h4>${list(s.questions)}` : ""}
-      <p class="src">${s.source === "ai" ? "شرح بالذكاء الاصطناعي" : "تلخيص تلقائي محلي"}
+      ${s.questions?.length ? `<h4>❓ أسئلة التقويم</h4><ul>${s.questions.map((q) => `<li>${typeof q === "string" ? esc(q) : img(q)}</li>`).join("")}</ul>` : ""}
+      <p class="src">${{ ai: "شرح بالذكاء الاصطناعي + صور من الكتاب", "offline-ocr": "تحليل تلقائي بدون إنترنت (مع قراءة الصفحات المصوّرة)" }[s.source] || "تحليل تلقائي بدون إنترنت"}
       <button class="btn small" onclick="redo(${l.index}, this)">🔄 إعادة</button></p>`;
   return `<article class="lesson"><h3>الدرس ${l.index}${s?.title ? ": " + esc(s.title) : ""}</h3>
     <div class="meta">📅 ${l.dayName} ${fmtDate(l.date)} <small>(${fmtHijri(l.date)})</small> — 📄 ${pages(l)}</div>${body}</article>`;
@@ -281,6 +288,12 @@ function render() {
   }
 }
 
+// تكبير صور الكتاب عند الضغط عليها
+$("view").addEventListener("click", (e) => {
+  if (e.target.tagName === "IMG") { $("zoomImg").src = e.target.src; $("zoomDlg").showModal(); }
+});
+$("zoomDlg").addEventListener("click", (e) => { if (e.target.id !== "zoomImg") $("zoomDlg").close(); });
+
 // ================================================================ التصدير
 $("expFont").innerHTML = Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join("");
 $("expFont").value = store.get("expFont", "Simplified Arabic");
@@ -313,12 +326,37 @@ $("doExport").onclick = async () => {
 };
 
 // ================================================================ الإعدادات
-$("openSettings").onclick = () => { $("apiKey").value = state.settings.apiKey || ""; $("model").value = state.settings.model || DEFAULT_MODEL; $("settingsDlg").showModal(); };
-$("saveSettings").onclick = () => { state.settings = { apiKey: $("apiKey").value.trim(), model: $("model").value.trim() || DEFAULT_MODEL }; store.set("settings", state.settings); };
+function applyTheme() {
+  const t = state.settings.theme || "auto";
+  if (t === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+  const dark = t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#0f1626" : "#1f2d50";
+  $("themeBtn").textContent = dark ? "☀️" : "🌙";
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
+$("themeBtn").onclick = () => {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+  state.settings.theme = dark ? "light" : "dark"; store.set("settings", state.settings); applyTheme();
+};
+$("openSettings").onclick = () => {
+  $("apiKey").value = state.settings.apiKey || ""; $("model").value = state.settings.model || DEFAULT_MODEL;
+  $("theme").value = state.settings.theme || "auto"; $("settingsDlg").showModal();
+};
+$("saveSettings").onclick = () => {
+  state.settings = { theme: $("theme").value, apiKey: $("apiKey").value.trim(), model: $("model").value.trim() || DEFAULT_MODEL };
+  store.set("settings", state.settings); applyTheme();
+};
 $("resetAll").onclick = async () => {
   if (!confirm("سيتم حذف بيانات المدرس والكتاب والخطة والشروح. متابعة؟")) return;
   localStorage.clear(); indexedDB.deleteDatabase("teacher-planner"); location.reload();
 };
 
 // ================================================================ البدء
-loadTeacher(); showBook(); updateHint(); render();
+applyTheme(); loadTeacher(); showBook(); updateHint();
+(async () => {
+  state.summaries = (await idbGet("summaries")) || store.get("summaries", {}) || {};
+  try { localStorage.removeItem("tp_summaries"); } catch {}
+  render();
+})();

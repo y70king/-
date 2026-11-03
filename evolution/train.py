@@ -94,11 +94,12 @@ def next_generation(pop, fitness, rng):
 
 # ------------------------------------------------------------------ الحفظ والاستكمال
 
-def save_checkpoint(pop, gen, champ_score, rng):
+def save_checkpoint(pop, gen, champ_score, rng, era=None):
     os.makedirs(C.MODELS_DIR, exist_ok=True)
     tmp = CHECKPOINT + ".tmp.npz"
     np.savez_compressed(tmp, pop=pop, gen=gen, champ_score=champ_score,
-                        rng=np.array([json.dumps(rng.bit_generator.state)]))
+                        rng=np.array([json.dumps(rng.bit_generator.state)]),
+                        era=np.array([json.dumps(era or {})]))
     os.replace(tmp, CHECKPOINT)
 
 
@@ -106,7 +107,12 @@ def load_checkpoint():
     d = np.load(CHECKPOINT)
     rng = np.random.default_rng()
     rng.bit_generator.state = json.loads(str(d["rng"][0]))
-    return d["pop"], int(d["gen"]), float(d["champ_score"]), rng
+    era = json.loads(str(d["era"][0])) if "era" in d.files else {}
+    return d["pop"], int(d["gen"]), float(d["champ_score"]), rng, era
+
+
+def new_era():
+    return {"n": 1, "best": -1e9, "ema": None, "since_best": 0, "started_gen": 0}
 
 
 def log_history(row):
@@ -139,12 +145,15 @@ def main():
     if args.fresh and os.path.exists(HISTORY):
         os.remove(HISTORY)
     if os.path.exists(CHECKPOINT) and not args.fresh:
-        pop, gen, champ_score, rng = load_checkpoint()
+        pop, gen, champ_score, rng, era = load_checkpoint()
+        if not era or (pop.shape[1] != brain.GENOME_SIZE):
+            era = new_era()
         print(f"♻️  استكمال من الجيل {gen} (أفضل بطل حتى الآن: {champ_score:.3f})")
     else:
         rng = np.random.default_rng(args.seed)
         pop = brain.random_genomes(C.POPULATION, rng)
         gen, champ_score = 0, -np.inf
+        era = new_era()
         print(f"🌱 جيل جديد: {C.POPULATION} عقل، كل عقل فيه {brain.GENOME_SIZE} وزن")
 
     start = time.time()
@@ -159,6 +168,7 @@ def main():
             break
 
         fitness = evaluate(pop, train, weights, rng)
+        fitness -= C.COMPLEXITY_PENALTY * np.mean(pop.astype(np.float64) ** 2, axis=1)
         gen += 1
 
         if gen % C.VALIDATE_EVERY == 0:
@@ -190,16 +200,29 @@ def main():
                   f"{mres['trades']} صفقة" +
                   (f" | أسواق ثانية {mres['other_markets_passed']}" if mres["passed"] else "") +
                   ("  🏆 بطل جديد!" if is_champ else ""))
-            save_checkpoint(pop, gen, champ_score, rng)
+            # هل العصر الحالي للحين يتحسن على بيانات ما شافها؟
+            v = float(vscore[best])
+            era["ema"] = v if era["ema"] is None else 0.8 * era["ema"] + 0.2 * v
+            if era["ema"] > era["best"]:
+                era["best"], era["since_best"] = era["ema"], 0
+            else:
+                era["since_best"] += 1
+            if era["since_best"] >= C.ERA_PATIENCE:
+                print(f"🔁 العصر {era['n']} وقف يتحسن (بدأ يحفظ) — عصر جديد بعقول جديدة")
+                pop = brain.random_genomes(C.POPULATION, rng)
+                era = {"n": era["n"] + 1, "best": -1e9, "ema": None, "since_best": 0, "started_gen": gen}
+                save_checkpoint(pop, gen, champ_score, rng, era)
+                continue
+            save_checkpoint(pop, gen, champ_score, rng, era)
         elif gen % 5 == 0:
             print(f"   جيل {gen:5d} | أفضل {fitness.max():+.3f} | متوسط {fitness.mean():+.3f} | "
                   f"{(time.time() - start) / max(gen - start_gen, 1):.1f} ثانية/جيل")
 
         pop = next_generation(pop, fitness, rng)
 
-    save_checkpoint(pop, gen, champ_score, rng)
+    save_checkpoint(pop, gen, champ_score, rng, era)
     elapsed = (time.time() - start) / 60
-    summary = [f"🧠 انتهى التدريب: الأجيال {start_gen} → {gen} ({elapsed:.0f} دقيقة)"]
+    summary = [f"🧠 انتهى التدريب: الأجيال {start_gen} → {gen} ({elapsed:.0f} دقيقة، وصل العصر {era['n']})"]
     if new_champions:
         g, m = new_champions[-1]
         summary.append(f"🏆 بطل جديد من الجيل {g}")

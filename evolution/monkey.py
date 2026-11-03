@@ -63,6 +63,7 @@ def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) 
         "monkey_best_pct": float(np.expm1(m.max()) * 100),
         "beats_monkeys_pct": pct,
         "hold_pct": float(np.expm1(hold) * 100),
+        "market_pct": float(np.expm1(np.sum(ret)) * 100),   # حركة السوق نفسه (موجب = طلع، سالب = نزل)
         "beats_hold": brain_ret > hold,
         "passed": bool(pct >= C.MONKEY_PASS_PERCENTILE and trades >= 10 and brain_ret > hold),
         "bars": int(len(ret)),
@@ -77,7 +78,9 @@ def report(name: str, res: dict) -> str:
         f"  العقل: {res['brain_return_pct']:+.2f}%  (أقصى تراجع {res['brain_max_dd_pct']:.1f}%، "
         f"{res['trades']} صفقة، بالسوق {res['exposure_pct']:.0f}% من الوقت)\n"
         f"  القرود: الوسط {res['monkey_median_pct']:+.2f}%  | أفضل قرد {res['monkey_best_pct']:+.2f}%\n"
-        f"  شراء/بيع واحتفاظ طول الفترة: {res['hold_pct']:+.2f}% → "
+        f"  السوق نفسه بهالفترة: {res.get('market_pct', 0):+.2f}% "
+        f"({'طلع' if res.get('market_pct', 0) > 0 else 'نزل'})\n"
+        f"  أحسن احتفاظ (شراء أو بيع طول الفترة): {res['hold_pct']:+.2f}% → "
         f"{'العقل أفضل ✅' if res['beats_hold'] else 'العقل أسوأ ❌'}\n"
         f"  العقل تفوق على {res['beats_monkeys_pct']:.1f}% من القرود → {verdict}\n"
         + describe(res.get("personality", {}))

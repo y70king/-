@@ -30,6 +30,23 @@ class Series:
                       {k: v[a:b] for k, v in self.px.items()})
 
 
+def mirror(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    نسخة "مقلوبة" من السوق: كل صعود يصير هبوط والعكس (السعر → ثابت ÷ السعر).
+    بيانات التدريب أغلبها صعود قوي للذهب، فبدون هذا العقل يتعلم "اشتري دايماً"
+    ويخسر أول ما ينزل السوق. مع النسخة المقلوبة يشوف هبوط بقدر الصعود.
+    """
+    k = float(df["close"].iloc[0]) ** 2
+    return pd.DataFrame({"open": k / df["open"], "high": k / df["low"], "low": k / df["high"],
+                         "close": k / df["close"], "volume": df["volume"]}, index=df.index)
+
+
+def _train_series(name, df, cost, end=None):
+    X, r, idx, px = features.build(df, return_prices=True)
+    keep = np.ones(len(idx), dtype=bool) if end is None else idx < end
+    return Series(name, X[keep], r[keep], idx[keep], cost, {k: v[keep] for k, v in px.items()})
+
+
 def load_all(verbose=True):
     gold_df = data.load(C.TARGET_MARKET)
     gX, gr, gi, gpx = features.build(gold_df, return_prices=True)
@@ -42,8 +59,12 @@ def load_all(verbose=True):
     cutoff = gold.index[v0]
     test_start = gold.index[t0]
 
+    gw = C.MARKETS[C.TARGET_MARKET]["weight"]
     train = [train_gold]
-    weights = [C.MARKETS[C.TARGET_MARKET]["weight"]]
+    weights = [gw]
+    if C.MIRROR_TRAINING:
+        train.append(_train_series(C.TARGET_MARKET + "~", mirror(gold_df), gold.cost_bps, cutoff))
+        weights.append(gw)
     for sym, cfg in C.MARKETS.items():
         if sym == C.TARGET_MARKET:
             continue
@@ -63,6 +84,9 @@ def load_all(verbose=True):
         train.append(Series(sym, X[keep], r[keep], idx[keep], cfg["cost_bps"],
                             {k: v[keep] for k, v in px.items()}))
         weights.append(cfg["weight"])
+        if C.MIRROR_TRAINING:
+            train.append(_train_series(sym + "~", mirror(data.load(sym)), cfg["cost_bps"], cutoff))
+            weights.append(cfg["weight"])
 
     if verbose:
         for s in train:

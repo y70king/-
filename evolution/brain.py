@@ -233,7 +233,9 @@ def personality(events, bar_minutes=C.BAR_MINUTES) -> dict:
         "win_rate": float((pnl > 0).mean() * 100),
         "avg_win_pct": float(wins.mean()) if len(wins) else 0.0,
         "avg_loss_pct": float(losses.mean()) if len(losses) else 0.0,
-        "long_pct": float(np.mean([e["dir"] > 0 for e in opens]) * 100),
+        # نسبة الشراء حسب الوقت داخل السوق (مو عدد الصفقات)
+        "long_pct": float(sum(e["bars"] for e in closes if e["dir"] > 0)
+                          / max(sum(e["bars"] for e in closes), 1) * 100),
         "avg_size_pct": float(np.mean([e["size"] for e in opens]) * 100),
         "avg_sl_atr": float(np.mean([e["sl_atr"] for e in opens])),
         "avg_tp_atr": float(np.mean([e["tp_atr"] for e in opens])),
@@ -250,7 +252,7 @@ def describe(p: dict) -> str:
     ex = p["exits"]
     return (
         f"  🧬 أسلوب العقل (هو اللي اخترعه):\n"
-        f"     {style}، {side} ({p['long_pct']:.0f}% شراء)\n"
+        f"     {style}، {side} ({p['long_pct']:.0f}% من وقته بالسوق شراء)\n"
         f"     يحط الوقف ~{p['avg_sl_atr']:.1f}×ATR والهدف ~{p['avg_tp_atr']:.1f}×ATR "
         f"(عائد/مخاطرة ~{p['avg_tp_atr'] / max(p['avg_sl_atr'], 1e-9):.1f})\n"
         f"     حجم الصفقة ~{p['avg_size_pct']:.0f}% من الحساب، متوسط مدة الصفقة {p['avg_hold_hours']:.1f} ساعة\n"

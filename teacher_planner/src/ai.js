@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const DEFAULT_MODEL = "claude-opus-5-5";
 
-const LESSON_SCHEMA = {
+export const LESSON_SCHEMA = {
   type: "object",
   properties: {
     title: { type: "string" },
@@ -18,7 +18,7 @@ const LESSON_SCHEMA = {
   additionalProperties: false,
 };
 
-const SYSTEM = `أنت مساعد تربوي خبير يساعد المعلمين في إعداد خطط الدروس.
+export const SYSTEM_PROMPT = `أنت مساعد تربوي خبير يساعد المعلمين في إعداد خطط الدروس.
 ستُعطى صفحات من كتاب مدرسي بصيغة PDF تمثل درس يوم واحد. اقرأ الصفحات بعناية واكتب باللغة العربية الفصحى المبسطة المناسبة لمستوى الصف المذكور:
 - title: عنوان الدرس أو الموضوع كما يظهر في الصفحات.
 - explanation: شرح واضح ومتسلسل لمحتوى الصفحات كأن المعلم يشرحه للطلاب (فقرتان إلى أربع فقرات)، مع أمثلة من الكتاب عند وجودها.
@@ -39,7 +39,7 @@ export async function explainWithClaude({ apiKey, model, pdfBase64, startPage, e
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "medium", format: { type: "json_schema", schema: LESSON_SCHEMA } },
-    system: SYSTEM,
+    system: SYSTEM_PROMPT,
     messages: [{
       role: "user",
       content: [

@@ -10,6 +10,7 @@ import { buildPlan, DAY_NAMES, PLAN_TYPES, periodEnd, studyDates, toISO, fromISO
 import { openBook, rangeText, extractPagesBase64 } from "./pdfbook.js";
 import { analyzeLesson } from "./analyzer.js";
 import { explainWithClaude, friendlyError, DEFAULT_MODEL } from "./ai.js";
+import { explainWithGemini, pickGeminiModel } from "./gemini.js";
 import { buildDocModel, FONTS, monthLabel, toPdf, toWord } from "./export.js";
 import { store, saveBookBytes, loadBookBytes, saveFile, idbGet, idbSet } from "./storage.js";
 
@@ -26,7 +27,7 @@ const DEFAULT_LETTERHEAD = "جمهورية العراق\nوزارة التربي
 
 const state = {
   teacher: store.get("teacher", { letterhead: DEFAULT_LETTERHEAD }),
-  settings: { theme: "auto", apiKey: "", model: DEFAULT_MODEL, ...store.get("settings", {}) },
+  settings: { theme: "auto", provider: "", apiKey: "", model: DEFAULT_MODEL, geminiKey: "", geminiModel: "", ...store.get("settings", {}) },
   book: store.get("book", null), // {name, pages}
   plan: store.get("plan", null), // {planType, lessons, opts}
   summaries: {}, // تُحمَّل من IndexedDB (فيها صور)
@@ -163,15 +164,18 @@ async function summarize(lesson, onStatus) {
   const doc = await ensureDoc();
   const offline = await analyzeLesson(doc, lesson.startPage, lesson.endPage, onStatus);
   let s = offline;
-  const { apiKey, model } = state.settings;
-  if (apiKey) {
+  const st = state.settings;
+  const provider = st.provider || (st.apiKey ? "claude" : "");
+  if (provider === "claude" && st.apiKey || provider === "gemini" && st.geminiKey) {
     onStatus?.("كتابة الشرح بالذكاء الاصطناعي...");
     try {
       const pdfBase64 = await extractPagesBase64(state.bytes, lesson.startPage, lesson.endPage);
-      const ai = await explainWithClaude({ apiKey, model, pdfBase64, startPage: lesson.startPage, endPage: lesson.endPage,
-        subject: state.teacher.subject, grade: state.teacher.grade });
+      const args = { pdfBase64, startPage: lesson.startPage, endPage: lesson.endPage, subject: state.teacher.subject, grade: state.teacher.grade };
+      const ai = provider === "gemini"
+        ? await explainWithGemini({ apiKey: st.geminiKey, model: st.geminiModel, ...args })
+        : await explainWithClaude({ apiKey: st.apiKey, model: st.model, ...args });
       // صور القوانين والأمثلة تبقى من الكتاب نفسه
-      s = { ...ai, laws: offline.laws, examples: offline.examples, source: "ai" };
+      s = { ...ai, laws: offline.laws, examples: offline.examples, source: provider === "gemini" ? "gemini" : "ai" };
     } catch (e) {
       s = { ...offline, warning: `تعذّر الشرح بالذكاء الاصطناعي (${friendlyError(e)}) — تم استخدام التحليل التلقائي.` };
     }
@@ -229,7 +233,7 @@ function lessonCard(l) {
       ${s.keywords?.length ? `<h4>🔑 المصطلحات</h4><div>${s.keywords.map((k) => `<span class="tag">${esc(k)}</span>`).join("")}</div>` : ""}
       ${s.activities?.length ? `<h4>🧩 أنشطة مقترحة</h4>${list(s.activities)}` : ""}
       ${s.questions?.length ? `<h4>❓ أسئلة التقويم</h4><ul>${s.questions.map((q) => `<li>${typeof q === "string" ? esc(q) : img(q)}</li>`).join("")}</ul>` : ""}
-      <p class="src">${{ ai: "شرح بالذكاء الاصطناعي + صور من الكتاب", "offline-ocr": "تحليل تلقائي بدون إنترنت (مع قراءة الصفحات المصوّرة)" }[s.source] || "تحليل تلقائي بدون إنترنت"}
+      <p class="src">${{ ai: "شرح بكلود + صور من الكتاب", gemini: "شرح بجيميناي + صور من الكتاب", "offline-ocr": "تحليل تلقائي بدون إنترنت (مع قراءة الصفحات المصوّرة)" }[s.source] || "تحليل تلقائي بدون إنترنت"}
       <button class="btn small" onclick="redo(${l.index}, this)">🔄 إعادة</button></p>`;
   return `<article class="lesson"><h3>الدرس ${l.index}${s?.title ? ": " + esc(s.title) : ""}</h3>
     <div class="meta">📅 ${l.dayName} ${fmtDate(l.date)} <small>(${fmtHijri(l.date)})</small> — 📄 ${pages(l)}</div>${body}</article>`;
@@ -340,13 +344,32 @@ $("themeBtn").onclick = () => {
     (!document.documentElement.hasAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
   state.settings.theme = dark ? "light" : "dark"; store.set("settings", state.settings); applyTheme();
 };
+function showProvider() {
+  const v = $("provider").value;
+  $("claudeBox").hidden = v !== "claude"; $("geminiBox").hidden = v !== "gemini";
+}
+$("provider").onchange = showProvider;
 $("openSettings").onclick = () => {
-  $("apiKey").value = state.settings.apiKey || ""; $("model").value = state.settings.model || DEFAULT_MODEL;
-  $("theme").value = state.settings.theme || "auto"; $("settingsDlg").showModal();
+  const st = state.settings;
+  $("provider").value = st.provider || (st.apiKey ? "claude" : "");
+  $("apiKey").value = st.apiKey || ""; $("model").value = st.model || DEFAULT_MODEL;
+  $("geminiKey").value = st.geminiKey || ""; $("geminiMsg").textContent = st.geminiModel ? `النموذج: ${st.geminiModel}` : "";
+  $("theme").value = st.theme || "auto"; showProvider(); $("settingsDlg").showModal();
 };
-$("saveSettings").onclick = () => {
-  state.settings = { theme: $("theme").value, apiKey: $("apiKey").value.trim(), model: $("model").value.trim() || DEFAULT_MODEL };
-  store.set("settings", state.settings); applyTheme();
+$("saveSettings").onclick = async (e) => {
+  e.preventDefault();
+  const gk = $("geminiKey").value.trim();
+  const next = { ...state.settings, theme: $("theme").value, provider: $("provider").value,
+    apiKey: $("apiKey").value.trim(), model: $("model").value.trim() || DEFAULT_MODEL, geminiKey: gk };
+  if (next.provider === "gemini") {
+    const msg = (t, err) => { $("geminiMsg").textContent = t; $("geminiMsg").className = err ? "msg err" : "msg"; };
+    if (!gk) return msg("❌ اكتب مفتاح جيميناي أولاً", true);
+    msg("⏳ جاري التحقق من المفتاح...");
+    try { next.geminiModel = await pickGeminiModel(gk); }
+    catch (err) { return msg("❌ " + err.message, true); }
+  }
+  state.settings = next; store.set("settings", next); applyTheme();
+  $("settingsDlg").close();
 };
 $("resetAll").onclick = async () => {
   if (!confirm("سيتم حذف بيانات المدرس والكتاب والخطة والشروح. متابعة؟")) return;

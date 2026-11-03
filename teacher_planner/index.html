@@ -106,13 +106,26 @@
     <h2>⚙️ الإعدادات</h2>
     <label>المظهر<select id="theme"><option value="auto">تلقائي (حسب الهاتف)</option><option value="light">فاتح</option><option value="dark">داكن</option></select></label>
     <p class="hint">الشرح يعمل تلقائياً <b>بدون إنترنت وبدون مفتاح</b>: يستخرج العنوان والتعاريف والقوانين والأمثلة والتمارين من الكتاب نفسه، والقوانين والمعادلات تُنقل كصور مطابقة للكتاب. المفتاح أدناه اختياري لكتابة شرح أوسع.</p>
-    <label>مفتاح Claude API (اختياري)
-      <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" dir="ltr"></label>
-    <p class="hint">يُحفظ المفتاح على جهازك فقط، ويُرسل إلى Anthropic عند طلب الشرح. احصل عليه من console.anthropic.com</p>
-    <label>النموذج<input id="model" dir="ltr"></label>
+    <label>الشرح بالذكاء الاصطناعي (اختياري، يحتاج إنترنت)
+      <select id="provider">
+        <option value="">بدون — التحليل التلقائي فقط</option>
+        <option value="gemini">جيميناي من گوگل — مفتاح مجاني</option>
+        <option value="claude">كلود من أنثروبيك — مفتاح مدفوع</option>
+      </select></label>
+    <div id="geminiBox" hidden>
+      <label>مفتاح جيميناي<input id="geminiKey" type="password" autocomplete="off" dir="ltr" placeholder="AIza..."></label>
+      <p class="hint">طريقة الحصول عليه مجاناً: افتح موقع aistudio.google.com ← سجّل بحساب گوگل ← اضغط "Get API key" ← "Create API key" ← انسخه والصقه هنا.</p>
+      <div class="msg" id="geminiMsg"></div>
+    </div>
+    <div id="claudeBox" hidden>
+      <label>مفتاح كلود<input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" dir="ltr"></label>
+      <p class="hint">من موقع console.anthropic.com (مدفوع حسب الاستعمال).</p>
+      <label>النموذج<input id="model" dir="ltr"></label>
+    </div>
+    <p class="hint">المفتاح يُحفظ على هاتفك فقط. صور القوانين والأمثلة تبقى دائماً من الكتاب نفسه.</p>
     <div class="dlg-actions">
       <button class="btn" id="resetAll" type="button">🗑️ مسح كل البيانات</button>
-      <button class="btn primary" id="saveSettings" value="ok">حفظ</button>
+      <button class="btn primary" id="saveSettings" type="button">حفظ</button>
     </div>
   </form>
 </dialog>

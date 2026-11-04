@@ -36,7 +36,7 @@ def mirror(df: pd.DataFrame) -> pd.DataFrame:
     بيانات التدريب أغلبها صعود قوي للذهب، فبدون هذا العقل يتعلم "اشتري دايماً"
     ويخسر أول ما ينزل السوق. مع النسخة المقلوبة يشوف هبوط بقدر الصعود.
     """
-    k = float(df["close"].iloc[0]) ** 2
+    k = float(df["close"].median()) ** 2   # المقلوب يتحرك بنفس مستوى الأسعار تقريباً
     return pd.DataFrame({"open": k / df["open"], "high": k / df["low"], "low": k / df["high"],
                          "close": k / df["close"], "volume": df["volume"]}, index=df.index)
 
@@ -66,7 +66,7 @@ def load_all(verbose=True):
         train.append(_train_series(C.TARGET_MARKET + "~", mirror(gold_df), gold.cost_bps, cutoff))
         weights.append(gw)
     for sym, cfg in C.MARKETS.items():
-        if sym == C.TARGET_MARKET:
+        if sym == C.TARGET_MARKET or C.TRAIN_ONLY_TARGET:
             continue
         try:
             X, r, idx, px = features.build(data.load(sym), return_prices=True)

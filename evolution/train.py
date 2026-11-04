@@ -34,7 +34,8 @@ HISTORY = os.path.join(C.MODELS_DIR, "history.csv")
 
 def window_score(res, ret):
     """درجة العقل بفترة وحدة، مقسومة على تذبذب الفترة عشان البيتكوين ما يطغى على اليورو."""
-    scale = ret.std() * np.sqrt(len(ret)) + 1e-12
+    # بحساب الدولار (35$) الأرقام أصلاً على مستوى الحساب، فما نحتاج نقسم على تذبذب السوق
+    scale = 1.0
     dd_log = -np.log1p(-np.minimum(res["max_dd"], 0.999))
     score = (res["log_return"] - 0.5 * dd_log) / scale
     score = np.where(res["trades"] < 4, score - 0.5, score)       # الكسلان اللي ما يتداول ما يفوز
@@ -46,7 +47,7 @@ def trade_rate_penalty(trades, index):
     """عقوبة للعقل اللي يتداول أقل من الحد الأدنى باليوم (كل ما نقص أكثر، العقوبة أكبر)."""
     rate = trades / monkey.trading_days(index)
     short = np.clip((C.MIN_TRADES_PER_DAY - rate) / C.MIN_TRADES_PER_DAY, 0, 1)
-    return 1.5 * short
+    return 4.0 * short   # قوية: العقل اللي ما يتداول 4 باليوم ما يقدر يفوز مهما ربح
 
 
 def evaluate(pop, train, weights, rng):

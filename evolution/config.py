@@ -4,7 +4,7 @@
 import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(ROOT, "data")          # بيانات الشموع (كاش، ما ترفع للريبو)
+DATA_DIR = os.environ.get("BRAIN_DATA_DIR", os.path.join(ROOT, "data"))   # بيانات الشموع
 # فريم العقل بالدقائق: 60 = ساعة (الافتراضي)، 5 = خمس دقائق. يتغير بمتغير البيئة BRAIN_TIMEFRAME
 BAR_MINUTES = int(os.environ.get("BRAIN_TIMEFRAME", "60"))
 MODELS_DIR = os.path.join(ROOT, "models", f"{BAR_MINUTES}m_pro")   # العقول المحترفة + نقطة الاستكمال (لكل فريم مجلد)
@@ -15,7 +15,7 @@ PAPER_STATE = os.path.join(ROOT, f"paper_state_{BAR_MINUTES}m_pro.json")
 # scale = القسمة لتحويل السعر الخام من Dukascopy للسعر الحقيقي
 # cost_bps = تكلفة (سبريد + عمولة) لكل تغيير مركز، بنقاط الأساس (1bp = 0.01%)
 MARKETS = {
-    "XAUUSD": {"scale": 1000,   "cost_bps": 1.5, "weight": 8.0},   # الذهب — السوق الأساسي (أغلب التمرين عليه)
+    "XAUUSD": {"scale": 1000,   "cost_bps": 0.6, "weight": 8.0},   # الذهب — السوق الأساسي (أغلب التمرين عليه)
     "XAGUSD": {"scale": 1000,   "cost_bps": 3.0, "weight": 1.0},
     "EURUSD": {"scale": 100000, "cost_bps": 0.8, "weight": 1.0},
     "GBPUSD": {"scale": 100000, "cost_bps": 1.0, "weight": 1.0},
@@ -52,8 +52,16 @@ MUTATION_RATE = 0.15        # نسبة الأوزان اللي تتغير بكل
 WINDOWS_PER_GEN = 8         # كل جيل يتداول على 8 فترات عشوائية (أسواق مختلفة) — أصعب على الحظ
 # طول كل فترة تداول بالتدريب: ~9 أيام على 5 دقائق، ~2.5 شهر على الساعة
 WINDOW_BARS = 2500 if BAR_MINUTES <= 5 else max(400, 60000 // BAR_MINUTES)
-START_CAPITAL = 1000.0      # كل عقل يبدأ بألف دولار
-DEATH_LEVEL = 0.6           # إذا نزل الرصيد تحت 60% من البداية → العقل يموت (يوقف تداول)
+# ------------------------------------------------------------------ الحساب (مثل الوسيط)
+START_CAPITAL = 35.0        # التحدي: كل عقل يبدأ بـ 35 دولار بس
+CONTRACT_SIZE = 100         # لوت الذهب = 100 أونصة (0.01 لوت = 1 أونصة: كل 1$ حركة = 1$)
+MIN_LOT = 0.01
+LOT_STEP = 0.01
+LEVERAGE = 500              # رافعة 1:500
+STOPOUT_LEVEL = 0.5         # Stop Out إذا الرصيد نزل تحت 50% من الهامش المستخدم
+RISK_MIN, RISK_MAX = 0.01, 0.10   # العقل يختار مخاطرته بكل صفقة بين 1% و 10%
+DEATH_LEVEL = 0.3           # إذا نزل الرصيد تحت 30% من البداية (~10$) → العقل يموت (يوقف تداول)
+TRAIN_ONLY_TARGET = True    # التمرين على الذهب بس (+ النسخة المقلوبة منه)
 
 # إخفاء المعلومات (ضد الحفظ): نخفي نسبة من المدخلات عشوائياً ونضيف ضجيج
 FEATURE_DROPOUT = 0.25

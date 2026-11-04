@@ -181,7 +181,7 @@ def main():
             others_ok = 0
             if mres["passed"] and vscore[best] > champ_score and mres["trades"] >= C.CHAMP_MIN_TRADES \
                     and mres["exposure_pct"] >= C.CHAMP_MIN_EXPOSURE_PCT:
-                for o in valid.others:
+                for o in (valid.others if C.OTHERS_PASS_FRACTION > 0 else []):
                     r = monkey.test(top[best], o, n_monkeys=300, seed=gen)
                     others_ok += r["beats_monkeys_pct"] >= C.OTHERS_PASS_PERCENTILE and r["brain_return_pct"] > 0
             need = int(np.ceil(len(valid.others) * C.OTHERS_PASS_FRACTION))
@@ -202,7 +202,7 @@ def main():
             print(f"🧪 جيل {gen:5d} | تحقق: {mres['brain_return_pct']:+6.2f}% | "
                   f"تفوق على {mres['beats_monkeys_pct']:5.1f}% من القرود | "
                   f"{mres['trades']} صفقة" +
-                  (f" | أسواق ثانية {mres['other_markets_passed']}" if mres["passed"] else "") +
+                  (f" | أسواق ثانية {mres['other_markets_passed']}" if mres["passed"] and C.OTHERS_PASS_FRACTION > 0 else "") +
                   ("  🏆 بطل جديد!" if is_champ else ""))
             # هل العصر الحالي للحين يتحسن على بيانات ما شافها؟
             v = float(vscore[best])

@@ -117,7 +117,8 @@ class Engine:
             return
         pnl = self.dir * self.lots * C.CONTRACT_SIZE * (price - self.entry)
         fee = self.lots * C.CONTRACT_SIZE * price * self.cost
-        self.cash = np.where(mask, self.cash + pnl - fee, self.cash)
+        # حماية من الرصيد السالب (مثل أغلب الوسطاء): أقل شي صفر
+        self.cash = np.where(mask, np.maximum(self.cash + pnl - fee, 0.0), self.cash)
         if self.record and mask[0]:
             usd = float(self.cash[0] - self.entry_cash[0])
             self.events.append({

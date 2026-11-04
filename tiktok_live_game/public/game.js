@@ -1,5 +1,6 @@
-// Live Arena — every viewer who brings likes / gifts becomes a fighter with
-// their name on it. Fighters bump into each other; last one standing wins.
+// ساحة البث — كل مشاهد يدز لايكات أو هدايا يدخل الساحة كمقاتل باسمه.
+// المقاتلين يتصادمون، وآخر واحد يبقى يفوز بالجولة.
+// الصوت يعلّق بالعربي على الهدايا ودخول اللاعبين، والتعليق يظهر مكتوب على الشاشة.
 (() => {
   const W = 1080, H = 1920;
   const ARENA = { x: 40, y: 430, w: W - 80, h: 1180 };
@@ -21,12 +22,58 @@
   const wins = new Map();              // name -> wins this session
   let likeBank = 0, likeLast = null;
   let phase = 'play', phaseT = 0, roundLeft = 180, round = 1, joinedThisRound = 0, winner = null;
-  let shake = 0, statusMsg = { state: 'starting', text: 'Connecting to server...' }, statusAt = 0;
+  let shake = 0, statusMsg = { state: 'starting', text: 'دا نتصل بالسيرفر…' }, statusAt = 0;
   const pending = [];                  // events that arrive during the winner screen
 
   const rand = (a, b) => a + Math.random() * (b - a);
   const now = () => performance.now() / 1000;
   const hue = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; };
+
+  // ------------------------------------------------- التعليق الصوتي والمكتوب
+  const settings = { voiceOn: true, vol: 1, rate: 1, sayJoins: true, testOn: false, clean: false, user: '' };
+  try { Object.assign(settings, JSON.parse(localStorage.getItem('arena-settings') || '{}')); } catch {}
+  const saveSettings = () => { try { localStorage.setItem('arena-settings', JSON.stringify(settings)); } catch {} };
+
+  const synth = window.speechSynthesis;
+  let arVoice = null;
+  function pickVoice() {
+    if (!synth) return;
+    const vs = synth.getVoices();
+    arVoice = vs.find(v => /^ar[-_]IQ/i.test(v.lang)) || vs.find(v => /^ar[-_]SA/i.test(v.lang))
+      || vs.find(v => /^ar/i.test(v.lang)) || null;
+  }
+  if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+
+  const speechQ = [];                  // {text, prio}
+  let speaking = false, speakStarted = 0;
+  const captions = [];                 // التعليق المكتوب: {text, color, life}
+
+  // prio: 2 = هدية / فائز (ما تنحذف)، 1 = دخول لاعب (تنحذف إذا الطابور زحمة)
+  function announce(text, prio = 1, color = '#fff') {
+    captions.push({ text, color, life: 4 });
+    if (captions.length > 3) captions.shift();
+    if (!settings.voiceOn || !synth) return;
+    if (prio < 2 && !settings.sayJoins) return;
+    if (prio < 2 && speechQ.length >= 2) return;           // زحمة: نسكت عن الدخول
+    if (speechQ.length >= 6) speechQ.splice(speechQ.findIndex(q => q.prio < 2) >>> 0, 1);
+    speechQ.push({ text, prio });
+    pumpSpeech();
+  }
+  function pumpSpeech() {
+    if (!synth) return;
+    // بعض المتصفحات تعلگ؛ إذا صار أكثر من 12 ثانية نعيد التشغيل
+    if (speaking && now() - speakStarted > 12) { synth.cancel(); speaking = false; }
+    if (speaking || !speechQ.length) return;
+    const { text } = speechQ.shift();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = arVoice ? arVoice.lang : 'ar-SA';
+    if (arVoice) u.voice = arVoice;
+    u.volume = settings.vol; u.rate = settings.rate; u.pitch = 1;
+    u.onend = u.onerror = () => { speaking = false; setTimeout(pumpSpeech, 150); };
+    speaking = true; speakStarted = now();
+    synth.speak(u);
+  }
+  setInterval(pumpSpeech, 1000);
 
   const imgCache = new Map();
   function loadImg(url) {
@@ -48,7 +95,7 @@
       if (reason) { // returning viewer: level up instead of a duplicate
         f.level++; f.r = Math.min(f.r + 4, 70); f.power += 3;
         f.maxHp += 15; f.hp = f.maxHp;
-        floatText(f.x, f.y - 80, `LV ${f.level} ⬆`, '#7CFFB2');
+        floatText(f.x, f.y - 80, `مستوى ${f.level} ⬆`, '#7CFFB2');
       }
       return f;
     }
@@ -98,7 +145,9 @@
   function floatText(x, y, text, color) { floaters.push({ x, y, text, color, life: 1.6 }); }
   function log(text) { feed.unshift({ text, t: now() }); feed.length = Math.min(feed.length, 5); }
 
-  const EFFECT_AR = { shield: '🛡️ درع حماية', giant: '🦍 صار عملاق', bomb: '💣 قنبلة!', king: '👑 صار الملك' };
+  const EFFECT_AR = { shield: '🛡️ درع حماية', giant: '🦍 صار عملاق', bomb: '💣 فجّر قنبلة', king: '👑 صار الملك' };
+  const EFFECT_SAY = { shield: 'وأخذ درع حماية', giant: 'وصار عملاق', bomb: 'وفجّر قنبلة', king: 'وصار الملك' };
+  const timesAr = n => n === 2 ? 'مرتين' : n <= 10 ? `${n} مرات` : `${n} مرة`;
 
   function applyEvent(m) {
     if (phase === 'winner' && ['spawn', 'gift', 'follow', 'share'].includes(m.type)) { pending.push(m); return; }
@@ -109,12 +158,14 @@
         const f = getOrSpawn(u, isNew ? null : m.reason);
         floatText(f.x, f.y - 90, isNew ? 'دخل الساحة' : '', '#fff');
         log(m.reason === 'likes' ? `❤ ${u.name} جاب ${cfg.likesPerSpawn} لايك` : `💬 ${u.name} انضم`);
+        if (isNew) announce(m.reason === 'likes' ? `دخل ${u.name} للعبة بـ ${cfg.likesPerSpawn} لايك` : `دخل ${u.name} للعبة`, 1, '#7CFFB2');
+        else announce(`${u.name} صار أقوى، مستوى ${f.level}`, 1, '#7CFFB2');
         break;
       }
-      case 'follow': getOrSpawn(u, 'follow'); log(`➕ ${u.name} تابع`); break;
+      case 'follow': getOrSpawn(u, 'follow'); log(`➕ ${u.name} تابع`); announce(`${u.name} تابع البث ودخل للعبة`, 1, '#7CFFB2'); break;
       case 'share': {
         const f = getOrSpawn(u, 'share'); f.vx *= 2; f.vy *= 2; f.shieldUntil = Math.max(f.shieldUntil, now() + 3);
-        log(`↗ ${u.name} شارك البث`); break;
+        log(`↗ ${u.name} شارك البث`); announce(`${u.name} شارك البث`, 1, '#7CFFB2'); break;
       }
       case 'gift': {
         const f = getOrSpawn(u, null);
@@ -124,7 +175,8 @@
         else if (m.effect === 'bomb') { explode(f, 420, 70); }
         else if (m.effect === 'king') { f.king = true; f.power += 25; f.hp = f.maxHp = 450; f.shieldUntil = t + 4; explode(f, 300, 40); }
         banners.push({ user: u, gift: m.giftName, repeat: m.repeat, img: loadImg(m.image), effect: m.effect, tier: m.tier, life: 3.5 });
-        log(`🎁 ${u.name}: ${m.giftName}${m.repeat > 1 ? ' x' + m.repeat : ''}`);
+        log(`🎁 ${u.name}: ${m.giftName}${m.repeat > 1 ? ' ×' + m.repeat : ''}`);
+        announce(`أرسل ${u.name} ${m.giftName}${m.repeat > 1 ? ' ' + timesAr(m.repeat) : ''}، ${EFFECT_SAY[m.effect] || ''}`, 2, '#FFD84D');
         break;
       }
     }
@@ -196,6 +248,7 @@
     for (let i = floaters.length - 1; i >= 0; i--) { const f = floaters[i]; f.life -= dt; f.y -= 60 * dt; if (f.life <= 0) floaters.splice(i, 1); }
     if (banners.length) { banners[0].life -= dt * (banners.length > 3 ? 2 : 1); if (banners[0].life <= 0) banners.shift(); }
     shake = Math.max(0, shake - dt * 40);
+    for (let i = captions.length - 1; i >= 0; i--) { captions[i].life -= dt; if (captions[i].life <= 0) captions.splice(i, 1); }
 
     // rounds
     if (phase === 'play') {
@@ -205,6 +258,7 @@
         const w = [...fighters.values()].sort((a, b) => b.kills - a.kills || b.hp - a.hp)[0];
         winner = { name: w.name, kills: w.kills, avatar: w.avatar, hue: w.hue };
         wins.set(w.name, (wins.get(w.name) || 0) + 1);
+        announce(`انتهت الجولة! الفائز هو ${w.name}`, 2, '#FFD84D');
         phase = 'winner'; phaseT = 7;
         for (let k = 0; k < 6; k++) setTimeout(() => burst(rand(200, 880), rand(500, 1300), `hsl(${rand(0, 360)},90%,60%)`, 60), k * 300);
       }
@@ -274,7 +328,7 @@
     rr(60, 236, W - 120, 26, 13); ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill();
     const p = Math.min(1, likeBank / need);
     if (p > 0) { rr(60, 236, (W - 120) * p, 26, 13); ctx.fillStyle = '#FF3D7F'; ctx.fill(); }
-    text(`${likeBank} / ${need}`, W / 2, 249, 22, '#fff', 'center', 800);
+    text(`${likeBank} من ${need}`, W / 2, 249, 22, '#fff', 'center', 800);
 
     // gift legend
     const tiers = Object.values(cfg.giftTiers || {}).sort((a, b) => a.minDiamonds - b.minDiamonds);
@@ -298,28 +352,42 @@
   }
 
   function drawFeed() {
-    let y = ARENA.y + ARENA.h - 30;
+    let y = ARENA.y + 30;
     for (const e of feed) {
       const a = Math.max(0, 1 - (now() - e.t) / 8);
       if (!a) continue;
       ctx.globalAlpha = a; text(fit(e.text, 30), ARENA.x + ARENA.w - 24, y, 26, '#fff', 'right', 600); ctx.globalAlpha = 1;
-      y -= 38;
+      y += 38;
     }
   }
 
   function drawBanner() {
     const b = banners[0]; if (!b) return;
     const k = Math.min(1, (3.5 - b.life) * 5, b.life * 4);
-    const y = ARENA.y + 200;
+    const y = ARENA.y + 330;
     ctx.save(); ctx.globalAlpha = Math.max(0, k); ctx.translate(W / 2, y); ctx.scale(0.8 + 0.2 * k, 0.8 + 0.2 * k);
     const col = { small: '#3D8BFF', medium: '#B04DFF', large: '#FF7A1A', huge: '#FFC400' }[b.tier] || '#B04DFF';
     rr(-470, -110, 940, 220, 40); ctx.fillStyle = 'rgba(10,10,25,.92)'; ctx.fill(); ctx.lineWidth = 8; ctx.strokeStyle = col; ctx.stroke();
     if (b.img && b.img.complete && b.img.naturalWidth) ctx.drawImage(b.img, -440, -80, 160, 160);
     else text('🎁', -360, 0, 110, '#fff');
     text(fit(b.user.name, 16), 70, -52, 56, '#fff');
-    text(`أرسل ${b.gift}${b.repeat > 1 ? ' x' + b.repeat : ''}`, 70, 8, 38, '#FFD84D', 'center', 600);
+    text(`أرسل ${b.gift}${b.repeat > 1 ? ' ×' + b.repeat : ''}`, 70, 8, 38, '#FFD84D', 'center', 600);
     text(EFFECT_AR[b.effect] || '', 70, 62, 40, col);
     ctx.restore();
+  }
+
+  function drawCaptions() {
+    let y = ARENA.y + ARENA.h - 60;
+    for (let i = captions.length - 1; i >= 0; i--) {
+      const c = captions[i], a = Math.min(1, c.life * 2, (4 - c.life) * 6);
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.font = `800 40px ${FONT}`;
+      const s = fit(c.text, 34), w = Math.min(ARENA.w - 40, ctx.measureText(s).width + 60);
+      rr(W / 2 - w / 2, y - 34, w, 68, 34); ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fill();
+      text(s, W / 2, y, 40, c.color);
+      y -= 80;
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawWinner() {
@@ -352,7 +420,7 @@
     for (const f of floaters) { ctx.globalAlpha = Math.min(1, f.life); if (f.text) text(f.text, f.x, f.y, 36, f.color); }
     ctx.globalAlpha = 1;
     ctx.restore();
-    drawHUD(); drawFeed(); drawBanner(); drawWinner();
+    drawHUD(); drawFeed(); drawCaptions(); drawBanner(); drawWinner();
     if (statusMsg.state !== 'connected' || now() - statusAt < 4) {
       const c = { connected: '#3DFF8A', error: '#FF4D4D', ended: '#FFC93D' }[statusMsg.state] || '#9fb0ff';
       text(fit(statusMsg.text, 60), W / 2, H - 22, 24, c, 'center', 600);
@@ -372,21 +440,87 @@
     ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
-      if (m.type === 'status') { statusMsg = m; statusAt = now(); }
+      if (m.type === 'status') { statusMsg = m; statusAt = now(); showStatus(); }
       else if (m.type === 'likeProgress') { likeBank = m.bank; likeLast = m.lastUser || likeLast; if (m.needed) cfg.likesPerSpawn = m.needed; }
       else applyEvent(m);
     };
-    ws.onclose = () => { statusMsg = { state: 'error', text: 'Lost connection to game server — retrying…' }; setTimeout(connect, 2000); };
+    ws.onopen = () => { if (wantStart) ws.send(JSON.stringify(wantStart)); };
+    ws.onclose = () => { statusMsg = { state: 'error', text: 'انقطع الاتصال بالسيرفر… دا نعيد المحاولة' }; setTimeout(connect, 2000); };
   }
   connect();
 
-  // ------------------------------------------------------------- test panel
-  const panel = document.getElementById('test');
-  if (params.has('test')) panel.classList.add('on');
-  addEventListener('keydown', e => { if (e.key === 't' || e.key === 'T') panel.classList.toggle('on'); });
-  panel.addEventListener('click', e => {
+  // ------------------------------------------------- شاشة البداية والإعدادات
+  const $ = id => document.getElementById(id);
+  const setup = $('setup'), testPanel = $('test');
+  let wantStart = null;               // آخر أمر بدأ بيه (حتى نعيده إذا انقطع السيرفر ورجع)
+
+  $('user').value = params.get('user') || settings.user || '';
+  for (const k of ['voiceOn', 'sayJoins', 'testOn', 'clean']) $(k).checked = !!settings[k];
+  $('vol').value = settings.vol; $('rate').value = settings.rate;
+
+  function applySettings() {
+    for (const k of ['voiceOn', 'sayJoins', 'testOn', 'clean']) settings[k] = $(k).checked;
+    settings.vol = Number($('vol').value); settings.rate = Number($('rate').value);
+    testPanel.classList.toggle('on', settings.testOn && !setup.classList.contains('on'));
+    document.body.classList.toggle('clean', settings.clean);
+    if (!settings.voiceOn && synth) { synth.cancel(); speechQ.length = 0; speaking = false; }
+    saveSettings();
+  }
+  setup.addEventListener('change', applySettings);
+
+  function showStatus() {
+    $('status').textContent = statusMsg.text || '';
+    $('status').style.color = { connected: '#3DFF8A', error: '#FF6B6B', ended: '#FFC93D' }[statusMsg.state] || '#FFD84D';
+  }
+
+  // التلفون يحتاج ضغطة حتى يشغل الصوت، فنشغل كلمة فاضية بأول ضغطة
+  function unlockAudio() {
+    if (synth) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'ar-SA'; synth.speak(u); }
+  }
+  async function keepScreenOn() {
+    try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !setup.classList.contains('on')) keepScreenOn(); });
+
+  function enterGame() {
+    unlockAudio(); keepScreenOn();
+    const el = document.documentElement;
+    try { (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)?.catch?.(() => {}); } catch {}
+    setup.classList.remove('on'); applySettings();
+  }
+  function send(msg) { wantStart = msg; if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+  $('go').onclick = () => {
+    const u = $('user').value.trim();
+    if (!u) { $('status').textContent = 'اكتب يوزرك أول'; return; }
+    settings.user = u; saveSettings();
+    send({ type: 'connect', username: u }); enterGame();
+    announce('بدت اللعبة! دزوا لايكات حتى تدخلون الساحة', 2, '#FF7AA8');
+  };
+  $('demo').onclick = () => { send({ type: 'demo' }); enterGame(); announce('وضع التجربة', 2, '#FF7AA8'); };
+  $('close').onclick = enterGame;
+  $('testVoice').onclick = () => { unlockAudio(); applySettings(); announce('أرسل علي وردة، وأخذ درع حماية', 2, '#FFD84D'); };
+  $('gear').onclick = () => { setup.classList.add('on'); testPanel.classList.remove('on'); };
+
+  // ضغطتين على العنوان (أعلى الشاشة) تفتح الإعدادات
+  let lastTap = 0;
+  canvas.addEventListener('pointerdown', e => {
+    const r = canvas.getBoundingClientRect();
+    if ((e.clientY - r.top) / r.height * H > 300) return;
+    const t = Date.now();
+    if (t - lastTap < 400) $('gear').onclick();
+    lastTap = t;
+  });
+
+  testPanel.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'simulate', kind: b.dataset.k, count: b.dataset.c, diamonds: b.dataset.d,
-      giftName: b.dataset.g, name: document.getElementById('tname').value.trim() || undefined }));
+      giftName: b.dataset.g, name: $('tname').value.trim() || undefined }));
   });
+
+  // إذا الرابط بيه ?user=... أو ?demo نبدأ مباشرة (مفيد للكمبيوتر و OBS)
+  if (params.has('demo')) { setup.classList.remove('on'); send({ type: 'demo' }); applySettings(); }
+  else if (params.get('user')) { setup.classList.remove('on'); send({ type: 'connect', username: params.get('user') }); applySettings(); }
+  else applySettings();
+  if (params.has('test')) { $('testOn').checked = true; applySettings(); }
 })();

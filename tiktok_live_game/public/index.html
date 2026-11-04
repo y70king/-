@@ -1,42 +1,96 @@
 <!doctype html>
-<html lang="ar">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Arena</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0d1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ساحة البث</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;800&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; height: 100%; background: #0b0d1a; overflow: hidden; }
+  :root { --bg: #0b0d1a; --card: #161a3a; --line: #2c3270; --text: #fff; --muted: #9fb0ff; --pink: #ff3d7f; --gold: #ffd84d; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: "Cairo", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
   body.transparent { background: transparent; }
   #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  canvas { display: block; max-width: 100vw; max-height: 100vh; aspect-ratio: 9 / 16; height: 100vh; }
-  #test {
-    position: fixed; top: 8px; left: 8px; z-index: 5; display: none; flex-direction: column; gap: 6px;
-    background: rgba(0,0,0,.75); color: #fff; padding: 10px; border-radius: 10px;
-    font: 13px system-ui, sans-serif; max-width: 220px;
-  }
-  #test.on { display: flex; }
-  #test button { font: inherit; padding: 6px 8px; border: 0; border-radius: 6px; cursor: pointer; background: #2b2f55; color: #fff; text-align: left; }
-  #test button:hover { background: #3c4180; }
-  #test input { font: inherit; padding: 5px; border-radius: 6px; border: 0; }
+  canvas { display: block; width: min(100vw, calc(100dvh * 9 / 16)); height: min(100dvh, calc(100vw * 16 / 9)); touch-action: manipulation; }
+
+  .sheet { position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+    background: rgba(5,6,16,.92); padding: 16px; box-sizing: border-box; }
+  .sheet.on { display: flex; }
+  .box { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+    padding: 22px 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; max-height: 100%; overflow-y: auto; }
+  h1 { margin: 0; text-align: center; font-size: 30px; }
+  h2 { margin: 6px 0 0; font-size: 17px; color: var(--muted); font-weight: 600; }
+  p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; text-align: center; }
+  input[type=text] { font: inherit; font-size: 18px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line);
+    background: #0d1030; color: var(--text); direction: ltr; text-align: left; width: 100%; box-sizing: border-box; }
+  button { font: inherit; font-size: 17px; font-weight: 800; padding: 13px; border: 0; border-radius: 14px; cursor: pointer;
+    background: #2b2f66; color: var(--text); }
+  button.main { background: var(--pink); }
+  button:active { transform: scale(.98); }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  label.opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; }
+  input[type=range] { flex: 1; max-width: 55%; accent-color: var(--pink); }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--pink); }
+  #status { font-size: 14px; text-align: center; color: var(--gold); min-height: 1.4em; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .grid button { font-size: 11px; padding: 6px 2px; font-weight: 600; border-radius: 10px; line-height: 1.4; }
+  #test { padding: 6px; }
+  #test .box { max-width: 520px; }
+
+  #gear { position: fixed; z-index: 6; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; width: 40px; height: 40px;
+    padding: 0; border-radius: 50%; background: rgba(255,255,255,.08); font-size: 20px; opacity: .45; }
+  body.clean #gear { display: none; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="c" width="1080" height="1920"></canvas></div>
+<button id="gear" title="الإعدادات">⚙️</button>
 
-<div id="test">
-  <b>Test panel</b>
-  <input id="tname" placeholder="Viewer name (optional)">
-  <button data-k="like" data-c="1">❤ 1 like</button>
-  <button data-k="like" data-c="20">❤ 20 likes (new fighter)</button>
-  <button data-k="join">💬 Comment !join</button>
-  <button data-k="gift" data-d="1" data-g="Rose">🌹 Rose (1) → shield</button>
-  <button data-k="gift" data-d="30" data-g="Perfume">🎁 Perfume (30) → giant</button>
-  <button data-k="gift" data-d="199" data-g="Sunglasses">💣 199 → bomb</button>
-  <button data-k="gift" data-d="1000" data-g="Galaxy">👑 Galaxy (1000) → king</button>
-  <button data-k="follow">➕ Follow</button>
-  <button data-k="share">↗ Share</button>
+<!-- شاشة البداية / الإعدادات -->
+<div class="sheet on" id="setup">
+  <div class="box">
+    <h1>⚔️ ساحة البث</h1>
+    <p>لعبة تفاعلية لبثك المباشر: اللايكات والهدايا تدخّل أسماء المشاهدين للساحة، والصوت يعلّق على كل شي يصير.</p>
+    <h2>يوزرك بتيك توك</h2>
+    <input type="text" id="user" placeholder="مثال: myname" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="main" id="go">▶ ابدأ (لازم تكون لايف)</button>
+    <button id="demo">🧪 تجربة بدون بث</button>
+    <div id="status"></div>
+
+    <h2>الصوت</h2>
+    <label class="opt">🔊 التعليق الصوتي <input type="checkbox" id="voiceOn" checked></label>
+    <label class="opt">مستوى الصوت <input type="range" id="vol" min="0" max="1" step="0.1" value="1"></label>
+    <label class="opt">سرعة الكلام <input type="range" id="rate" min="0.6" max="1.6" step="0.1" value="1"></label>
+    <label class="opt">📣 يعلّق على دخول اللاعبين <input type="checkbox" id="sayJoins" checked></label>
+    <button id="testVoice">🔈 جرّب الصوت</button>
+
+    <h2>الشاشة</h2>
+    <label class="opt">🧪 أزرار التجربة <input type="checkbox" id="testOn"></label>
+    <label class="opt">إخفاء زر الإعدادات (اضغط مرتين على العنوان حتى يرجع) <input type="checkbox" id="clean"></label>
+    <button id="close">✔ رجوع للعبة</button>
+  </div>
+</div>
+
+<!-- أزرار التجربة -->
+<div class="sheet" id="test" style="background: transparent; pointer-events: none; align-items: flex-end;">
+  <div class="box" style="pointer-events: auto; background: rgba(15,18,45,.85); padding: 8px; gap: 6px; border-radius: 14px;">
+    <input type="text" id="tname" placeholder="اسم المشاهد (اختياري)" style="direction: rtl; text-align: right; font-size: 13px; padding: 5px 10px; border-radius: 10px;">
+    <div class="grid">
+      <button data-k="like" data-c="1">❤️ لايك</button>
+      <button data-k="like" data-c="20">❤️ 20</button>
+      <button data-k="join">💬 دخول</button>
+      <button data-k="gift" data-d="1" data-g="Rose">🌹 درع</button>
+      <button data-k="gift" data-d="30" data-g="Perfume">🎁 عملاق</button>
+      <button data-k="gift" data-d="199" data-g="Sunglasses">💣 قنبلة</button>
+      <button data-k="gift" data-d="1000" data-g="Galaxy">👑 ملك</button>
+      <button data-k="follow">➕ متابعة</button>
+    </div>
+  </div>
 </div>
 
 <script src="game.js"></script>

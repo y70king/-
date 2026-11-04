@@ -1,0 +1,10 @@
+# رفع لعبة بث تيك توك على Render (مجاني) حتى تفتحها من التلفون
+services:
+  - type: web
+    name: tiktok-live-game
+    runtime: node
+    rootDir: tiktok_live_game
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    plan: free

@@ -28,7 +28,9 @@ TARGET_MARKET = "XAUUSD"
 DATA_SOURCE = os.environ.get("BRAIN_DATA_SOURCE", "dukascopy")
 YAHOO_SYMBOLS = {"XAUUSD": "GC=F", "XAGUSD": "SI=F", "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X",
                  "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "USA500IDXUSD": "ES=F"}
-HISTORY_DAYS = 730          # كم يوم بيانات ننزل (سنتين)
+HISTORY_DAYS = 730          # كم يوم بيانات ننزل (سنتين) للأسواق الثانية
+# الذهب: 10 سنين (فيها انهيارات وتذبذب وصعود — مو بس الصعود الأخير). الامتحان النهائي يصير سنة كاملة
+HISTORY_DAYS_BY_MARKET = {"XAUUSD": 3650}
 BASE_MINUTES = 5            # البيانات تنحفظ 5 دقائق، وتتحول لفريم العقل وقت التحميل
 
 # تقسيم بيانات الذهب زمنياً (العقل ما يشوف التحقق والاختبار أبداً وقت التدريب)

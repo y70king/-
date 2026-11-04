@@ -76,7 +76,7 @@ def main():
     if C.PAPER_REQUIRE_EXAM and not (exam.get("passed") and exam.get("generation") == meta["generation"]):
         print(f"[INFO] بطل الجيل {meta['generation']} ما نجح بالامتحان النهائي بعد — التداول التجريبي متوقف.")
         return
-    cost = C.MARKETS[C.TARGET_MARKET]["cost_bps"]
+    cost = C.SPREAD_USD_EVAL   # السبريد بالدولار لكل أونصة
 
     df = fetch()
     X, _ret, idx, px = features.build(df, return_prices=True)

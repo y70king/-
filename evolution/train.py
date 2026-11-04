@@ -61,7 +61,8 @@ def evaluate(pop, train, weights, rng):
         # إخفاء معلومات: نطفي بعض الحواس كاملة لهالفترة + ضجيج على الباقي
         mask = rng.random(X.shape[1]) >= C.FEATURE_DROPOUT
         X = X * mask + rng.normal(0, C.FEATURE_NOISE, X.shape).astype(np.float32)
-        res = brain.simulate(pop, X, px, s.cost_bps)
+        spread = rng.uniform(*C.SPREAD_USD_TRAIN)   # سبريد عشوائي 20–30 سنت
+        res = brain.simulate(pop, X, px, spread)
         total += window_score(res, ret) - trade_rate_penalty(res["trades"], s.index[a: a + C.WINDOW_BARS])
     return total / C.WINDOWS_PER_GEN
 

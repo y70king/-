@@ -64,14 +64,14 @@ class Engine:
       - الحجم باللوت: أقل شي 0.01 لوت (= 1 أونصة ذهب، كل 1$ حركة = 1$ ربح/خسارة)
       - العقل يختار نسبة المخاطرة (1%–10%) ووقفه، ومنها ينحسب اللوت.
         إذا الحساب صغير والوقف بعيد، مجبور على 0.01 لوت (يعني مخاطرة أكبر من اللي يبيها)
-      - رافعة + هامش: إذا الهامش ما يكفي ما يقدر يفتح، وإذا نزل الرصيد كثير يصير Stop Out
-      - السبريد ينخصم بالدخول والخروج
+      - رافعة بلا حدود: الهامش ما يمنع أي صفقة، بس إذا الرصيد خلص يصير Stop Out
+      - السبريد (20–30 سنت للأونصة) ينخصم: نصه بالدخول ونصه بالخروج
     """
 
-    def __init__(self, genomes, cost_bps, death_level=C.DEATH_LEVEL, record=False, start=C.START_CAPITAL):
+    def __init__(self, genomes, spread_usd, death_level=C.DEATH_LEVEL, record=False, start=C.START_CAPITAL):
         self.w = unpack(genomes)
         self.P = P = genomes.shape[0]
-        self.cost = cost_bps / 1e4
+        self.half_spread = spread_usd / 2.0   # السبريد (دولار لكل أونصة) — نصه بالدخول ونصه بالخروج
         self.log_death = np.log(death_level)
         self.record = record
         self.start = float(start)
@@ -116,7 +116,7 @@ class Engine:
         if not mask.any():
             return
         pnl = self.dir * self.lots * C.CONTRACT_SIZE * (price - self.entry)
-        fee = self.lots * C.CONTRACT_SIZE * price * self.cost
+        fee = self.lots * C.CONTRACT_SIZE * self.half_spread
         # حماية من الرصيد السالب (مثل أغلب الوسطاء): أقل شي صفر
         self.cash = np.where(mask, np.maximum(self.cash + pnl - fee, 0.0), self.cash)
         if self.record and mask[0]:
@@ -183,7 +183,7 @@ class Engine:
             max_lots = np.floor(eq * C.LEVERAGE / (c * C.CONTRACT_SIZE) / step + 1e-9) * step
             lots = np.minimum(np.maximum(want, C.MIN_LOT), max_lots)
             opening &= (lots >= C.MIN_LOT - 1e-12) & (eq > 0)
-            fee = lots * C.CONTRACT_SIZE * c * self.cost
+            fee = lots * C.CONTRACT_SIZE * self.half_spread
             self.entry_cash = np.where(opening, self.cash, self.entry_cash)
             self.cash = np.where(opening, self.cash - fee, self.cash)
             self.dir = np.where(opening, target, self.dir)
@@ -221,12 +221,12 @@ def precompute(genomes, X):
     return np.tensordot(X, w["W1"], axes=([1], [1])) + w["b1"][None]   # (T, P, H)
 
 
-def simulate(genomes, X, px, cost_bps, death_level=C.DEATH_LEVEL, record=False):
+def simulate(genomes, X, px, spread_usd, death_level=C.DEATH_LEVEL, record=False):
     """
     يخلي كل العقول تتداول نفس البيانات.
     X  : (T, F) الحواس ، px : dict فيه open/high/low/close/atr بطول T
     """
-    eng = Engine(genomes, cost_bps, death_level, record)
+    eng = Engine(genomes, spread_usd, death_level, record)
     pre = precompute(genomes, X)
     o, hi, lo, c, at = px["open"], px["high"], px["low"], px["close"], px["atr"]
     T = X.shape[0]

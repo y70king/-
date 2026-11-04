@@ -50,7 +50,7 @@ def _train_series(name, df, cost, end=None):
 def load_all(verbose=True):
     gold_df = data.load(C.TARGET_MARKET)
     gX, gr, gi, gpx = features.build(gold_df, return_prices=True)
-    gold = Series(C.TARGET_MARKET, gX, gr, gi, C.MARKETS[C.TARGET_MARKET]["cost_bps"], gpx)
+    gold = Series(C.TARGET_MARKET, gX, gr, gi, C.SPREAD_USD_EVAL, gpx)   # الحقل cost_bps = السبريد بالدولار
 
     n = len(gr)
     v0 = int(n * (1 - C.VALID_FRACTION - C.TEST_FRACTION))

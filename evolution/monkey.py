@@ -19,25 +19,24 @@ def trading_days(index) -> int:
     return max(len(d), 1)
 
 
-def _account_paths(pos, close, lots, cost):
+def _account_paths(pos, close, lots, spread):
     """رصيد (دولار) لكل مسار مراكز pos=(M,T) بلوت ثابت: يرجع الرصيد النهائي، وصفر إذا انضرب الحساب."""
     dp = np.diff(close, append=close[-1])                       # حركة السعر للشمعة الجاية
     pnl = pos * lots * C.CONTRACT_SIZE * dp
     dpos = np.abs(np.diff(pos, axis=1, prepend=0.0))
-    fees = dpos * lots * C.CONTRACT_SIZE * close * cost
+    fees = dpos * lots * C.CONTRACT_SIZE * spread / 2
     eq = C.START_CAPITAL + np.cumsum(pnl - fees, axis=1)
     blown = (eq <= 0).any(axis=1)
-    final = eq[:, -1] - np.abs(pos[:, -1]) * lots * C.CONTRACT_SIZE * close[-1] * cost
+    final = eq[:, -1] - np.abs(pos[:, -1]) * lots * C.CONTRACT_SIZE * spread / 2
     return np.where(blown, 0.0, np.maximum(final, 0.0))
 
 
-def monkeys(close, cost_bps, change_prob, n, rng, side_probs=(1 / 3, 1 / 3, 1 / 3), lots=C.MIN_LOT):
+def monkeys(close, spread, change_prob, n, rng, side_probs=(1 / 3, 1 / 3, 1 / 3), lots=C.MIN_LOT):
     """
     القرود: يفتحون ويقفلون عشوائياً بنفس معدل تداول العقل ونفس ميوله ونفس اللوت،
     بحساب 35$ وبنفس السبريد. يرجع العائد اللوغاريتمي النهائي لكل قرد (الحساب المنضرب = خسارة كاملة).
     """
     T = len(close)
-    cost = cost_bps / 1e4
     out = np.empty(n)
     chunk = 100
     for s in range(0, n, chunk):
@@ -48,7 +47,7 @@ def monkeys(close, cost_bps, change_prob, n, rng, side_probs=(1 / 3, 1 / 3, 1 / 
         idx = np.where(change, np.arange(T)[None, :], 0)
         np.maximum.accumulate(idx, axis=1, out=idx)
         pos = np.take_along_axis(choice, idx, axis=1)
-        out[s: s + m] = np.log(np.maximum(_account_paths(pos, close, lots, cost), 1e-6) / C.START_CAPITAL)
+        out[s: s + m] = np.log(np.maximum(_account_paths(pos, close, lots, spread), 1e-6) / C.START_CAPITAL)
     return out
 
 
@@ -75,7 +74,7 @@ def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) 
     m = monkeys(close, cost_bps, change_prob, n_monkeys, rng, side_probs, lots)
     pct = float((m < brain_ret).mean() * 100)
     # أبسط استراتيجية ممكنة: شراء (أو بيع) والاحتفاظ طول الفترة بنفس اللوت — نأخذ الأحسن منهم
-    hold_paths = _account_paths(np.stack([np.ones(len(close)), -np.ones(len(close))]), close, lots, cost_bps / 1e4)
+    hold_paths = _account_paths(np.stack([np.ones(len(close)), -np.ones(len(close))]), close, lots, cost_bps)
     hold = float(np.log(max(hold_paths.max(), 1e-6) / C.START_CAPITAL))
     tpd = trades / trading_days(series.index)
     final_usd = C.START_CAPITAL * np.exp(brain_ret)

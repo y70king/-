@@ -45,7 +45,7 @@ jobs:
           restore-keys: market-data-
 
       - name: Download / update market data (Dukascopy)
-        run: python -m evolution.data
+        run: python -m evolution.data --max-minutes 20   # التاريخ القديم ينزل بـ workflow منفصل
 
       - name: Evolve brains
         env:

@@ -21,7 +21,7 @@ from .train import CHAMPION
 SYMBOLS = ("GC=F", "XAUUSD=X")
 SIDE = {1: "شراء 🟢", -1: "بيع 🔴", 0: "بدون صفقة ⚪"}
 REASON = {"tp": "🎯 ضرب الهدف", "sl": "🛑 ضرب الوقف", "brain": "🧠 العقل قرر يطلع",
-          "dead": "☠️ خسارة كبيرة", "end": "إغلاق"}
+          "dead": "☠️ خسارة كبيرة", "end": "إغلاق", "stopout": "⚠️ Stop Out (الهامش ما كفى)"}
 WARMUP_BARS = 200   # شموع يمر عليها العقل قبل ما يبدأ، عشان تتكون ذاكرته
 
 
@@ -98,13 +98,13 @@ def main():
         eng = brain.Engine(genome[None], cost, death_level=1e-9, record=True)
         eng.h = keep_h
         equity = st.get("equity", C.START_CAPITAL)
+        eng.cash[0] = eng.entry_cash[0] = equity      # البطل الجديد يكمل بنفس الرصيد
         if st:
             messages.append(f"🔄 بطل جديد (الجيل {meta['generation']}) استلم الحساب التجريبي.")
         st = {
             "champion_generation": meta["generation"],
             "started": st.get("started", str(now)),
             "start_price": st.get("start_price", float(px["close"][last])),
-            "equity_base": equity,
             "equity": equity,
             "engine": eng.state_dict(),
             "last_bar": str(idx[last]),
@@ -126,17 +126,17 @@ def main():
         if e["type"] == "open":
             messages.append(
                 f"🧠 فتح {SIDE[e['dir']]} @ {e['entry']:.2f} ({t})\n"
-                f"   الحجم: {e['size'] * 100:.0f}% من الحساب\n"
+                f"   اللوت: {e['lots']:.2f} (مخاطرة {e['risk_pct']:.0f}% من الرصيد)\n"
                 f"   🛑 الوقف: {e['sl']:.2f} ({e['sl_atr']:.1f}×ATR)\n"
                 f"   🎯 الهدف: {e['tp']:.2f} ({e['tp_atr']:.1f}×ATR)")
         else:
-            messages.append(f"{'✅' if e['pnl_pct'] > 0 else '❌'} إغلاق {SIDE[e['dir']]} @ {e['exit']:.2f} ({t}) — "
-                            f"{REASON.get(e['reason'], e['reason'])} → {e['pnl_pct']:+.2f}%")
-            st["trades"].append({k: e[k] for k in ("dir", "size", "entry", "exit", "reason", "pnl_pct", "bars")}
+            messages.append(f"{'✅' if e['pnl_usd'] > 0 else '❌'} إغلاق {SIDE[e['dir']]} @ {e['exit']:.2f} ({t}) — "
+                            f"{REASON.get(e['reason'], e['reason'])} → {e['pnl_usd']:+.2f}$ (الرصيد {e['balance']:.2f}$)")
+            st["trades"].append({k: e[k] for k in ("dir", "lots", "entry", "exit", "reason", "pnl_usd", "pnl_pct", "bars")}
                                 | {"exit_time": str(idx[e["t"]])})
     st["trades"] = st["trades"][-300:]
     st["engine"] = eng.state_dict()
-    st["equity"] = st["equity_base"] * float(np.exp(eng.log_eq[0]))
+    st["equity"] = float(eng.equity(px["close"][closed[-1]])[0])
 
     if messages:
         notify.send("💵 تداول تجريبي — ذهب\n\n" + "\n\n".join(messages) +
@@ -146,7 +146,7 @@ def main():
     today = now.strftime("%Y-%m-%d")
     if now.hour >= 21 and st.get("last_summary") != today:
         tr = st["trades"]
-        wins = sum(t["pnl_pct"] > 0 for t in tr)
+        wins = sum(t.get("pnl_usd", t["pnl_pct"]) > 0 for t in tr)
         gold_chg = (float(px["close"][closed[-1]]) / st["start_price"] - 1) * 100
         d = int(np.sign(eng.dir[0]))
         notify.send(

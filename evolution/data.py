@@ -129,11 +129,12 @@ def _download_days(sym, days_list, scale, workers):
     return [p for p in results if p is not None and not isinstance(p, str)]
 
 
-def update(sym: str, days: int = C.HISTORY_DAYS, workers: int = 3, deadline: float = None):
+def update(sym: str, days: int = None, workers: int = 3, deadline: float = None):
     """ينزل الأيام الناقصة على دفعات، ويحفظ بعد كل دفعة (لو انقطع يكمل من وين وقف)."""
     if C.DATA_SOURCE == "yahoo":
         return update_yahoo(sym)
     os.makedirs(C.DATA_DIR, exist_ok=True)
+    days = days or C.HISTORY_DAYS_BY_MARKET.get(sym, C.HISTORY_DAYS)
     scale = C.MARKETS[sym]["scale"]
     today = dt.datetime.now(dt.timezone.utc).date()
     first_day = today - dt.timedelta(days=days)
@@ -142,6 +143,10 @@ def update(sym: str, days: int = C.HISTORY_DAYS, workers: int = 3, deadline: flo
     # نعيد تنزيل آخر يومين احتياطاً (ممكن كانوا ناقصين)
     start = first_day if df is None else max(first_day, df.index[-1].date() - dt.timedelta(days=2))
     all_days = [start + dt.timedelta(days=i) for i in range((today - start).days)]
+    if df is not None and df.index[0].date() > first_day + dt.timedelta(days=7):
+        # تاريخ أقدم ناقص (مثلاً كبرنا المدة) → ننزله كمان، من الأحدث للأقدم
+        old_days = [first_day + dt.timedelta(days=i) for i in range((df.index[0].date() - first_day).days)]
+        all_days = old_days[::-1] + all_days
     print(f"[{sym}] تنزيل {len(all_days)} يوم...")
 
     for c in range(0, len(all_days), 60):

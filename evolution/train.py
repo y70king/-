@@ -34,12 +34,20 @@ HISTORY = os.path.join(C.MODELS_DIR, "history.csv")
 
 def window_score(res, ret):
     """درجة العقل بفترة وحدة، مقسومة على تذبذب الفترة عشان البيتكوين ما يطغى على اليورو."""
-    scale = ret.std() * np.sqrt(len(ret)) + 1e-12
+    # بحساب الدولار (35$) الأرقام أصلاً على مستوى الحساب، فما نحتاج نقسم على تذبذب السوق
+    scale = 1.0
     dd_log = -np.log1p(-np.minimum(res["max_dd"], 0.999))
     score = (res["log_return"] - 0.5 * dd_log) / scale
     score = np.where(res["trades"] < 4, score - 0.5, score)       # الكسلان اللي ما يتداول ما يفوز
     score = np.where(res["alive"], score, score - 1.0)             # اللي مات يتعاقب
     return score
+
+
+def trade_rate_penalty(trades, index):
+    """عقوبة للعقل اللي يتداول أقل من الحد الأدنى باليوم (كل ما نقص أكثر، العقوبة أكبر)."""
+    rate = trades / monkey.trading_days(index)
+    short = np.clip((C.MIN_TRADES_PER_DAY - rate) / C.MIN_TRADES_PER_DAY, 0, 1)
+    return 4.0 * short   # قوية: العقل اللي ما يتداول 4 باليوم ما يقدر يفوز مهما ربح
 
 
 def evaluate(pop, train, weights, rng):
@@ -54,7 +62,7 @@ def evaluate(pop, train, weights, rng):
         mask = rng.random(X.shape[1]) >= C.FEATURE_DROPOUT
         X = X * mask + rng.normal(0, C.FEATURE_NOISE, X.shape).astype(np.float32)
         res = brain.simulate(pop, X, px, s.cost_bps)
-        total += window_score(res, ret)
+        total += window_score(res, ret) - trade_rate_penalty(res["trades"], s.index[a: a + C.WINDOW_BARS])
     return total / C.WINDOWS_PER_GEN
 
 

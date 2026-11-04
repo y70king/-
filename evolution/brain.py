@@ -7,9 +7,9 @@
              + ذاكرته من الشموع اللي فاتت
     المخرجات (كلها يقررها العقل بنفسه، ما فيه ولا رقم ثابت):
         1. الاتجاه: بيع / بدون صفقة / شراء
-        2. حجم الصفقة: من 25% لـ 100% من الحساب حسب ثقته
-        3. وقف الخسارة: من 0.5 لـ 4 × ATR
-        4. الهدف: من 0.5 لـ 8 × ATR
+        2. نسبة المخاطرة: من 1% لـ 10% من الحساب حسب ثقته (ومنها ينحسب اللوت)
+        3. وقف الخسارة: من 0.2 لـ 4 × ATR
+        4. الهدف: من 0.3 لـ 8 × ATR
     وأي وقت يقدر يطلع من الصفقة قبل الوقف أو الهدف إذا شاف شي ما عجبه.
 
 الجينوم = كل أوزان الشبكة بمتجه واحد، والتطور يغيره.
@@ -24,11 +24,10 @@ from .features import N_FEATURES
 F = N_FEATURES
 H = C.HIDDEN
 N_STATE = 6     # حالة الصفقة اللي يحس فيها العقل
-N_OUT = 6       # بيع/بدون/شراء + حجم + وقف + هدف
+N_OUT = 6       # بيع/بدون/شراء + مخاطرة + وقف + هدف
 
-SIZE_MIN, SIZE_MAX = 0.25, 1.0
-SL_MIN, SL_MAX = 0.5, 4.0
-TP_MIN, TP_MAX = 0.5, 8.0
+SL_MIN, SL_MAX = 0.2, 4.0
+TP_MIN, TP_MAX = 0.3, 8.0
 
 _SHAPES = [("W1", (F, H)), ("U", (H, H)), ("Ws", (N_STATE, H)), ("b1", (H,)),
            ("W2", (H, N_OUT)), ("b2", (N_OUT,))]
@@ -58,25 +57,33 @@ def _sig(x):
 
 class Engine:
     """
-    يشغّل P عقل بنفس الوقت، شمعة بشمعة. نفس الكود يُستخدم بالتدريب وبالتداول التجريبي الحي.
-    لكل شمعة: process_bar() — أول شي يشيك هل ضرب الوقف/الهدف داخل الشمعة،
-    وبعدين العقل يقرر عند الإغلاق.
+    حساب تداول حقيقي (بالدولار) لـ P عقل بنفس الوقت، شمعة بشمعة.
+    نفس الكود يُستخدم بالتدريب وبالتداول التجريبي الحي.
+
+    مثل الوسيط بالضبط:
+      - الحجم باللوت: أقل شي 0.01 لوت (= 1 أونصة ذهب، كل 1$ حركة = 1$ ربح/خسارة)
+      - العقل يختار نسبة المخاطرة (1%–10%) ووقفه، ومنها ينحسب اللوت.
+        إذا الحساب صغير والوقف بعيد، مجبور على 0.01 لوت (يعني مخاطرة أكبر من اللي يبيها)
+      - رافعة + هامش: إذا الهامش ما يكفي ما يقدر يفتح، وإذا نزل الرصيد كثير يصير Stop Out
+      - السبريد ينخصم بالدخول والخروج
     """
 
-    def __init__(self, genomes, cost_bps, death_level=C.DEATH_LEVEL, record=False):
+    def __init__(self, genomes, cost_bps, death_level=C.DEATH_LEVEL, record=False, start=C.START_CAPITAL):
         self.w = unpack(genomes)
-        self.P = genomes.shape[0]
+        self.P = P = genomes.shape[0]
         self.cost = cost_bps / 1e4
         self.log_death = np.log(death_level)
         self.record = record
-        P = self.P
+        self.start = float(start)
         self.h = np.zeros((P, H), dtype=np.float32)
         self.dir = np.zeros(P)
-        self.size = np.zeros(P)
+        self.lots = np.zeros(P)
         self.entry = np.zeros(P)
         self.sl = np.zeros(P)
         self.tp = np.zeros(P)
         self.bars = np.zeros(P)
+        self.cash = np.full(P, self.start)      # الرصيد المحقق بالدولار
+        self.entry_cash = np.full(P, self.start)
         self.log_eq = np.zeros(P)
         self.peak = np.zeros(P)
         self.max_dd = np.zeros(P)
@@ -85,10 +92,9 @@ class Engine:
         self.n_bars = 0
         self.alive = np.ones(P, dtype=bool)
         self.events = []      # (لعقل واحد) سجل الصفقات
-        self.entry_eq = np.zeros(P)
 
     # ---------------------------------------------------------------- حفظ/استرجاع (للتداول الحي)
-    STATE_KEYS = ("h", "dir", "size", "entry", "sl", "tp", "bars", "log_eq", "entry_eq")
+    STATE_KEYS = ("h", "dir", "lots", "entry", "sl", "tp", "bars", "cash", "entry_cash", "log_eq")
 
     def state_dict(self):
         return {k: np.asarray(getattr(self, k))[0].tolist() for k in self.STATE_KEYS}
@@ -98,20 +104,32 @@ class Engine:
             if k in d:
                 getattr(self, k)[0] = np.asarray(d[k])
 
+    def equity(self, price):
+        return self.cash + self.dir * self.lots * C.CONTRACT_SIZE * (price - self.entry)
+
+    def _update_log_eq(self, price):
+        self.log_eq = np.log(np.maximum(self.equity(price), 1e-6) / self.start)
+
     # ---------------------------------------------------------------- منطق التداول
     def _close(self, mask, price, reason, t):
+        mask = mask & (self.dir != 0)
         if not mask.any():
             return
-        self.log_eq[mask] += np.log1p(-self.cost * self.size[mask])
+        pnl = self.dir * self.lots * C.CONTRACT_SIZE * (price - self.entry)
+        fee = self.lots * C.CONTRACT_SIZE * price * self.cost
+        # حماية من الرصيد السالب (مثل أغلب الوسطاء): أقل شي صفر
+        self.cash = np.where(mask, np.maximum(self.cash + pnl - fee, 0.0), self.cash)
         if self.record and mask[0]:
+            usd = float(self.cash[0] - self.entry_cash[0])
             self.events.append({
                 "type": "close", "t": t, "reason": reason, "dir": int(self.dir[0]),
-                "size": float(self.size[0]), "entry": float(self.entry[0]), "exit": float(price[0]),
+                "lots": float(self.lots[0]), "entry": float(self.entry[0]), "exit": float(price[0]),
                 "sl": float(self.sl[0]), "tp": float(self.tp[0]), "bars": int(self.bars[0]),
-                "pnl_pct": float((np.exp(self.log_eq[0] - self.entry_eq[0]) - 1) * 100),
+                "pnl_usd": usd, "pnl_pct": usd / max(float(self.entry_cash[0]), 1e-9) * 100,
+                "balance": float(self.cash[0]),
             })
-        self.dir[mask] = 0.0
-        self.size[mask] = 0.0
+        self.dir = np.where(mask, 0.0, self.dir)
+        self.lots = np.where(mask, 0.0, self.lots)
 
     def process_bar(self, t, pre_t, o, hi, lo, c, atr):
         """pre_t = (P, H) مساهمة الحواس لهالشمعة (محسوبة مسبقاً). الأسعار أرقام عادية."""
@@ -123,23 +141,25 @@ class Engine:
         sl_px = np.where(long_, np.minimum(o, self.sl), np.maximum(o, self.sl))
         tp_px = np.where(long_, np.maximum(o, self.tp), np.minimum(o, self.tp))
         px_end = np.where(hit_sl, sl_px, np.where(hit_tp, tp_px, c))
-        open_ = self.dir != 0
-        if open_.any():
-            # صفقة بحجم ثابت من الدخول للخروج: الرصيد = رصيد الدخول × (1 + اتجاه × حجم × تغير السعر)
-            ratio = self.dir * self.size * (px_end / np.where(open_, self.entry, 1.0) - 1)
-            self.log_eq = np.where(open_, self.entry_eq + np.log1p(np.maximum(ratio, -0.99)), self.log_eq)
-            self._close(hit_sl, px_end, "sl", t)
-            self._close(hit_tp, px_end, "tp", t)
+        self._close(hit_sl, px_end, "sl", t)
+        self._close(hit_tp, px_end, "tp", t)
+        cpx = np.full(self.P, c)
+        # Stop Out: الرصيد نزل تحت نص الهامش المستخدم → الوسيط يقفل الصفقة
+        margin = self.lots * C.CONTRACT_SIZE * c / C.LEVERAGE
+        self._close((self.dir != 0) & (self.equity(c) <= C.STOPOUT_LEVEL * margin), cpx, "stopout", t)
 
         # 2) العقل يفكر عند إغلاق الشمعة
         a = max(atr, 1e-9)
+        eq_now = np.maximum(self.equity(c), 1e-9)
+        open_ = self.dir != 0
+        real_risk = self.lots * C.CONTRACT_SIZE * np.abs(self.entry - self.sl) / eq_now
         st = np.stack([
             self.dir,
-            self.size,
-            np.clip(self.dir * (c - self.entry) / a, -5, 5) * (self.dir != 0),
+            np.clip(real_risk / C.RISK_MAX, 0, 3) * open_,                    # المخاطرة الفعلية بالصفقة
+            np.clip(self.dir * (c - self.entry) / a, -5, 5) * open_,         # ربحه/خسارته الحالية
             np.minimum(self.bars / 48.0, 3.0),
-            np.clip(np.abs(c - self.sl) / a, 0, 6) * (self.dir != 0),
-            np.clip(np.abs(self.tp - c) / a, 0, 10) * (self.dir != 0),
+            np.clip(np.abs(c - self.sl) / a, 0, 6) * open_,
+            np.clip(np.log(eq_now / self.start), -3, 3),                     # حجم حسابه (كبر ولا صغر)
         ], axis=1).astype(np.float32)
         w = self.w
         z = pre_t + np.matmul(self.h[:, None, :], w["U"])[:, 0, :] \
@@ -148,33 +168,43 @@ class Engine:
         out = np.matmul(self.h[:, None, :], w["W2"])[:, 0, :] + w["b2"]
         target = (out[:, :3].argmax(axis=1) - 1).astype(np.float64)
         target[~self.alive] = 0.0
-        size = SIZE_MIN + (SIZE_MAX - SIZE_MIN) * _sig(out[:, 3])
+        risk = C.RISK_MIN + (C.RISK_MAX - C.RISK_MIN) * _sig(out[:, 3])
         sl_atr = SL_MIN + (SL_MAX - SL_MIN) * _sig(out[:, 4])
         tp_atr = TP_MIN + (TP_MAX - TP_MIN) * _sig(out[:, 5])
 
         change = target != self.dir
-        cpx = np.full(self.P, c)
-        self._close(change & (self.dir != 0), cpx, "brain", t)
+        self._close(change, cpx, "brain", t)
         opening = change & (target != 0)
         if opening.any():
+            eq = self.cash
+            sl_dist = sl_atr * a
+            step = C.LOT_STEP
+            want = np.floor(eq * risk / (sl_dist * C.CONTRACT_SIZE) / step + 1e-9) * step
+            max_lots = np.floor(eq * C.LEVERAGE / (c * C.CONTRACT_SIZE) / step + 1e-9) * step
+            lots = np.minimum(np.maximum(want, C.MIN_LOT), max_lots)
+            opening &= (lots >= C.MIN_LOT - 1e-12) & (eq > 0)
+            fee = lots * C.CONTRACT_SIZE * c * self.cost
+            self.entry_cash = np.where(opening, self.cash, self.entry_cash)
+            self.cash = np.where(opening, self.cash - fee, self.cash)
             self.dir = np.where(opening, target, self.dir)
-            self.size = np.where(opening, size, self.size)
+            self.lots = np.where(opening, lots, self.lots)
             self.entry = np.where(opening, c, self.entry)
-            self.sl = np.where(opening, c - target * sl_atr * a, self.sl)
+            self.sl = np.where(opening, c - target * sl_dist, self.sl)
             self.tp = np.where(opening, c + target * tp_atr * a, self.tp)
             self.bars = np.where(opening, 0, self.bars)
-            self.log_eq[opening] += np.log1p(-self.cost * size[opening])
-            self.entry_eq = np.where(opening, self.log_eq, self.entry_eq)
             self.trades += opening
             if self.record and opening[0]:
                 self.events.append({
-                    "type": "open", "t": t, "dir": int(target[0]), "size": float(size[0]),
+                    "type": "open", "t": t, "dir": int(target[0]), "lots": float(lots[0]),
                     "entry": float(c), "sl": float(self.sl[0]), "tp": float(self.tp[0]),
                     "sl_atr": float(sl_atr[0]), "tp_atr": float(tp_atr[0]),
+                    "risk_pct": float(lots[0] * C.CONTRACT_SIZE * sl_dist[0] / max(eq[0], 1e-9) * 100),
+                    "balance": float(eq[0]),
                 })
         self.bars += self.dir != 0
         self.in_market += self.dir != 0
         self.n_bars += 1
+        self._update_log_eq(c)
 
         # 3) المخاطر: أقصى تراجع + موت العقل اللي خسر كثير
         np.maximum(self.peak, self.log_eq, out=self.peak)
@@ -182,7 +212,8 @@ class Engine:
         died = self.alive & (self.log_eq < self.log_death)
         if died.any():
             self.alive &= ~died
-            self._close(died & (self.dir != 0), cpx, "dead", t)
+            self._close(died, cpx, "dead", t)
+            self._update_log_eq(c)
 
 
 def precompute(genomes, X):
@@ -203,9 +234,10 @@ def simulate(genomes, X, px, cost_bps, death_level=C.DEATH_LEVEL, record=False):
     for t in range(T):
         eng.process_bar(t, pre[t], o[t], hi[t], lo[t], c[t], at[t])
         if record:
-            positions[t] = eng.dir * eng.size
+            positions[t] = eng.dir * eng.lots
     # نقفل أي صفقة مفتوحة بالنهاية (تكلفة الخروج) عشان المقارنة عادلة
     eng._close(eng.dir != 0, np.full(eng.P, c[-1]), "end", T - 1)
+    eng._update_log_eq(c[-1])
     res = {
         "log_return": eng.log_eq.copy(),
         "max_dd": 1 - np.exp(-eng.max_dd),
@@ -227,7 +259,7 @@ def personality(events, bar_minutes=C.BAR_MINUTES) -> dict:
         return {}
     pnl = np.array([e["pnl_pct"] for e in closes])
     wins, losses = pnl[pnl > 0], pnl[pnl <= 0]
-    reasons = {r: sum(e["reason"] == r for e in closes) for r in ("tp", "sl", "brain", "end", "dead")}
+    reasons = {r: sum(e["reason"] == r for e in closes) for r in ("tp", "sl", "brain", "end", "dead", "stopout")}
     return {
         "trades": len(closes),
         "win_rate": float((pnl > 0).mean() * 100),
@@ -236,7 +268,10 @@ def personality(events, bar_minutes=C.BAR_MINUTES) -> dict:
         # نسبة الشراء حسب الوقت داخل السوق (مو عدد الصفقات)
         "long_pct": float(sum(e["bars"] for e in closes if e["dir"] > 0)
                           / max(sum(e["bars"] for e in closes), 1) * 100),
-        "avg_size_pct": float(np.mean([e["size"] for e in opens]) * 100),
+        "avg_lots": float(np.mean([e["lots"] for e in opens])),
+        "avg_risk_pct": float(np.mean([e["risk_pct"] for e in opens])),
+        "avg_win_usd": float(np.mean([e["pnl_usd"] for e in closes if e["pnl_usd"] > 0] or [0])),
+        "avg_loss_usd": float(np.mean([e["pnl_usd"] for e in closes if e["pnl_usd"] <= 0] or [0])),
         "avg_sl_atr": float(np.mean([e["sl_atr"] for e in opens])),
         "avg_tp_atr": float(np.mean([e["tp_atr"] for e in opens])),
         "avg_hold_hours": float(np.mean([e["bars"] for e in closes]) * bar_minutes / 60),
@@ -255,9 +290,10 @@ def describe(p: dict) -> str:
         f"     {style}، {side} ({p['long_pct']:.0f}% من وقته بالسوق شراء)\n"
         f"     يحط الوقف ~{p['avg_sl_atr']:.1f}×ATR والهدف ~{p['avg_tp_atr']:.1f}×ATR "
         f"(عائد/مخاطرة ~{p['avg_tp_atr'] / max(p['avg_sl_atr'], 1e-9):.1f})\n"
-        f"     حجم الصفقة ~{p['avg_size_pct']:.0f}% من الحساب، متوسط مدة الصفقة {p['avg_hold_hours']:.1f} ساعة\n"
-        f"     نسبة الربح {p['win_rate']:.0f}% | متوسط الربح {p['avg_win_pct']:+.2f}% | متوسط الخسارة {p['avg_loss_pct']:+.2f}%\n"
+        f"     اللوت ~{p['avg_lots']:.2f}، مخاطرة فعلية ~{p['avg_risk_pct']:.0f}% من الحساب بالصفقة، مدة الصفقة {p['avg_hold_hours']:.1f} ساعة\n"
+        f"     نسبة الربح {p['win_rate']:.0f}% | متوسط الربح {p['avg_win_usd']:+.2f}$ | متوسط الخسارة {p['avg_loss_usd']:+.2f}$\n"
         f"     طريقة الخروج: هدف {ex['tp']} | وقف {ex['sl']} | قرار العقل {ex['brain']}"
+        + (f" | Stop Out {ex['stopout']}" if ex.get("stopout") else "")
     )
 
 

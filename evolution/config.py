@@ -15,7 +15,7 @@ PAPER_STATE = os.path.join(ROOT, f"paper_state_{BAR_MINUTES}m_pro.json")
 # scale = القسمة لتحويل السعر الخام من Dukascopy للسعر الحقيقي
 # cost_bps = تكلفة (سبريد + عمولة) لكل تغيير مركز، بنقاط الأساس (1bp = 0.01%)
 MARKETS = {
-    "XAUUSD": {"scale": 1000,   "cost_bps": 1.5, "weight": 4.0},   # الذهب — السوق الأساسي
+    "XAUUSD": {"scale": 1000,   "cost_bps": 1.5, "weight": 8.0},   # الذهب — السوق الأساسي (أغلب التمرين عليه)
     "XAGUSD": {"scale": 1000,   "cost_bps": 3.0, "weight": 1.0},
     "EURUSD": {"scale": 100000, "cost_bps": 0.8, "weight": 1.0},
     "GBPUSD": {"scale": 100000, "cost_bps": 1.0, "weight": 1.0},
@@ -76,7 +76,7 @@ MONKEY_PASS_PERCENTILE = 95.0   # لازم العقل يتفوق على 95% من
 # ضد "حفظ فترة التحقق": البطل لازم كمان يربح ويتفوق على 90% من القرود
 # بنص الأسواق الثانية على الأقل بنفس الفترة (العقل الذكي يفهم أي سوق)
 OTHERS_PASS_PERCENTILE = 90.0
-OTHERS_PASS_FRACTION = 0.5
+OTHERS_PASS_FRACTION = 0.0   # 0 = مطفي: الشغل كله على الذهب (الأسواق الثانية بس للتمرين)
 VALIDATE_EVERY = 25             # كل كم جيل نختبر أفضل العقول على بيانات التحقق
 
 # ------------------------------------------------------------------ التداول التجريبي

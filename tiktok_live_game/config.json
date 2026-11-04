@@ -1,0 +1,17 @@
+{
+  "tiktokUsername": "PUT_YOUR_TIKTOK_USERNAME_HERE",
+  "port": 3000,
+
+  "likesPerSpawn": 20,
+  "joinCommand": "!join",
+
+  "giftTiers": {
+    "small":  { "minDiamonds": 1,   "effect": "shield" },
+    "medium": { "minDiamonds": 10,  "effect": "giant" },
+    "large":  { "minDiamonds": 100, "effect": "bomb" },
+    "huge":   { "minDiamonds": 500, "effect": "king" }
+  },
+
+  "maxFighters": 60,
+  "roundSeconds": 180
+}

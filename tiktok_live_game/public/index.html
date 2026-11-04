@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d1a; overflow: hidden; }
+  body.transparent { background: transparent; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; max-width: 100vw; max-height: 100vh; aspect-ratio: 9 / 16; height: 100vh; }
+  #test {
+    position: fixed; top: 8px; left: 8px; z-index: 5; display: none; flex-direction: column; gap: 6px;
+    background: rgba(0,0,0,.75); color: #fff; padding: 10px; border-radius: 10px;
+    font: 13px system-ui, sans-serif; max-width: 220px;
+  }
+  #test.on { display: flex; }
+  #test button { font: inherit; padding: 6px 8px; border: 0; border-radius: 6px; cursor: pointer; background: #2b2f55; color: #fff; text-align: left; }
+  #test button:hover { background: #3c4180; }
+  #test input { font: inherit; padding: 5px; border-radius: 6px; border: 0; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1080" height="1920"></canvas></div>
+
+<div id="test">
+  <b>Test panel</b>
+  <input id="tname" placeholder="Viewer name (optional)">
+  <button data-k="like" data-c="1">❤ 1 like</button>
+  <button data-k="like" data-c="20">❤ 20 likes (new fighter)</button>
+  <button data-k="join">💬 Comment !join</button>
+  <button data-k="gift" data-d="1" data-g="Rose">🌹 Rose (1) → shield</button>
+  <button data-k="gift" data-d="30" data-g="Perfume">🎁 Perfume (30) → giant</button>
+  <button data-k="gift" data-d="199" data-g="Sunglasses">💣 199 → bomb</button>
+  <button data-k="gift" data-d="1000" data-g="Galaxy">👑 Galaxy (1000) → king</button>
+  <button data-k="follow">➕ Follow</button>
+  <button data-k="share">↗ Share</button>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>

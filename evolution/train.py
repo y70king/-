@@ -42,6 +42,13 @@ def window_score(res, ret):
     return score
 
 
+def trade_rate_penalty(trades, index):
+    """عقوبة للعقل اللي يتداول أقل من الحد الأدنى باليوم (كل ما نقص أكثر، العقوبة أكبر)."""
+    rate = trades / monkey.trading_days(index)
+    short = np.clip((C.MIN_TRADES_PER_DAY - rate) / C.MIN_TRADES_PER_DAY, 0, 1)
+    return 1.5 * short
+
+
 def evaluate(pop, train, weights, rng):
     total = np.zeros(len(pop))
     for _ in range(C.WINDOWS_PER_GEN):
@@ -54,7 +61,7 @@ def evaluate(pop, train, weights, rng):
         mask = rng.random(X.shape[1]) >= C.FEATURE_DROPOUT
         X = X * mask + rng.normal(0, C.FEATURE_NOISE, X.shape).astype(np.float32)
         res = brain.simulate(pop, X, px, s.cost_bps)
-        total += window_score(res, ret)
+        total += window_score(res, ret) - trade_rate_penalty(res["trades"], s.index[a: a + C.WINDOW_BARS])
     return total / C.WINDOWS_PER_GEN
 
 

@@ -13,6 +13,12 @@ from . import config as C
 from .brain import simulate, personality, describe
 
 
+def trading_days(index) -> int:
+    """عدد أيام التداول (من الاثنين للجمعة) بالفترة."""
+    d = index[index.dayofweek < 5].normalize().unique()
+    return max(len(d), 1)
+
+
 def monkeys(ret: np.ndarray, cost_bps: float, change_prob: float, n: int, rng: np.random.Generator,
             side_probs=(1 / 3, 1 / 3, 1 / 3)):
     """
@@ -54,6 +60,7 @@ def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) 
     pct = float((m < brain_ret).mean() * 100)
     # أبسط استراتيجية ممكنة: شراء (أو بيع) والاحتفاظ طول الفترة
     hold = float(np.abs(np.sum(np.log1p(np.expm1(ret)))) - 2 * cost_bps / 1e4)
+    tpd = trades / trading_days(series.index)
     return {
         "brain_return_pct": float(np.expm1(brain_ret) * 100),
         "brain_max_dd_pct": float(r["max_dd"][0] * 100),
@@ -65,7 +72,9 @@ def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) 
         "hold_pct": float(np.expm1(hold) * 100),
         "market_pct": float(np.expm1(np.sum(ret)) * 100),   # حركة السوق نفسه (موجب = طلع، سالب = نزل)
         "beats_hold": brain_ret > hold,
-        "passed": bool(pct >= C.MONKEY_PASS_PERCENTILE and trades >= 10 and brain_ret > hold),
+        "trades_per_day": float(tpd),
+        "passed": bool(pct >= C.MONKEY_PASS_PERCENTILE and trades >= 10 and brain_ret > hold
+                       and tpd >= C.MIN_TRADES_PER_DAY),
         "bars": int(len(ret)),
         "personality": personality(r["events"]),
     }
@@ -76,7 +85,7 @@ def report(name: str, res: dict) -> str:
     return (
         f"🐒 اختبار القرود — {name}\n"
         f"  العقل: {res['brain_return_pct']:+.2f}%  (أقصى تراجع {res['brain_max_dd_pct']:.1f}%، "
-        f"{res['trades']} صفقة، بالسوق {res['exposure_pct']:.0f}% من الوقت)\n"
+        f"{res['trades']} صفقة = {res.get('trades_per_day', 0):.1f} باليوم، بالسوق {res['exposure_pct']:.0f}% من الوقت)\n"
         f"  القرود: الوسط {res['monkey_median_pct']:+.2f}%  | أفضل قرد {res['monkey_best_pct']:+.2f}%\n"
         f"  السوق نفسه بهالفترة: {res.get('market_pct', 0):+.2f}% "
         f"({'طلع' if res.get('market_pct', 0) > 0 else 'نزل'})\n"

@@ -146,6 +146,8 @@ def main():
         os.remove(HISTORY)
     if os.path.exists(CHECKPOINT) and not args.fresh:
         pop, gen, champ_score, rng, era = load_checkpoint()
+        if not os.path.exists(CHAMPION):
+            champ_score = -np.inf   # البطل انحذف (مثلاً ما كان يطابق الشروط) → نبدأ من جديد بالمقارنة
         if not era or (pop.shape[1] != brain.GENOME_SIZE):
             era = new_era()
         print(f"♻️  استكمال من الجيل {gen} (أفضل بطل حتى الآن: {champ_score:.3f})")
@@ -177,13 +179,15 @@ def main():
             best = int(np.argmax(vscore))
             mres = monkey.test(top[best], valid, seed=gen)
             others_ok = 0
-            if mres["passed"] and vscore[best] > champ_score:
+            if mres["passed"] and vscore[best] > champ_score and mres["trades"] >= C.CHAMP_MIN_TRADES \
+                    and mres["exposure_pct"] >= C.CHAMP_MIN_EXPOSURE_PCT:
                 for o in valid.others:
                     r = monkey.test(top[best], o, n_monkeys=300, seed=gen)
                     others_ok += r["beats_monkeys_pct"] >= C.OTHERS_PASS_PERCENTILE and r["brain_return_pct"] > 0
             need = int(np.ceil(len(valid.others) * C.OTHERS_PASS_FRACTION))
             mres["other_markets_passed"] = f"{others_ok}/{len(valid.others)}"
-            is_champ = bool(mres["passed"] and vscore[best] > champ_score and others_ok >= need)
+            active = mres["trades"] >= C.CHAMP_MIN_TRADES and mres["exposure_pct"] >= C.CHAMP_MIN_EXPOSURE_PCT
+            is_champ = bool(mres["passed"] and active and vscore[best] > champ_score and others_ok >= need)
             if is_champ:
                 champ_score = float(vscore[best])
                 meta = {"generation": gen, "valid_score": champ_score, "valid": mres,

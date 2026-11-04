@@ -4,10 +4,11 @@
 // إلى أحداث للعبة، ويرسلها عبر WebSocket لصفحة اللعبة (public/index.html).
 //
 // التشغيل:
-//   node server.js                 -> يستخدم اليوزر من config.json أو من متغير TIKTOK_USERNAME
+//   node server.js                 -> يستخدم اليوزر من config.json
 //   node server.js some_username   -> يرتبط بـ @some_username
 //   node server.js --demo          -> مشاهدين وهميين للتجربة
-// وتكدر تكتب اليوزر من صفحة اللعبة نفسها (مناسب للتلفون).
+//   node server.js --open          -> يفتح اللعبة بنافذة مستقلة
+// وتكدر تكتب اليوزر من صفحة اللعبة نفسها.
 
 const http = require('http');
 const fs = require('fs');
@@ -62,6 +63,7 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
+wss.on('error', () => {});            // أخطاء المنفذ تنعالج تحت بـ server.on('error')
 let lastStatus = { type: 'status', state: 'idle', text: 'اكتب يوزرك بتيك توك واضغط ابدأ' };
 
 function broadcast(msg) {
@@ -255,8 +257,53 @@ function startDemo() {
   status('connected', 'وضع التجربة — مشاهدين وهميين');
 }
 
+// ---------------------------------------------------- فتح اللعبة بنافذة مستقلة
+// نفتحها كنافذة تطبيق (بدون شريط عناوين) حتى تلتقطها بسهولة بـ OBS أو TikTok LIVE Studio.
+// نفضّل Edge لأن بيه أصوات عربية طبيعية (منها عراقية)، وإذا ماكو نستخدم Chrome.
+function openBrowser(url) {
+  const { spawn } = require('child_process');
+  const appArgs = [`--app=${url}`, '--window-size=560,1000', '--autoplay-policy=no-user-gesture-required'];
+  const run = (cmd, a) => {
+    try {
+      const child = spawn(cmd, a, { detached: true, stdio: 'ignore' });
+      child.on('error', () => console.log(`افتح المتصفح على: ${url}`));
+      child.unref(); return true;
+    } catch { return false; }
+  };
+  const env = process.env;
+  if (process.platform === 'win32') {
+    const candidates = [
+      `${env['ProgramFiles(x86)']}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${env.ProgramFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${env['ProgramFiles(x86)']}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+    ];
+    const exe = candidates.find(c => fs.existsSync(c));
+    if (!(exe && run(exe, appArgs))) run('cmd', ['/c', 'start', '', url]);
+  } else if (process.platform === 'darwin') {
+    const apps = ['/Applications/Microsoft Edge.app', '/Applications/Google Chrome.app'];
+    const app = apps.find(a => fs.existsSync(a));
+    if (!(app && run('open', ['-na', app, '--args', ...appArgs]))) run('open', [url]);
+  } else {
+    run('xdg-open', [url]);
+  }
+}
+
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    // اللعبة شغالة من قبل: بس نفتح النافذة
+    console.log(`اللعبة شغالة من قبل على المنفذ ${PORT}. دا نفتح النافذة…`);
+    if (args.includes('--open')) openBrowser(`http://localhost:${PORT}/`);
+    setTimeout(() => process.exit(0), 1500);
+  } else throw err;
+});
+
 server.listen(PORT, () => {
-  console.log(`\n  صفحة اللعبة:  http://localhost:${PORT}/\n`);
+  const url = `http://localhost:${PORT}/`;
+  console.log(`\n  ✅ اللعبة شغالة:  ${url}`);
+  console.log('  لا تسد هاي النافذة طول ما انت تبث.\n');
+  if (args.includes('--open')) openBrowser(url);
   if (args.includes('--demo')) startDemo();
   else if (username) connectTikTok();
 });

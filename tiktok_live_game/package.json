@@ -1,14 +1,17 @@
 {
   "name": "tiktok-live-game",
   "version": "1.0.0",
-  "description": "Interactive TikTok LIVE arena game: likes and gifts from viewers spawn fighters and power-ups on stream",
+  "description": "لعبة تفاعلية لبث تيك توك على الحاسوب: اللايكات والهدايا تدخّل أسماء المشاهدين للساحة مع تعليق صوتي عربي",
   "main": "server.js",
   "private": true,
   "scripts": {
-    "start": "node server.js",
-    "demo": "node server.js --demo"
+    "start": "node server.js --open",
+    "demo": "node server.js --demo --open",
+    "server": "node server.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "tiktok-live-connector": "2.4.4",
     "ws": "8.18.3"

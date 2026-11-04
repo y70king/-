@@ -2,11 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0b0d1a">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ساحة البث</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;800&display=swap" rel="stylesheet">
@@ -42,9 +38,12 @@
   #test { padding: 6px; }
   #test .box { max-width: 520px; }
 
-  #gear { position: fixed; z-index: 6; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; width: 40px; height: 40px;
-    padding: 0; border-radius: 50%; background: rgba(255,255,255,.08); font-size: 20px; opacity: .45; }
-  body.clean #gear { display: none; }
+  /* زر الإعدادات يظهر بس لما الماوس يكون فوقه، حتى ما يبين بالبث */
+  #gear { position: fixed; z-index: 6; bottom: 10px; left: 10px; width: 44px; height: 44px;
+    padding: 0; border-radius: 50%; background: rgba(255,255,255,.1); font-size: 20px; opacity: 0; transition: opacity .2s; }
+  #gear:hover, #gear:focus-visible { opacity: 1; }
+  .keys { font-size: 13px; color: var(--muted); text-align: center; }
+  kbd { background: #0d1030; border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -71,7 +70,7 @@
 
     <h2>الشاشة</h2>
     <label class="opt">🧪 أزرار التجربة <input type="checkbox" id="testOn"></label>
-    <label class="opt">إخفاء زر الإعدادات (اضغط مرتين على العنوان حتى يرجع) <input type="checkbox" id="clean"></label>
+    <div class="keys">اختصارات: <kbd>S</kbd> الإعدادات · <kbd>T</kbd> أزرار التجربة</div>
     <button id="close">✔ رجوع للعبة</button>
   </div>
 </div>

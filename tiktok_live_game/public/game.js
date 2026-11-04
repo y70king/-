@@ -30,7 +30,7 @@
   const hue = s => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; };
 
   // ------------------------------------------------- التعليق الصوتي والمكتوب
-  const settings = { voiceOn: true, vol: 1, rate: 1, sayJoins: true, testOn: false, clean: false, user: '' };
+  const settings = { voiceOn: true, vol: 1, rate: 1, sayJoins: true, testOn: false, user: '' };
   try { Object.assign(settings, JSON.parse(localStorage.getItem('arena-settings') || '{}')); } catch {}
   const saveSettings = () => { try { localStorage.setItem('arena-settings', JSON.stringify(settings)); } catch {} };
 
@@ -39,8 +39,10 @@
   function pickVoice() {
     if (!synth) return;
     const vs = synth.getVoices();
-    arVoice = vs.find(v => /^ar[-_]IQ/i.test(v.lang)) || vs.find(v => /^ar[-_]SA/i.test(v.lang))
-      || vs.find(v => /^ar/i.test(v.lang)) || null;
+    // نفضّل الأصوات الطبيعية (Edge فيه أصوات عربية Natural، منها لهجة عراقية)
+    const ar = vs.filter(v => /^ar/i.test(v.lang));
+    const score = v => (/^ar[-_]IQ/i.test(v.lang) ? 4 : /^ar[-_]SA/i.test(v.lang) ? 2 : 1) + (/natural|online|google/i.test(v.name) ? 3 : 0);
+    arVoice = ar.sort((a, b) => score(b) - score(a))[0] || null;
   }
   if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
 
@@ -381,10 +383,10 @@
     for (let i = captions.length - 1; i >= 0; i--) {
       const c = captions[i], a = Math.min(1, c.life * 2, (4 - c.life) * 6);
       ctx.globalAlpha = Math.max(0, a);
-      ctx.font = `800 40px ${FONT}`;
-      const s = fit(c.text, 34), w = Math.min(ARENA.w - 40, ctx.measureText(s).width + 60);
+      ctx.font = `800 36px ${FONT}`;
+      const s = fit(c.text, 46), w = Math.min(ARENA.w - 40, ctx.measureText(s).width + 60);
       rr(W / 2 - w / 2, y - 34, w, 68, 34); ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fill();
-      text(s, W / 2, y, 40, c.color);
+      text(s, W / 2, y, 36, c.color);
       y -= 80;
     }
     ctx.globalAlpha = 1;
@@ -455,14 +457,13 @@
   let wantStart = null;               // آخر أمر بدأ بيه (حتى نعيده إذا انقطع السيرفر ورجع)
 
   $('user').value = params.get('user') || settings.user || '';
-  for (const k of ['voiceOn', 'sayJoins', 'testOn', 'clean']) $(k).checked = !!settings[k];
+  for (const k of ['voiceOn', 'sayJoins', 'testOn']) $(k).checked = !!settings[k];
   $('vol').value = settings.vol; $('rate').value = settings.rate;
 
   function applySettings() {
-    for (const k of ['voiceOn', 'sayJoins', 'testOn', 'clean']) settings[k] = $(k).checked;
+    for (const k of ['voiceOn', 'sayJoins', 'testOn']) settings[k] = $(k).checked;
     settings.vol = Number($('vol').value); settings.rate = Number($('rate').value);
     testPanel.classList.toggle('on', settings.testOn && !setup.classList.contains('on'));
-    document.body.classList.toggle('clean', settings.clean);
     if (!settings.voiceOn && synth) { synth.cancel(); speechQ.length = 0; speaking = false; }
     saveSettings();
   }
@@ -473,19 +474,13 @@
     $('status').style.color = { connected: '#3DFF8A', error: '#FF6B6B', ended: '#FFC93D' }[statusMsg.state] || '#FFD84D';
   }
 
-  // التلفون يحتاج ضغطة حتى يشغل الصوت، فنشغل كلمة فاضية بأول ضغطة
+  // المتصفح يحتاج ضغطة حتى يسمح بالصوت، فنشغل كلمة فاضية بأول ضغطة
   function unlockAudio() {
     if (synth) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; u.lang = 'ar-SA'; synth.speak(u); }
   }
-  async function keepScreenOn() {
-    try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch {}
-  }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !setup.classList.contains('on')) keepScreenOn(); });
 
   function enterGame() {
-    unlockAudio(); keepScreenOn();
-    const el = document.documentElement;
-    try { (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)?.catch?.(() => {}); } catch {}
+    unlockAudio();
     setup.classList.remove('on'); applySettings();
   }
   function send(msg) { wantStart = msg; if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
@@ -502,14 +497,13 @@
   $('testVoice').onclick = () => { unlockAudio(); applySettings(); announce('أرسل علي وردة، وأخذ درع حماية', 2, '#FFD84D'); };
   $('gear').onclick = () => { setup.classList.add('on'); testPanel.classList.remove('on'); };
 
-  // ضغطتين على العنوان (أعلى الشاشة) تفتح الإعدادات
-  let lastTap = 0;
-  canvas.addEventListener('pointerdown', e => {
-    const r = canvas.getBoundingClientRect();
-    if ((e.clientY - r.top) / r.height * H > 300) return;
-    const t = Date.now();
-    if (t - lastTap < 400) $('gear').onclick();
-    lastTap = t;
+  // اختصارات الكيبورد: S أو Esc للإعدادات، T لأزرار التجربة
+  addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+    const k = e.key.toLowerCase();
+    if (k === 's' || k === 'س' || k === 'escape') {
+      if (setup.classList.contains('on')) enterGame(); else $('gear').onclick();
+    } else if (k === 't' || k === 'ف') { $('testOn').checked = !$('testOn').checked; applySettings(); }
   });
 
   testPanel.addEventListener('click', e => {

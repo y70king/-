@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,6 +22,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +32,8 @@ public class MainActivity extends Activity {
 
     private static final String PREFS = "names";
     private static final String KEY_LIST = "list";
+    private static final int REQ_PICK_FILE = 1;
+    private static final int MAX_FILE_BYTES = 60 * 1024 * 1024;
 
     private final SecureRandom random = new SecureRandom();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -38,6 +43,7 @@ public class MainActivity extends Activity {
     private TextView countLabel;
     private CheckBox removeAfterPick;
     private Button pickButton;
+    private Button importButton;
     private boolean spinning = false;
 
     @Override
@@ -64,27 +70,122 @@ public class MainActivity extends Activity {
                 .putString(KEY_LIST, input.getText().toString()).apply();
     }
 
-    /** نص مُرسل من تطبيق آخر عبر "مشاركة" يصبح هو القائمة. */
+    /** نص أو ملف مُرسل من تطبيق آخر عبر "مشاركة" أو "فتح باستخدام". */
     private void handleShare(Intent intent) {
-        if (intent != null && Intent.ACTION_SEND.equals(intent.getAction())) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
+            importFile(intent.getData());
+        } else if (Intent.ACTION_SEND.equals(action)) {
+            Object stream = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (stream instanceof Uri) {
+                importFile((Uri) stream);
+                return;
+            }
             CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
             if (shared != null && shared.length() > 0) {
                 input.setText(shared);
+                result.setTextColor(Color.parseColor("#4527A0"));
                 result.setText("تم استلام القائمة ✔");
                 updateCount();
             }
         }
+        setIntent(new Intent()); // لا نعيد الاستيراد عند تدوير الشاشة
     }
 
-    /** يقبل الأسماء مفصولة بسطر جديد أو فاصلة (عربية أو إنجليزية) أو فاصلة منقوطة. */
-    private List<String> parseNames() {
-        List<String> names = new ArrayList<>();
-        String[] parts = input.getText().toString().split("[\\n\\r,،;؛]+");
-        for (String p : parts) {
-            String n = p.trim().replaceFirst("^[0-9٠-٩]+[\\.\\-\\)]\\s*", "").trim();
-            if (!n.isEmpty()) names.add(n);
+    private void openFilePicker() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/msword",
+                "text/plain"});
+        try {
+            startActivityForResult(i, REQ_PICK_FILE);
+        } catch (Exception e) {
+            Toast.makeText(this, "لا يوجد تطبيق لاختيار الملفات على هذا الجهاز", Toast.LENGTH_LONG).show();
         }
-        return names;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_FILE && resultCode == RESULT_OK && data != null && data.getData() != null) {
+            importFile(data.getData());
+        }
+    }
+
+    /** يقرأ الملف في الخلفية ويستخرج الأسماء منه. */
+    private void importFile(final Uri uri) {
+        importButton.setEnabled(false);
+        pickButton.setEnabled(false);
+        result.setTextColor(Color.parseColor("#4527A0"));
+        result.setText("⏳ جاري قراءة الملف...");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                List<String> names = null;
+                try {
+                    byte[] bytes = readAll(uri);
+                    names = TextExtractor.names(TextExtractor.extract(bytes));
+                    if (names.isEmpty()) error = "لم أجد أسماء في هذا الملف.";
+                } catch (TextExtractor.UserError e) {
+                    error = e.getMessage();
+                } catch (OutOfMemoryError e) {
+                    error = "الملف كبير جداً.";
+                } catch (Exception e) {
+                    error = "تعذّرت قراءة الملف: " + e.getClass().getSimpleName();
+                }
+                final String err = error;
+                final List<String> found = names;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        importButton.setEnabled(true);
+                        pickButton.setEnabled(true);
+                        if (err != null) {
+                            result.setTextColor(Color.parseColor("#C62828"));
+                            result.setTextSize(18);
+                            result.setText(err);
+                            return;
+                        }
+                        StringBuilder sb = new StringBuilder();
+                        for (String n : found) {
+                            if (sb.length() > 0) sb.append('\n');
+                            sb.append(n);
+                        }
+                        input.setText(sb.toString());
+                        result.setTextColor(Color.parseColor("#4527A0"));
+                        result.setTextSize(22);
+                        result.setText("تم استيراد " + found.size() + " اسم ✔\nراجع القائمة واحذف أي سطر ليس اسماً (مثل العناوين)");
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private byte[] readAll(Uri uri) throws Exception {
+        InputStream in = getContentResolver().openInputStream(uri);
+        if (in == null) throw new Exception("null stream");
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > MAX_FILE_BYTES) throw new TextExtractor.UserError("الملف كبير جداً (أكثر من 60 ميجابايت).");
+            }
+            return out.toByteArray();
+        } finally {
+            in.close();
+        }
+    }
+
+    private List<String> parseNames() {
+        return TextExtractor.names(input.getText().toString());
     }
 
     private void updateCount() {
@@ -117,6 +218,7 @@ public class MainActivity extends Activity {
                         spinning = false;
                         pickButton.setEnabled(true);
                     } else {
+                        result.setTextSize(32);
                         result.setTextColor(Color.parseColor("#9E9E9E"));
                         result.setText(names.get(random.nextInt(names.size())));
                     }
@@ -128,6 +230,7 @@ public class MainActivity extends Activity {
     private void showWinner(List<String> names, int index) {
         String name = names.get(index);
         result.setTextColor(Color.parseColor("#2E7D32"));
+        result.setTextSize(32);
         result.setText("🎉 " + name + " 🎉");
         if (removeAfterPick.isChecked()) {
             names.remove(index);
@@ -174,12 +277,26 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("اكتب الأسماء (كل اسم في سطر أو افصل بينها بفاصلة)، أو شارك قائمة من أي تطبيق إلى «القرعة».");
+        hint.setText("اكتب الأسماء (كل اسم في سطر أو افصل بينها بفاصلة)، أو استورد ملف PDF / Word، أو شارك قائمة من أي تطبيق إلى «القرعة».");
         hint.setTextSize(14);
         hint.setTextColor(Color.parseColor("#616161"));
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(0, dp(8), 0, dp(14));
         root.addView(hint);
+
+        importButton = new Button(this);
+        importButton.setText("📄 استيراد الأسماء من ملف PDF أو Word");
+        importButton.setTextSize(16);
+        importButton.setAllCaps(false);
+        importButton.setTextColor(Color.parseColor("#4527A0"));
+        importButton.setBackground(rounded(Color.parseColor("#EDE7F6"), Color.parseColor("#B39DDB")));
+        importButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { openFilePicker(); }
+        });
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52));
+        ip.bottomMargin = dp(12);
+        root.addView(importButton, ip);
 
         input = new EditText(this);
         input.setHint("أحمد\nمحمد\nسارة\nفاطمة");

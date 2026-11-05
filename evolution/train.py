@@ -188,7 +188,7 @@ def main():
             best = int(np.argmax(vscore))
             mres = monkey.test(top[best], valid, seed=gen)
             others_ok = 0
-            if mres["passed"] and vscore[best] > champ_score and mres["trades"] >= C.CHAMP_MIN_TRADES \
+            if mres["passed"] and mres["trades"] >= C.CHAMP_MIN_TRADES \
                     and mres["exposure_pct"] >= C.CHAMP_MIN_EXPOSURE_PCT:
                 for o in (valid.others if C.OTHERS_PASS_FRACTION > 0 else []):
                     r = monkey.test(top[best], o, n_monkeys=300, seed=gen)
@@ -196,9 +196,22 @@ def main():
             need = int(np.ceil(len(valid.others) * C.OTHERS_PASS_FRACTION))
             mres["other_markets_passed"] = f"{others_ok}/{len(valid.others)}"
             active = mres["trades"] >= C.CHAMP_MIN_TRADES and mres["exposure_pct"] >= C.CHAMP_MIN_EXPOSURE_PCT
-            is_champ = bool(mres["passed"] and active and vscore[best] > champ_score and others_ok >= need)
+            # ثبات: نقسم فترة التحقق لـ 4 أجزاء، وكل جزء يبدأ بحساب جديد. البطل لازم يربح
+            # بـ 3 أجزاء على الأقل، ودرجته = الوسيط (مو المجموع) — عشان ضربة حظ وحدة ما تصنع بطل
+            seg_score, seg_ok = -np.inf, 0
+            if mres["passed"] and active:
+                n = len(valid.ret)
+                rets = []
+                for k in range(C.CONSISTENCY_SEGMENTS):
+                    s = valid.slice(k * n // C.CONSISTENCY_SEGMENTS, (k + 1) * n // C.CONSISTENCY_SEGMENTS)
+                    rets.append(float(brain.simulate(top[best][None], s.X, s.px, s.cost_bps, death_level=1e-9)["log_return"][0]))
+                seg_ok = int(sum(r > 0 for r in rets))
+                seg_score = float(np.median(rets))
+            mres["profitable_segments"] = f"{seg_ok}/{C.CONSISTENCY_SEGMENTS}"
+            is_champ = bool(mres["passed"] and active and seg_ok >= C.CONSISTENCY_MIN_OK
+                            and seg_score > champ_score and others_ok >= need)
             if is_champ:
-                champ_score = float(vscore[best])
+                champ_score = seg_score
                 meta = {"generation": gen, "valid_score": champ_score, "valid": mres,
                         "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")}
                 os.makedirs(C.MODELS_DIR, exist_ok=True)
@@ -212,6 +225,7 @@ def main():
                   f"تفوق على {mres['beats_monkeys_pct']:5.1f}% من القرود | "
                   f"{mres['trades']} صفقة" +
                   (f" | أسواق ثانية {mres['other_markets_passed']}" if mres["passed"] and C.OTHERS_PASS_FRACTION > 0 else "") +
+                  (f" | أجزاء رابحة {mres['profitable_segments']}" if mres["passed"] else "") +
                   ("  🏆 بطل جديد!" if is_champ else ""))
             # هل العصر الحالي للحين يتحسن على بيانات ما شافها؟
             v = float(vscore[best])

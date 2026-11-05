@@ -1,0 +1,43 @@
+{
+  "generation": 4425,
+  "passed": false,
+  "test": {
+    "brain_return_pct": 59.734737121180224,
+    "final_balance": 31.946947424236043,
+    "brain_max_dd_pct": 21.309282881585766,
+    "trades": 1211,
+    "exposure_pct": 47.498298162014976,
+    "monkey_median_pct": -4.535744814242352,
+    "monkey_best_pct": 193.75596429392724,
+    "monkeys_blown_pct": 2.9000000000000004,
+    "beats_monkeys_pct": 93.2,
+    "hold_pct": 1.471634006733047,
+    "market_pct": 1.5063651605928152,
+    "beats_hold": true,
+    "trades_per_day": 4.675675675675675,
+    "passed": false,
+    "bars": 5876,
+    "personality": {
+      "trades": 1211,
+      "win_rate": 50.28901734104046,
+      "avg_win_pct": 0.604882088871573,
+      "avg_loss_pct": -0.520266539173355,
+      "long_pct": 52.597635256180574,
+      "avg_lots": 0.010487200660611064,
+      "avg_risk_pct": 3.195885933661282,
+      "avg_win_usd": 0.16218140424290173,
+      "avg_loss_usd": -0.14422180690978592,
+      "avg_sl_atr": 3.9022624666881796,
+      "avg_tp_atr": 7.102263828824119,
+      "avg_hold_hours": 2.304706853839802,
+      "exits": {
+        "tp": 18,
+        "sl": 19,
+        "brain": 1173,
+        "end": 1,
+        "dead": 0,
+        "stopout": 0
+      }
+    }
+  }
+}

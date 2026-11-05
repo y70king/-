@@ -73,8 +73,10 @@ def test(genome: np.ndarray, series, n_monkeys: int = C.MONKEYS, seed: int = 0) 
     change_prob = max(trades / len(ret), 1.0 / len(ret))
     m = monkeys(close, cost_bps, change_prob, n_monkeys, rng, side_probs, lots)
     pct = float((m < brain_ret).mean() * 100)
-    # أبسط استراتيجية ممكنة: شراء (أو بيع) والاحتفاظ طول الفترة بنفس اللوت — نأخذ الأحسن منهم
-    hold_paths = _account_paths(np.stack([np.ones(len(close)), -np.ones(len(close))]), close, lots, cost_bps)
+    # أبسط استراتيجية ممكنة: شراء (أو بيع) والاحتفاظ طول الفترة — نأخذ الأحسن منهم
+    # مقارنة عادلة: الاحتفاظ بنفس متوسط تعرّض العقل للسوق (حجمه × وقته بالسوق)، مو بحجمه الكامل طول الوقت
+    hold_lots = max(float(np.mean(np.abs(held))), 1e-9)
+    hold_paths = _account_paths(np.stack([np.ones(len(close)), -np.ones(len(close))]), close, hold_lots, cost_bps)
     hold = float(np.log(max(hold_paths.max(), 1e-6) / C.START_CAPITAL))
     tpd = trades / trading_days(series.index)
     final_usd = C.START_CAPITAL * np.exp(brain_ret)

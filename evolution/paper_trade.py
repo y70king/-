@@ -64,14 +64,17 @@ def step(eng, genome, X, px, i):
 
 
 def main():
-    if not os.path.exists(CHAMPION):
+    # البطل "المثبّت" للتداول الحي: ما يتغير لحاله مع التدريب، عشان تجربة السوق الحي تبقى نظيفة
+    live = os.path.join(C.MODELS_DIR, "live_champion.npz")
+    path = live if os.path.exists(live) else CHAMPION
+    if not os.path.exists(path):
         print("[INFO] ما فيه بطل مدرّب بعد — التداول التجريبي متوقف.")
         return
-    genome, meta = brain.load(CHAMPION)
+    genome, meta = brain.load(path)
     if genome.shape[0] != brain.GENOME_SIZE:
         print("[INFO] البطل المحفوظ من نسخة قديمة من العقل — التداول التجريبي متوقف.")
         return
-    exam_file = os.path.join(C.MODELS_DIR, "exam.json")
+    exam_file = os.path.join(C.MODELS_DIR, "live_exam.json" if path == live else "exam.json")
     exam = json.load(open(exam_file, encoding="utf-8")) if os.path.exists(exam_file) else {}
     if C.PAPER_REQUIRE_EXAM and not (exam.get("passed") and exam.get("generation") == meta["generation"]):
         print(f"[INFO] بطل الجيل {meta['generation']} ما نجح بالامتحان النهائي بعد — التداول التجريبي متوقف.")

@@ -7,7 +7,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 FONT = "Noto Sans Arabic"
-SCALE = 0.95  # Noto Sans Arabic runs large
+SCALE = 1.03  # Noto Sans Arabic runs large
 LATIN = "Arial"
 SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
 
@@ -60,7 +60,7 @@ def para(doc_or_cell, text="", bold=False, size=13, align=WD_ALIGN_PARAGRAPH.RIG
                 if j % 2 == 0:
                     run(p, part, bold=b, size=size, color=color, underline=underline)
                     continue
-                part = "\u200e" + part.replace(" ", "\u00a0").replace("×", "\u2060×\u2060").replace("−", "−\u2060") + "\u200e"
+                part = "\u200e" + part.replace(" ", "\u200e\u00a0\u200e") + "\u200e"
                 for k, piece in enumerate(re.split("([⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+)", part)):
                     if not piece: continue
                     if k % 2 == 1:
@@ -193,6 +193,7 @@ def build(path, exams):
             if kind == "q": q_title(doc, *rest)
             elif kind == "sub": para(doc, rest[0], bold=True, size=12.5, indent=0.3, space_after=1)
             elif kind == "items": items(doc, rest[0])
+            elif kind == "inline": para(doc, "      ".join(f"{i}- {t}" for i, t in enumerate(rest[0], 1)), size=12.5, indent=0.8, space_after=1)
             elif kind == "p": para(doc, rest[0], size=12.5, indent=0.8, space_after=1)
             elif kind == "gap": para(doc, "", size=5, space_after=0)
         footer(doc)
@@ -201,7 +202,7 @@ def build(path, exams):
         key_title(doc, ex["name"])
         for kind, *rest in ex["key"]:
             if kind == "h": para(doc, rest[0], bold=True, size=12.5, space_after=1, color=NAVY)
-            elif kind == "p": para(doc, rest[0], size=11.5, indent=0.5, space_after=1)
+            elif kind == "p": para(doc, rest[0], size=11, indent=0.5, space_after=1)
     st = doc.settings.element
     e = OxmlElement("w:embedTrueTypeFonts"); st.insert(0, e)
     doc.save(path)

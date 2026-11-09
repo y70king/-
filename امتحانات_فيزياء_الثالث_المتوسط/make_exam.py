@@ -6,7 +6,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-FONT = "Noto Naskh Arabic"
+FONT = "Amiri"
+SCALE = 1.05  # Amiri runs small; enlarge everything a little
 LATIN = "Times New Roman"
 SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
 
@@ -20,6 +21,7 @@ def set_rtl(p):
 def run(p, text, bold=False, size=13, color=None, underline=False, ltr=False):
     r = p.add_run(text)
     r.bold = bold; r.underline = underline
+    size = size * SCALE
     r.font.size = Pt(size)
     rPr = r._r.get_or_add_rPr()
     fonts = rPr.find(qn("w:rFonts"))
@@ -46,7 +48,7 @@ def para(doc_or_cell, text="", bold=False, size=13, align=WD_ALIGN_PARAGRAPH.RIG
     p.alignment = flip.get(align, align)
     pf = p.paragraph_format
     pf.space_after = Pt(space_after); pf.space_before = Pt(0)
-    pf.line_spacing = Pt(size * 1.45)
+    pf.line_spacing = Pt(size * SCALE * 1.45)
     if indent:
         pf.left_indent = Cm(indent)  # mirrored to the right side in RTL
     if text:
@@ -117,8 +119,8 @@ def header(doc, model):
     c = t.rows[0].cells
     for cell in c: vcenter(cell)
     para(c[0], "وزارة التربية", bold=True, size=12, space_after=0)
-    para(c[0], "المديرية العامة للتربية في ...............", size=11, space_after=0)
-    para(c[0], "مدرسة ...................................", size=11, space_after=0)
+    para(c[0], "قسم تربية بيجي", bold=True, size=11.5, space_after=0)
+    para(c[0], "ثانوية حي النفط للبنين", bold=True, size=11.5, space_after=0)
     para(c[1], "بسم الله الرحمن الرحيم", bold=True, size=11, align=C, space_after=0, color=NAVY)
     para(c[1], "الامتحان الشهري الأول", bold=True, size=15, align=C, space_after=0)
     para(c[1], "الفصل الأول: الكهربائية الساكنة", size=11, align=C, space_after=0)
@@ -134,20 +136,19 @@ def header(doc, model):
     info = rtl_table(doc, 1, 3, [9.0, 4.0, 4.6])
     borders(info, sz=6, color="7F7F7F")
     ic = info.rows[0].cells
-    para(ic[0], "اسم الطالب: ......................................................", size=11.5, space_after=0)
+    para(ic[0], "اسم الطالب: ........................................", size=11.5, space_after=0)
     para(ic[1], "الشعبة: (  ......  )", size=11.5, space_after=0, align=C)
     para(ic[2], "الدرجة:  ........ / 100", bold=True, size=11.5, space_after=0, align=C)
 
-    para(doc, "ملاحظة: أجب عن جميع الأسئلة، لكل سؤال (25) درجة.   ثابت كولوم: " + L("k = 9×10⁹ N.m²/C²"),
+    para(doc, "ملاحظة: أجب عن جميع الأسئلة.      ثابت كولوم: " + L("k = 9×10⁹ N.m²/C²"),
          bold=True, size=11, space_after=4, color="C00000")
 
-def q_title(doc, num, text, marks):
-    t = rtl_table(doc, 1, 2, [14.6, 3.0])
+def q_title(doc, num, text, marks=None):
+    t = rtl_table(doc, 1, 1, [17.6])
     borders(t, sz=6, color=NAVY)
-    a, b = t.rows[0].cells
-    shade(a, "DEEAF6"); shade(b, "DEEAF6")
+    a = t.rows[0].cells[0]
+    shade(a, "DEEAF6")
     para(a, f"السؤال {ORD[num]}: {text}", bold=True, size=13, space_after=0, color=NAVY)
-    para(b, f"({marks} درجة)", bold=True, size=12, align=C, space_after=0, color=NAVY)
     para(doc, "", size=3, space_after=0)
 
 ORD = {1: "الأول", 2: "الثاني", 3: "الثالث", 4: "الرابع"}

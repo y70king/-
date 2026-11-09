@@ -1,9 +1,9 @@
-"""Embed Amiri (regular + bold) into a .docx (Word obfuscated-font format)."""
+"""Embed Noto Sans Arabic (regular + bold) into a .docx (Word obfuscated-font format)."""
 import sys, zipfile, uuid, re, shutil
 
-FONTS = {"Amiri": {
-    "embedRegular": "/usr/share/fonts/opentype/fonts-hosny-amiri/Amiri-Regular.ttf",
-    "embedBold": "/usr/share/fonts/opentype/fonts-hosny-amiri/Amiri-Bold.ttf"}}
+FONTS = {"Noto Sans Arabic": {
+    "embedRegular": "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+    "embedBold": "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"}}
 
 def obfuscate(data, guid):
     h = guid.strip("{}").replace("-", "")

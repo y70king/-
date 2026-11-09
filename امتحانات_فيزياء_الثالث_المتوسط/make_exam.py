@@ -6,9 +6,9 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-FONT = "Amiri"
-SCALE = 1.05  # Amiri runs small; enlarge everything a little
-LATIN = "Times New Roman"
+FONT = "Noto Sans Arabic"
+SCALE = 0.95  # Noto Sans Arabic runs large
+LATIN = "Arial"
 SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
 
 def L(s):  # left-to-right embedding for formulas/numbers inside Arabic text

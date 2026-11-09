@@ -39,12 +39,14 @@ def para(doc_or_cell, text="", bold=False, size=13, align=WD_ALIGN_PARAGRAPH.RIG
          space_after=4, indent=0, color=None, underline=False):
     p = doc_or_cell.add_paragraph()
     set_rtl(p)
-    p.alignment = align
+    # in a bidi (RTL) paragraph Word/LibreOffice mirror left/right
+    flip = {WD_ALIGN_PARAGRAPH.RIGHT: WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.LEFT: WD_ALIGN_PARAGRAPH.RIGHT}
+    p.alignment = flip.get(align, align)
     pf = p.paragraph_format
     pf.space_after = Pt(space_after); pf.space_before = Pt(0)
     pf.line_spacing = 1.05
     if indent:
-        pf.right_indent = Cm(indent)
+        pf.left_indent = Cm(indent)  # mirrored to the right side in RTL
     if text:
         # **bold** segments
         for i, seg in enumerate(re.split(r"\*\*", text)):
@@ -54,7 +56,7 @@ def para(doc_or_cell, text="", bold=False, size=13, align=WD_ALIGN_PARAGRAPH.RIG
                 if j % 2 == 0:
                     run(p, part, bold=b, size=size, color=color, underline=underline)
                     continue
-                part = "\u200e" + part.replace(" ", "\u200e \u200e") + "\u200e"
+                part = "\u200e" + part.replace(" ", "\u00a0").replace("×", "\u2060×\u2060").replace("−", "−\u2060") + "\u200e"
                 for k, piece in enumerate(re.split("([⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+)", part)):
                     if not piece: continue
                     if k % 2 == 1:
@@ -100,10 +102,11 @@ def items(doc, lst, letters=False, size=12.5):
         para(doc, lab + t, size=12.5, indent=0.6, space_after=2)
 
 def footer(doc):
-    para(doc, "مع تمنياتنا لكم بالنجاح والتوفيق          مدرس المادة", bold=True, size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
+    para(doc, "مع تمنياتنا لكم بالنجاح والتوفيق", bold=True, size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
+    para(doc, "مدرّسة المادة: ياسمين خلف", bold=True, size=12, align=WD_ALIGN_PARAGRAPH.LEFT, space_after=0)
 
 def key_title(doc, model):
-    para(doc, f"نموذج الإجابة – النموذج ({model})  (للمدرس)", bold=True, size=15,
+    para(doc, f"نموذج الإجابة – النموذج ({model})  (لمدرّسة المادة)", bold=True, size=15,
          align=WD_ALIGN_PARAGRAPH.CENTER, color="1F4E79", space_after=6)
 
 def build(path, exams):

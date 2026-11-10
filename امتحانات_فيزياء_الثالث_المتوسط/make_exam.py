@@ -88,8 +88,17 @@ def borders(table, sz=8, color="000000", inside=True):
         el.set(qn("w:space"), "0"); el.set(qn("w:color"), color); b.append(el)
     tblPr.append(b)
 
+W = 17.6  # usable width (cm) of the area one exam model is drawn in
+
+def sw(widths):  # scale widths designed for 17.6 cm to the current width
+    return [w * W / 17.6 for w in widths]
+
 def rtl_table(doc, rows, cols, widths):
-    t = doc.add_table(rows=rows, cols=cols)
+    t = doc.add_table(rows, cols) if not hasattr(doc, "_tc") else doc.add_table(rows, cols)
+    if hasattr(doc, "_tc"):  # _Cell.add_table appends an empty paragraph; drop it
+        nxt = t._tbl.getnext()
+        if nxt is not None and nxt.tag == qn("w:p"):
+            nxt.getparent().remove(nxt)
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.autofit = False
     tblPr = t._tbl.tblPr
@@ -114,7 +123,7 @@ C = WD_ALIGN_PARAGRAPH.CENTER
 NAVY = "1F3864"
 
 def header(doc, model):
-    t = rtl_table(doc, 1, 3, [6.0, 5.6, 6.0])
+    t = rtl_table(doc, 1, 3, sw([5.5, 6.6, 5.5]))
     borders(t, sz=12, color=NAVY, inside=False)
     c = t.rows[0].cells
     for cell in c: vcenter(cell)
@@ -128,12 +137,12 @@ def header(doc, model):
     para(c[2], "الصف: الثالث المتوسط", size=11, space_after=0, align=WD_ALIGN_PARAGRAPH.LEFT)
     para(c[2], "الزمن: ساعة واحدة", size=11, space_after=0, align=WD_ALIGN_PARAGRAPH.LEFT)
 
-    band = rtl_table(doc, 1, 1, [17.6])
+    band = rtl_table(doc, 1, 1, sw([17.6]))
     borders(band, sz=12, color=NAVY, inside=False)
     shade(band.rows[0].cells[0], NAVY)
     para(band.rows[0].cells[0], f"النموذج ( {model} )", bold=True, size=14, align=C, space_after=0, color="FFFFFF")
 
-    info = rtl_table(doc, 1, 2, [12.6, 5.0])
+    info = rtl_table(doc, 1, 2, sw([12.6, 5.0]))
     borders(info, sz=6, color="7F7F7F")
     ic = info.rows[0].cells
     para(ic[0], "اسم الطالب: ................................................................", size=11.5, space_after=0)
@@ -143,7 +152,7 @@ def header(doc, model):
          bold=True, size=11, space_after=4, color="C00000")
 
 def q_title(doc, num, text, marks=None):
-    t = rtl_table(doc, 1, 1, [17.6])
+    t = rtl_table(doc, 1, 1, sw([17.6]))
     borders(t, sz=6, color=NAVY)
     a = t.rows[0].cells[0]
     shade(a, "DEEAF6")
@@ -161,7 +170,7 @@ def footer(doc):
     para(doc, "مع تمنياتنا لكم بالنجاح والتوفيق", bold=True, size=12, space_after=0, align=C, color=NAVY)
 
 def key_title(doc, model):
-    band = rtl_table(doc, 1, 1, [17.6])
+    band = rtl_table(doc, 1, 1, sw([17.6]))
     shade(band.rows[0].cells[0], NAVY)
     para(band.rows[0].cells[0], f"نموذج الإجابة – النموذج ( {model} ) – خاص بالمدرّس", bold=True, size=14, align=C, space_after=0, color="FFFFFF")
     para(doc, "", size=4, space_after=0)
@@ -174,27 +183,59 @@ def page_border(section):
         el.set(qn("w:space"), "20"); el.set(qn("w:color"), NAVY); pb.append(el)
     sectPr.append(pb)
 
-def build(path, exams):
+def render_model(box, ex):
+    header(box, ex["name"])
+    for kind, *rest in ex["body"]:
+        if kind == "q": q_title(box, *rest)
+        elif kind == "sub": para(box, rest[0], bold=True, size=12.5, indent=0.2, space_after=1)
+        elif kind == "sub2": para(box, rest[0], bold=True, size=12.5, indent=0.6, space_after=1)
+        elif kind == "items": items(box, rest[0])
+        elif kind == "inline": para(box, "    ".join(f"{i}- {t}" for i, t in enumerate(rest[0], 1)), size=12.5, indent=0.5, space_after=1)
+        elif kind == "p": para(box, rest[0], size=12.5, indent=0.5, space_after=1)
+        elif kind == "gap": para(box, "", size=5, space_after=0)
+    footer(box)
+
+def set_page(section, landscape):
+    from docx.enum.section import WD_ORIENT
+    if landscape:
+        section.orientation = WD_ORIENT.LANDSCAPE
+        section.page_width, section.page_height = Cm(29.7), Cm(21.0)
+        section.top_margin = Cm(1.0); section.bottom_margin = Cm(0.8)
+        section.left_margin = Cm(1.0); section.right_margin = Cm(1.0)
+    else:
+        section.orientation = WD_ORIENT.PORTRAIT
+        section.page_width, section.page_height = Cm(21.0), Cm(29.7)
+        section.top_margin = Cm(1.3); section.bottom_margin = Cm(1.2)
+        section.left_margin = Cm(1.7); section.right_margin = Cm(1.7)
+
+def build(path, exams, scale_side=0.98):
+    """Page 1 (landscape): model A on the right half, model B on the left half.
+    Following pages (portrait): the answer keys."""
+    global W, SCALE
+    from docx.enum.section import WD_SECTION
     doc = Document()
-    for s in doc.sections:
-        s.top_margin = Cm(1.3); s.bottom_margin = Cm(1.2)
-        s.left_margin = Cm(1.7); s.right_margin = Cm(1.7)
-        page_border(s)
+    sec = doc.sections[0]
+    set_page(sec, landscape=True); page_border(sec)
+    full_scale = SCALE
+    # outer two-column frame; bidiVisual puts the first cell on the right
+    half = 13.85
+    outer = rtl_table(doc, 1, 2, [half, half])
+    tblPr = outer._tbl.tblPr
+    b = OxmlElement("w:tblBorders")
+    el = OxmlElement("w:insideV"); el.set(qn("w:val"), "dashed"); el.set(qn("w:sz"), "8")
+    el.set(qn("w:space"), "0"); el.set(qn("w:color"), "7F7F7F"); b.append(el)
+    tblPr.append(b)
+    W, SCALE = half - 0.45, scale_side
+    for cell, ex in zip(outer.rows[0].cells, exams):
+        render_model(cell, ex)
+    # answer keys on portrait pages
+    W, SCALE = 17.6, full_scale
+    sec2 = doc.add_section(WD_SECTION.NEW_PAGE)
+    set_page(sec2, landscape=False)
     first = True
     for ex in exams:
         if not first: page_break(doc)
         first = False
-        header(doc, ex["name"])
-        for kind, *rest in ex["body"]:
-            if kind == "q": q_title(doc, *rest)
-            elif kind == "sub": para(doc, rest[0], bold=True, size=12.5, indent=0.3, space_after=1)
-            elif kind == "items": items(doc, rest[0])
-            elif kind == "inline": para(doc, "      ".join(f"{i}- {t}" for i, t in enumerate(rest[0], 1)), size=12.5, indent=0.8, space_after=1)
-            elif kind == "p": para(doc, rest[0], size=12.5, indent=0.8, space_after=1)
-            elif kind == "gap": para(doc, "", size=5, space_after=0)
-        footer(doc)
-    for ex in exams:
-        page_break(doc)
         key_title(doc, ex["name"])
         for kind, *rest in ex["key"]:
             if kind == "h": para(doc, rest[0], bold=True, size=12.5, space_after=1, color=NAVY)

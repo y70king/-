@@ -1,0 +1,49 @@
+name: Train Indicator Strategies (TradingView)
+
+# تطوير استراتيجيات من مؤشرات ترندنك فيو (بدل العقول العشوائية). كل تشغيل يكمل من آخر جيل.
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "مدة التدريب بالدقائق"
+        default: "240"
+      fresh:
+        description: "ابدأ من الصفر؟ (yes/no)"
+        default: "no"
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    concurrency:
+      group: train-indicators
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Update gold data
+        run: python -m evolution.data XAUUSD --max-minutes 10
+      - name: Evolve strategies
+        run: |
+          FRESH=""
+          if [ "${{ github.event.inputs.fresh }}" = "yes" ]; then FRESH="--fresh"; fi
+          python -m evolution.tv_train --minutes "${{ github.event.inputs.minutes }}" $FRESH
+      - name: Final exam + Pine Script
+        run: python -m evolution.tv_train --exam
+      - name: Save to repo
+        if: always()
+        run: |
+          git config user.name "strategy-trainer"
+          git config user.email "actions@github.com"
+          git add evolution/models
+          git checkout -- evolution/data
+          if git diff --cached --quiet; then echo "لا يوجد تغيير"; exit 0; fi
+          git commit -m "strategies: training progress [skip ci]"
+          for i in 1 2 3 4; do git pull --rebase --autostash && git push && break; sleep 5; done

@@ -133,12 +133,11 @@ def header(doc, model):
     shade(band.rows[0].cells[0], NAVY)
     para(band.rows[0].cells[0], f"النموذج ( {model} )", bold=True, size=14, align=C, space_after=0, color="FFFFFF")
 
-    info = rtl_table(doc, 1, 3, [9.0, 4.0, 4.6])
+    info = rtl_table(doc, 1, 2, [12.6, 5.0])
     borders(info, sz=6, color="7F7F7F")
     ic = info.rows[0].cells
-    para(ic[0], "اسم الطالب: ........................................", size=11.5, space_after=0)
+    para(ic[0], "اسم الطالب: ................................................................", size=11.5, space_after=0)
     para(ic[1], "الشعبة: (  ......  )", size=11.5, space_after=0, align=C)
-    para(ic[2], "الدرجة:  ........ / 100", bold=True, size=11.5, space_after=0, align=C)
 
     para(doc, "ملاحظة: أجب عن جميع الأسئلة.      ثابت كولوم: " + L("k = 9×10⁹ N.m²/C²"),
          bold=True, size=11, space_after=4, color="C00000")

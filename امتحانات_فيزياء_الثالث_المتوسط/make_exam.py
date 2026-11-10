@@ -7,7 +7,7 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 FONT = "Noto Sans Arabic"
-SCALE = 1.03  # Noto Sans Arabic runs large
+SCALE = 1.1  # Noto Sans Arabic runs large
 LATIN = "Arial"
 SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻", "0123456789-")
 
@@ -122,7 +122,7 @@ def header(doc, model):
     para(c[0], "قسم تربية بيجي", bold=True, size=11.5, space_after=0)
     para(c[0], "ثانوية حي النفط للبنين", bold=True, size=11.5, space_after=0)
     para(c[1], "بسم الله الرحمن الرحيم", bold=True, size=11, align=C, space_after=0, color=NAVY)
-    para(c[1], "الامتحان الشهري الأول", bold=True, size=15, align=C, space_after=0)
+    para(c[1], "الامتحان الشهري الأول", bold=True, size=13.5, align=C, space_after=0)
     para(c[1], "الفصل الأول: الكهربائية الساكنة", size=11, align=C, space_after=0)
     para(c[2], "المادة: الفيزياء", bold=True, size=12, space_after=0, align=WD_ALIGN_PARAGRAPH.LEFT)
     para(c[2], "الصف: الثالث المتوسط", size=11, space_after=0, align=WD_ALIGN_PARAGRAPH.LEFT)
@@ -159,15 +159,12 @@ def items(doc, lst, letters=False, size=12.5):
 
 def footer(doc):
     para(doc, "", size=6, space_after=0)
-    t = rtl_table(doc, 1, 2, [8.8, 8.8])
-    a, b = t.rows[0].cells
-    para(a, "مع تمنياتنا لكم بالنجاح والتوفيق", bold=True, size=12, space_after=0, color=NAVY)
-    para(b, "مدرّسة المادة: ياسمين خلف", bold=True, size=12, space_after=0, align=WD_ALIGN_PARAGRAPH.LEFT, color=NAVY)
+    para(doc, "مع تمنياتنا لكم بالنجاح والتوفيق", bold=True, size=12, space_after=0, align=C, color=NAVY)
 
 def key_title(doc, model):
     band = rtl_table(doc, 1, 1, [17.6])
     shade(band.rows[0].cells[0], NAVY)
-    para(band.rows[0].cells[0], f"نموذج الإجابة – النموذج ( {model} ) – خاص بمدرّسة المادة", bold=True, size=14, align=C, space_after=0, color="FFFFFF")
+    para(band.rows[0].cells[0], f"نموذج الإجابة – النموذج ( {model} ) – خاص بالمدرّس", bold=True, size=14, align=C, space_after=0, color="FFFFFF")
     para(doc, "", size=4, space_after=0)
 
 def page_border(section):

@@ -2,68 +2,72 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Reem+Kufi:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
 <style>
-/* Layout: one centered sheet, a header block, then a single wide table (dates as rows, grades as columns) */
+/* Layout: one sheet sized for A4 landscape: title, then a blank grid (school days as rows, grades as columns) */
 :root {
   --bg: #f3f5f4;
   --paper: #ffffff;
   --ink: #1d2a27;
   --muted: #5d6b67;
-  --line: #d6dedb;
+  --line: #b9c6c2;
   --accent: #1f6b5a;
-  --accent-soft: #e3f0ec;
-  --rest: #f7f8f8;
+  --head-ink: #ffffff;
   --font-display: "Reem Kufi", "IBM Plex Sans Arabic", Tahoma, sans-serif;
   --font-body: "IBM Plex Sans Arabic", Tahoma, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121816; --paper: #1a2220; --ink: #e5ecea; --muted: #9aa9a4;
-    --line: #2d3a37; --accent: #6cc5ad; --accent-soft: #1f3530; --rest: #161d1b;
+    --line: #34433f; --accent: #6cc5ad; --head-ink: #10201c;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #121816; --paper: #1a2220; --ink: #e5ecea; --muted: #9aa9a4;
-  --line: #2d3a37; --accent: #6cc5ad; --accent-soft: #1f3530; --rest: #161d1b;
+  --line: #34433f; --accent: #6cc5ad; --head-ink: #10201c;
   color-scheme: dark;
 }
 body {
   background: var(--bg); color: var(--ink);
-  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
   padding-block: 32px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.sheet { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; }
-header { display: grid; gap: 6px; }
-h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0; color: var(--accent); text-wrap: balance; }
+.sheet { max-width: 1080px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 24px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2.1rem); margin: 0; color: var(--accent); }
 .sub { margin: 0; color: var(--muted); }
-.note { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; font-size: 0.92rem; }
-.wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
-table { width: 100%; min-width: 820px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-th, td { border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); padding: 10px 12px; text-align: center; white-space: nowrap; }
-th:last-child, td:last-child { border-left: none; }
-thead th { font-family: var(--font-display); font-weight: 500; background: var(--accent); color: var(--paper); font-size: 1rem; }
-td.day { font-weight: 600; text-align: right; }
+.wrap { overflow-x: auto; background: var(--paper); border: 1.5px solid var(--accent); border-radius: 6px; }
+table { width: 100%; min-width: 820px; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+col.c-day { width: 9%; } col.c-date { width: 8%; }
+th, td { border: 1px solid var(--line); padding: 0 8px; text-align: center; height: 34px; }
+thead th { font-family: var(--font-display); font-weight: 500; background: var(--accent); color: var(--head-ink); font-size: 1rem; height: 40px; }
+td.day { font-weight: 600; }
 td.date { color: var(--muted); }
-tr.rest td { background: var(--rest); color: var(--muted); font-size: 0.9rem; }
-tr.rest td.review { letter-spacing: 0.02em; }
 tr.week-start td { border-top: 2px solid var(--accent); }
-td.none { color: var(--muted); }
-tbody tr:last-child td { border-bottom: none; }
-footer { color: var(--muted); font-size: 0.88rem; }
+footer { color: var(--muted); font-size: 0.85rem; }
+
+@page { size: A4 landscape; margin: 10mm; }
+@media print {
+  :root { --bg: #fff; --paper: #fff; --ink: #1d2a27; --muted: #4c5a56; --line: #9fb0ab; --accent: #1f6b5a; --head-ink: #fff; color-scheme: light; }
+  body { padding: 0; font-size: 13px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { max-width: none; gap: 8px; }
+  .wrap { overflow: visible; border-radius: 0; }
+  table { min-width: 0; }
+  th, td { height: 9.4mm; }
+  thead th { height: 10mm; }
+}
 </style>
 
 <div class="sheet" dir="rtl" lang="ar">
   <header>
     <h1>جدول الامتحانات الشهرية</h1>
-    <p class="sub">من الأول المتوسط إلى السادس الإعدادي (الفرع العلمي) · من ٢٠/١١ إلى ١٠/١٢</p>
+    <p class="sub">من ٢٢/١١ إلى ١٠/١٢ · الجمعة والسبت عطلة</p>
   </header>
-
-  <p class="note">يوم ٢٠/١١ يصادف يوم الجمعة، لذلك تبدأ الامتحانات يوم الأحد ٢٢/١١. أيام الجمعة والسبت عطلة ولم تُذكر في الجدول. يكون بين كل امتحان والذي يليه يوم مراجعة.</p>
 
   <div class="wrap">
     <table>
+      <colgroup><col class="c-day"><col class="c-date"><col><col><col><col><col><col></colgroup>
       <thead>
         <tr>
           <th>اليوم</th><th>التاريخ</th>
@@ -72,34 +76,22 @@ footer { color: var(--muted); font-size: 0.88rem; }
         </tr>
       </thead>
       <tbody>
-        <tr class="week-start"><td class="day">الأحد</td><td class="date">٢٢/١١</td>
-          <td>التربية الإسلامية</td><td>اللغة العربية</td><td>الرياضيات</td><td>اللغة الإنكليزية</td><td>الفيزياء</td><td>الكيمياء</td></tr>
-        <tr class="rest"><td class="day">الاثنين</td><td class="date">٢٣/١١</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الثلاثاء</td><td class="date">٢٤/١١</td>
-          <td>الرياضيات</td><td>اللغة الإنكليزية</td><td>اللغة العربية</td><td>الكيمياء</td><td>التربية الإسلامية</td><td>الفيزياء</td></tr>
-        <tr class="rest"><td class="day">الأربعاء</td><td class="date">٢٥/١١</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الخميس</td><td class="date">٢٦/١١</td>
-          <td>اللغة الإنكليزية</td><td>الرياضيات</td><td>الأحياء</td><td>التربية الإسلامية</td><td>اللغة العربية</td><td>اللغة العربية</td></tr>
-
-        <tr class="rest week-start"><td class="day">الأحد</td><td class="date">٢٩/١١</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الاثنين</td><td class="date">٣٠/١١</td>
-          <td>الأحياء</td><td>الاجتماعيات</td><td>اللغة الإنكليزية</td><td>الرياضيات</td><td>الكيمياء</td><td>التربية الإسلامية</td></tr>
-        <tr class="rest"><td class="day">الثلاثاء</td><td class="date">١/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الأربعاء</td><td class="date">٢/١٢</td>
-          <td>اللغة العربية</td><td>الكيمياء</td><td>الاجتماعيات</td><td>الأحياء</td><td>الرياضيات</td><td>اللغة الإنكليزية</td></tr>
-        <tr class="rest"><td class="day">الخميس</td><td class="date">٣/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
-
-        <tr class="week-start"><td class="day">الأحد</td><td class="date">٦/١٢</td>
-          <td>الفيزياء</td><td>التربية الإسلامية</td><td>الكيمياء</td><td>اللغة العربية</td><td>اللغة الإنكليزية</td><td>الأحياء</td></tr>
-        <tr class="rest"><td class="day">الاثنين</td><td class="date">٧/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الثلاثاء</td><td class="date">٨/١٢</td>
-          <td>الاجتماعيات</td><td>الفيزياء</td><td>التربية الإسلامية</td><td>الحاسوب</td><td>الأحياء</td><td>الرياضيات</td></tr>
-        <tr class="rest"><td class="day">الأربعاء</td><td class="date">٩/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
-        <tr><td class="day">الخميس</td><td class="date">١٠/١٢</td>
-          <td>الكيمياء</td><td>الأحياء</td><td>الفيزياء</td><td>الفيزياء</td><td>الحاسوب</td><td class="none">لا يوجد امتحان</td></tr>
+        <tr class="week-start"><td class="day">الأحد</td><td class="date">٢٢/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الاثنين</td><td class="date">٢٣/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الثلاثاء</td><td class="date">٢٤/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الأربعاء</td><td class="date">٢٥/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الخميس</td><td class="date">٢٦/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="week-start"><td class="day">الأحد</td><td class="date">٢٩/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الاثنين</td><td class="date">٣٠/١١</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الثلاثاء</td><td class="date">١/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الأربعاء</td><td class="date">٢/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الخميس</td><td class="date">٣/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="week-start"><td class="day">الأحد</td><td class="date">٦/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الاثنين</td><td class="date">٧/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الثلاثاء</td><td class="date">٨/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الأربعاء</td><td class="date">٩/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr><td class="day">الخميس</td><td class="date">١٠/١٢</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
       </tbody>
     </table>
   </div>
-
-  <footer>عدد المواد: ٨ مواد للمرحلة المتوسطة وللرابع والخامس العلمي، و٧ مواد للسادس العلمي.</footer>
 </div>

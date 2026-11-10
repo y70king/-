@@ -1,0 +1,105 @@
+<title>جدول الامتحانات الشهرية</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Reem+Kufi:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+<style>
+/* Layout: one centered sheet, a header block, then a single wide table (dates as rows, grades as columns) */
+:root {
+  --bg: #f3f5f4;
+  --paper: #ffffff;
+  --ink: #1d2a27;
+  --muted: #5d6b67;
+  --line: #d6dedb;
+  --accent: #1f6b5a;
+  --accent-soft: #e3f0ec;
+  --rest: #f7f8f8;
+  --font-display: "Reem Kufi", "IBM Plex Sans Arabic", Tahoma, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", Tahoma, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121816; --paper: #1a2220; --ink: #e5ecea; --muted: #9aa9a4;
+    --line: #2d3a37; --accent: #6cc5ad; --accent-soft: #1f3530; --rest: #161d1b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121816; --paper: #1a2220; --ink: #e5ecea; --muted: #9aa9a4;
+  --line: #2d3a37; --accent: #6cc5ad; --accent-soft: #1f3530; --rest: #161d1b;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6;
+  padding-block: 32px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0; color: var(--accent); text-wrap: balance; }
+.sub { margin: 0; color: var(--muted); }
+.note { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; font-size: 0.92rem; }
+.wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
+table { width: 100%; min-width: 820px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); padding: 10px 12px; text-align: center; white-space: nowrap; }
+th:last-child, td:last-child { border-left: none; }
+thead th { font-family: var(--font-display); font-weight: 500; background: var(--accent); color: var(--paper); font-size: 1rem; }
+td.day { font-weight: 600; text-align: right; }
+td.date { color: var(--muted); }
+tr.rest td { background: var(--rest); color: var(--muted); font-size: 0.9rem; }
+tr.rest td.review { letter-spacing: 0.02em; }
+tr.week-start td { border-top: 2px solid var(--accent); }
+td.none { color: var(--muted); }
+tbody tr:last-child td { border-bottom: none; }
+footer { color: var(--muted); font-size: 0.88rem; }
+</style>
+
+<div class="sheet" dir="rtl" lang="ar">
+  <header>
+    <h1>جدول الامتحانات الشهرية</h1>
+    <p class="sub">من الأول المتوسط إلى السادس الإعدادي (الفرع العلمي) · من ٢٠/١١ إلى ١٠/١٢</p>
+  </header>
+
+  <p class="note">يوم ٢٠/١١ يصادف يوم الجمعة، لذلك تبدأ الامتحانات يوم الأحد ٢٢/١١. أيام الجمعة والسبت عطلة ولم تُذكر في الجدول. يكون بين كل امتحان والذي يليه يوم مراجعة.</p>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>اليوم</th><th>التاريخ</th>
+          <th>الأول المتوسط</th><th>الثاني المتوسط</th><th>الثالث المتوسط</th>
+          <th>الرابع العلمي</th><th>الخامس العلمي</th><th>السادس العلمي</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="week-start"><td class="day">الأحد</td><td class="date">٢٢/١١</td>
+          <td>التربية الإسلامية</td><td>اللغة العربية</td><td>الرياضيات</td><td>اللغة الإنكليزية</td><td>الفيزياء</td><td>الكيمياء</td></tr>
+        <tr class="rest"><td class="day">الاثنين</td><td class="date">٢٣/١١</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الثلاثاء</td><td class="date">٢٤/١١</td>
+          <td>الرياضيات</td><td>اللغة الإنكليزية</td><td>اللغة العربية</td><td>الكيمياء</td><td>التربية الإسلامية</td><td>الفيزياء</td></tr>
+        <tr class="rest"><td class="day">الأربعاء</td><td class="date">٢٥/١١</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الخميس</td><td class="date">٢٦/١١</td>
+          <td>اللغة الإنكليزية</td><td>الرياضيات</td><td>الأحياء</td><td>التربية الإسلامية</td><td>اللغة العربية</td><td>اللغة العربية</td></tr>
+
+        <tr class="rest week-start"><td class="day">الأحد</td><td class="date">٢٩/١١</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الاثنين</td><td class="date">٣٠/١١</td>
+          <td>الأحياء</td><td>الاجتماعيات</td><td>اللغة الإنكليزية</td><td>الرياضيات</td><td>الكيمياء</td><td>التربية الإسلامية</td></tr>
+        <tr class="rest"><td class="day">الثلاثاء</td><td class="date">١/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الأربعاء</td><td class="date">٢/١٢</td>
+          <td>اللغة العربية</td><td>الكيمياء</td><td>الاجتماعيات</td><td>الأحياء</td><td>الرياضيات</td><td>اللغة الإنكليزية</td></tr>
+        <tr class="rest"><td class="day">الخميس</td><td class="date">٣/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
+
+        <tr class="week-start"><td class="day">الأحد</td><td class="date">٦/١٢</td>
+          <td>الفيزياء</td><td>التربية الإسلامية</td><td>الكيمياء</td><td>اللغة العربية</td><td>اللغة الإنكليزية</td><td>الأحياء</td></tr>
+        <tr class="rest"><td class="day">الاثنين</td><td class="date">٧/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الثلاثاء</td><td class="date">٨/١٢</td>
+          <td>الاجتماعيات</td><td>الفيزياء</td><td>التربية الإسلامية</td><td>الحاسوب</td><td>الأحياء</td><td>الرياضيات</td></tr>
+        <tr class="rest"><td class="day">الأربعاء</td><td class="date">٩/١٢</td><td class="review" colspan="6">مراجعة</td></tr>
+        <tr><td class="day">الخميس</td><td class="date">١٠/١٢</td>
+          <td>الكيمياء</td><td>الأحياء</td><td>الفيزياء</td><td>الفيزياء</td><td>الحاسوب</td><td class="none">لا يوجد امتحان</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>عدد المواد: ٨ مواد للمرحلة المتوسطة وللرابع والخامس العلمي، و٧ مواد للسادس العلمي.</footer>
+</div>

@@ -166,5 +166,53 @@ def main():
     print(f"[INFO] الرصيد ${st['equity']:.2f} | المركز {int(eng.dir[0])} | شموع جديدة {len(todo)}")
 
 
+def main_council():
+    """حساب تجريبي ثاني: مجلس العقول (تصويت). حالته بملف paper_state_<الفريم>m_council.json"""
+    from . import council
+    path = os.path.join(C.MODELS_DIR, "council.npz")
+    if not os.path.exists(path):
+        return
+    genomes, meta = council.load(path)
+    state_file = C.PAPER_STATE.replace("_pro.json", "_council.json")
+    df = fetch()
+    X, _ret, idx, px = features.build(df, return_prices=True)
+    now = pd.Timestamp.now(tz="UTC")
+    closed = np.where(idx + pd.Timedelta(minutes=C.BAR_MINUTES) <= now)[0]
+    if len(closed) < WARMUP_BARS:
+        return
+    st = json.load(open(state_file, encoding="utf-8")) if os.path.exists(state_file) else {}
+    cn = council.Council(genomes, C.SPREAD_USD_EVAL, record=True)
+    pre = brain.precompute(genomes, X)
+    if st.get("generation") != meta["generation"]:
+        last = closed[-1]
+        tmp = council.Council(genomes, C.SPREAD_USD_EVAL)
+        for i in range(last - WARMUP_BARS, last + 1):
+            tmp.process_bar(i, pre[i], px["open"][i], px["high"][i], px["low"][i], px["close"][i], px["atr"][i])
+        cn.h = tmp.h
+        st = {"generation": meta["generation"], "members": meta["members"], "started": str(now),
+              "last_bar": str(idx[last]), "trades": []}
+        todo = []
+    else:
+        council.load_state(cn, st["engine"])
+        todo = [i for i in closed if idx[i] > pd.Timestamp(st["last_bar"])]
+    for i in todo:
+        cn.process_bar(i, pre[i], px["open"][i], px["high"][i], px["low"][i], px["close"][i], px["atr"][i])
+        st["last_bar"] = str(idx[i])
+    for e in cn.events:
+        if e["type"] == "close":
+            st["trades"].append({k: e[k] for k in ("dir", "lots", "entry", "exit", "reason", "pnl_usd", "bars")}
+                                | {"exit_time": str(idx[e["t"]])})
+    st["trades"] = st["trades"][-500:]
+    st["engine"] = council.state_dict(cn)
+    st["equity"] = float(cn.equity(px["close"][closed[-1]]))
+    with open(state_file, "w", encoding="utf-8") as f:
+        json.dump(st, f, ensure_ascii=False, indent=2)
+    print(f"[INFO] المجلس: الرصيد ${st['equity']:.2f} | المركز {int(cn.dir)} | شموع جديدة {len(todo)}")
+
+
 if __name__ == "__main__":
     main()
+    try:
+        main_council()
+    except Exception as e:   # المجلس تجربة إضافية — ما نخليه يوقف البطل الأساسي
+        print(f"[WARN] المجلس: {e}")

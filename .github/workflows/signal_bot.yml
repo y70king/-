@@ -1,9 +1,9 @@
 name: Gold Signal Bot
 
 on:
-  schedule:
-    # كل 5 دقائق (GitHub قد يؤخر التنفيذ بضع دقائق وقت الازدحام)
-    - cron: "*/5 * * * *"
+  # متوقف بطلب صاحب الريبو. لإعادة التشغيل التلقائي رجّع هالسطرين:
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch: {}   # يسمح بالتشغيل اليدوي من تبويب Actions
 
 permissions:

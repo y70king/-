@@ -7,7 +7,7 @@ if(!process.env.SCENE)process.env.SCENE='scene.html';
  const times=mode==='test'?(process.env.TIMES||'1').split(',').map(Number):Array.from({length:+(process.env.N||710)},(_,i)=>i/30);
  fs.mkdirSync(out,{recursive:true});
  for(let i=0;i<times.length;i++){
-  const d=await p.evaluate(t=>{render(t);return document.getElementById('c').toDataURL('image/jpeg',.93)},times[i]);
+  const d=await p.evaluate(async t=>{await render(t);return document.getElementById('c').toDataURL('image/jpeg',.93)},times[i]);
   fs.writeFileSync(`${out}/f${String(i).padStart(4,'0')}.jpg`,Buffer.from(d.split(',')[1],'base64'));
   if(i%100==0)console.log(i);
  }

@@ -329,12 +329,29 @@
       '  •  عدد المدارس: ' + schoolNames().length +
       (state.layout && unassigned().length ? '  •  غير موزعين على القاعات: ' + unassigned().length : '');
   }
+  var selMode = false, picked = {};
+  function pickedCount() { return Object.keys(picked).length; }
   function renderList() {
     var q = norm($('search').value), arr = state.students;
+    $('selBar').classList.toggle('hidden', !selMode);
+    $('btnSelMode').classList.toggle('hidden', selMode);
+    if (selMode) {
+      $('selDelete').textContent = 'حذف المحدد (' + pickedCount() + ')';
+      $('selSchool').innerHTML = '<option value="">تحديد طالبات مدرسة...</option>' + schoolNames().filter(function (n) {
+        return arr.some(function (s) { return s.school === n; });
+      }).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+      $('selSchool').value = '';
+    }
     if (!arr.length) { $('list').innerHTML = '<li class="empty">لا يوجد طلاب بعد</li>'; return; }
     var html = '';
     arr.forEach(function (s, i) {
       if (q && (s.name + ' ' + s.num + ' ' + s.school).indexOf(q) < 0) return;
+      if (selMode) {
+        html += '<li class="' + (picked[s.id] ? 'picked' : '') + '" data-pick="' + s.id + '"><input class="pick" type="checkbox"' + (picked[s.id] ? ' checked' : '') +
+          '><span class="idx">' + (i + 1) + '</span><div class="info"><div class="nm">' + esc(s.name) +
+          '</div><div class="sub"><b>' + esc(s.num) + '</b> — ' + esc(s.school) + '</div></div></li>';
+        return;
+      }
       html += '<li><span class="idx">' + (i + 1) + '</span><div class="info"><div class="nm">' + esc(s.name) +
         '</div><div class="sub"><b>' + esc(s.num) + '</b> — ' + esc(s.school) + '</div></div>' +
         '<div class="acts"><button data-act="up" data-id="' + s.id + '">▲</button>' +
@@ -893,11 +910,75 @@
 
 
 
+
+  // ---------------- Bulk delete: students ----------------
+  function deleteStudents(ids) {
+    var set = {}; ids.forEach(function (id) { set[id] = 1; });
+    state.students = state.students.filter(function (s) { return !set[s.id]; });
+    if (state.layout) state.layout.halls.forEach(function (h) { h.seats = h.seats.map(function (x) { return set[x] ? null : x; }); });
+    if (state.dispatch && state.dispatch.marks) ids.forEach(function (id) { delete state.dispatch.marks[id]; });
+    if (editingId && set[editingId]) cancelEdit();
+    save();
+  }
+  function visibleIds() {
+    var q = norm($('search').value);
+    return state.students.filter(function (s) { return !q || (s.name + ' ' + s.num + ' ' + s.school).indexOf(q) >= 0; }).map(function (s) { return s.id; });
+  }
+  $('btnSelMode').addEventListener('click', function () { selMode = true; picked = {}; renderList(); });
+  $('selExit').addEventListener('click', function () { selMode = false; picked = {}; renderList(); });
+  $('selAll').addEventListener('click', function () { visibleIds().forEach(function (id) { picked[id] = 1; }); renderList(); });
+  $('selNone').addEventListener('click', function () { picked = {}; renderList(); });
+  $('selSchool').addEventListener('change', function () {
+    var sc = this.value; if (!sc) return;
+    state.students.forEach(function (s) { if (s.school === sc) picked[s.id] = 1; });
+    renderList();
+  });
+  $('list').addEventListener('click', function (e) {
+    if (!selMode) return;
+    var li = e.target.closest('[data-pick]'); if (!li) return;
+    var id = li.dataset.pick;
+    if (picked[id]) delete picked[id]; else picked[id] = 1;
+    li.classList.toggle('picked', !!picked[id]);
+    li.querySelector('.pick').checked = !!picked[id];
+    $('selDelete').textContent = 'حذف المحدد (' + pickedCount() + ')';
+  });
+  $('selDelete').addEventListener('click', function () {
+    var ids = Object.keys(picked);
+    if (!ids.length) { toast('لم تحدد أي طالبة'); return; }
+    if (!confirm('حذف ' + ids.length + ' طالبة نهائياً؟')) return;
+    deleteStudents(ids); picked = {}; selMode = false;
+    renderAll(); toast('تم حذف ' + ids.length + ' طالبة');
+  });
+
+  // ---------------- Bulk delete: schools ----------------
+  var sSelMode = false, sPicked = {};
+  $('sSelMode').addEventListener('click', function () { sSelMode = true; sPicked = {}; renderSchoolsCard(); });
+  $('sSelExit').addEventListener('click', function () { sSelMode = false; sPicked = {}; renderSchoolsCard(); });
+  $('sSelAll').addEventListener('click', function () { Object.keys(state.schools).forEach(function (n) { sPicked[n] = 1; }); renderSchoolsCard(); });
+  $('sSelNone').addEventListener('click', function () { sPicked = {}; renderSchoolsCard(); });
+  $('sSelDelete').addEventListener('click', function () {
+    var names = Object.keys(sPicked);
+    if (!names.length) { toast('لم تحدد أي مدرسة'); return; }
+    if (!confirm('حذف ' + names.length + ' مدرسة من قائمة المدارس؟')) return;
+    var set = {}; names.forEach(function (n) { set[n] = 1; delete state.schools[n]; });
+    var theirs = state.students.filter(function (s) { return set[s.school]; }).map(function (s) { return s.id; });
+    if (theirs.length && confirm('لهذه المدارس ' + theirs.length + ' طالبة في قائمة الطلاب.\nهل تريد حذف طالباتها أيضاً؟\n(إذا اخترت «إلغاء» تبقى الطالبات وتبقى أسماء مدارسهن ظاهرة)')) {
+      deleteStudents(theirs);
+    }
+    save(); sPicked = {}; sSelMode = false;
+    renderSchoolsCard(); renderAll(); toast('تم حذف ' + names.length + ' مدرسة');
+  });
+
   // ---------------- Schools & exam numbers (prepare from an old Word file) ----------------
   function numCmp(a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); }
   function renderSchoolsCard() {
     var names = Object.keys(state.schools);
+    $('sSelBar').classList.toggle('hidden', !sSelMode);
+    $('sSelMode').classList.toggle('hidden', sSelMode || !names.length);
+    $('sSelDelete').textContent = 'حذف المحدد (' + Object.keys(sPicked).length + ')';
     $('schoolsList').innerHTML = names.length ? names.map(function (n) {
+      if (sSelMode) return '<li class="' + (sPicked[n] ? 'picked' : '') + '" data-spick="' + esc(n) + '"><input class="pick" type="checkbox"' +
+        (sPicked[n] ? ' checked' : '') + '><div class="info"><div class="nm">' + esc(n) + '</div><div class="sub"><b>' + esc(state.schools[n] || '') + '</b></div></div></li>';
       return '<li><div class="info"><div class="nm">' + esc(n) + '</div><input type="text" inputmode="numeric" dir="ltr" data-sn="' + esc(n) +
         '" value="' + esc(state.schools[n] || '') + '"></div><div class="acts"><button class="delbtn" data-sdel="' + esc(n) + '">حذف</button></div></li>';
     }).join('') : '<li class="empty">لا توجد مدارس محفوظة بعد</li>';
@@ -907,6 +988,14 @@
     state.schools[n] = toLatinDigits(e.target.value).replace(/\s+/g, ''); save(); renderSchools();
   });
   $('schoolsList').addEventListener('click', function (e) {
+    var li = sSelMode && e.target.closest('[data-spick]');
+    if (li) {
+      var k = li.dataset.spick;
+      if (sPicked[k]) delete sPicked[k]; else sPicked[k] = 1;
+      li.classList.toggle('picked', !!sPicked[k]); li.querySelector('.pick').checked = !!sPicked[k];
+      $('sSelDelete').textContent = 'حذف المحدد (' + Object.keys(sPicked).length + ')';
+      return;
+    }
     var n = e.target.dataset.sdel; if (n == null) return;
     if (!confirm('حذف المدرسة «' + n + '» من القائمة؟')) return;
     delete state.schools[n]; save(); renderSchoolsCard(); renderAll();

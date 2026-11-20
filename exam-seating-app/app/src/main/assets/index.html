@@ -53,6 +53,20 @@
         <h3>قائمة الطلاب</h3>
         <input id="search" type="search" placeholder="بحث..." class="small">
       </div>
+      <div class="row wrap" style="margin:4px 0 6px">
+        <button id="btnSelMode" class="ghost small-btn">☑ تحديد للحذف</button>
+      </div>
+      <div id="selBar" class="selbar hidden">
+        <div class="row wrap">
+          <button id="selAll" class="ghost small-btn">تحديد الكل</button>
+          <button id="selNone" class="ghost small-btn">إلغاء التحديد</button>
+          <select id="selSchool" class="grow"></select>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="selDelete" class="danger grow">حذف المحدد (0)</button>
+          <button id="selExit" class="ghost small-btn">إنهاء</button>
+        </div>
+      </div>
       <ol id="list" class="list"></ol>
     </div>
   </section>
@@ -111,6 +125,19 @@
       <button class="primary btnPrepSchools" style="width:100%">📄 تجهيز من ملف Word لخارطة جلوس قديمة</button>
       <input id="schoolsFile" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden">
       <div id="schoolsReview" class="hidden"></div>
+      <div class="row wrap" style="margin:10px 0 4px">
+        <button id="sSelMode" class="ghost small-btn">☑ تحديد للحذف</button>
+      </div>
+      <div id="sSelBar" class="selbar hidden">
+        <div class="row wrap">
+          <button id="sSelAll" class="ghost small-btn">تحديد الكل</button>
+          <button id="sSelNone" class="ghost small-btn">إلغاء التحديد</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="sSelDelete" class="danger grow">حذف المحدد (0)</button>
+          <button id="sSelExit" class="ghost small-btn">إنهاء</button>
+        </div>
+      </div>
       <ol id="schoolsList" class="list"></ol>
       <div class="row two" style="margin-top:8px">
         <label>مدرسة جديدة <input id="newSchoolName" type="text"></label>

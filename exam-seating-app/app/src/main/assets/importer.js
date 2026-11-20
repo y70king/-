@@ -60,7 +60,8 @@
         s.year = mm[1] + ' – ' + mm[2];
         var r = /(الدور\s+\S+)\s*$/.exec(p); if (r) s.round = clean(r[1]);
       }
-      if (!s.director && p === 'مدير المركز' && paras[i + 1]) s.director = paras[i + 1];
+      if (!s.director && p === 'مدير المركز' && paras[i + 1] &&
+          !/المديرية|اللجنة|المركز|خارطة|للعام|القاعة|اسم الطالب|المادة/.test(paras[i + 1])) s.director = paras[i + 1];
     });
     return s;
   }
@@ -156,9 +157,38 @@
     return { dispatch: d, settings: s };
   }
 
-  /** Returns {kind:'embedded', data} | {kind:'seating', halls, settings} | {kind:'dispatch', rows, dispatch, settings} */
+  function sig(list) {
+    return list.map(function (x) { return [clean(x.num), clean(x.name), clean(x.school)].join('|'); }).sort().join('\n');
+  }
+
+  // true when the visible tables still match the hidden copy exactly (same students in the same seats)
+  function sameSeating(emb, halls) {
+    var byId = {};
+    emb.students.forEach(function (st) { byId[st.id] = clean(st.num); });
+    var seq = function (grid) { return grid.map(function (r) { return r.map(function (st) { return st ? clean(st.num) : ''; }).join(','); }).join(';'); };
+    var parsed = halls.map(function (h) { return seq(h.grid); }).join('/');
+    if (emb.layout && emb.layout.halls) {
+      var c = halls[0].grid[0] ? halls[0].grid[0].length : 3;
+      var mine = emb.layout.halls.map(function (h) {
+        var rows = [];
+        for (var k = 0; k < h.seats.length; k += c) rows.push(h.seats.slice(k, k + c).map(function (id) { return id && byId[id] ? { num: byId[id] } : null; }));
+        return seq(rows);
+      }).join('/');
+      return mine === parsed;
+    }
+    // automatic layout: column-by-column reading order must equal the saved entry order
+    var order = [];
+    halls.forEach(function (h) {
+      var c2 = h.grid[0] ? h.grid[0].length : 0;
+      for (var cc = 0; cc < c2; cc++) for (var r = 0; r < h.grid.length; r++) if (h.grid[r][cc]) order.push(clean(h.grid[r][cc].num));
+    });
+    return order.join(',') === emb.students.map(function (st) { return clean(st.num); }).join(',') && sig(emb.students) === sig([].concat.apply([], halls.map(function (h) { return [].concat.apply([], h.grid).filter(Boolean); })));
+  }
+
+  /** Returns {kind:'embedded', data} | {kind:'seating', halls, settings, base, edited} | {kind:'dispatch', rows, dispatch, settings, base, edited}
+   *  The visible tables always win: if the file was edited in Word after export, the hidden copy is only used for extra details. */
   function readDocx(buf) {
-    var files = DocxWriter.readZip(buf), name;
+    var files = DocxWriter.readZip(buf), name, emb = null;
     for (name in files) {
       if (!/^customXml\/item\d*\.xml$/.test(name) || !files[name]) continue;
       var x = new TextDecoder().decode(files[name]);
@@ -167,22 +197,36 @@
       if (b) {
         var bin = atob(b[1].trim()), u = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-        try { return { kind: 'embedded', data: JSON.parse(new TextDecoder().decode(u)) }; } catch (e) { /* fall through */ }
+        try { emb = JSON.parse(new TextDecoder().decode(u)); } catch (e) { emb = null; }
+        if (emb && !Array.isArray(emb.students)) emb = null;
       }
     }
-    if (!files['word/document.xml']) throw new Error('الملف ليس ملف Word (docx) صالحاً');
+    if (!files['word/document.xml']) {
+      if (emb) return { kind: 'embedded', data: emb };
+      throw new Error('الملف ليس ملف Word (docx) صالحاً');
+    }
     var doc = parseXml(files['word/document.xml']), extra = [];
     for (name in files) if (/^word\/(header|footer)\d*\.xml$/.test(name) && files[name]) extra.push(parseXml(files[name]));
     var paras = allParas(doc);
     extra.forEach(function (d) { paras = paras.concat(allParas(d)); });
 
     var halls = parseSeating(doc);
-    if (halls.length) return { kind: 'seating', halls: halls, settings: readSettings(paras) };
+    if (halls.length) {
+      var found = [];
+      halls.forEach(function (h) { h.grid.forEach(function (r) { r.forEach(function (st) { if (st) found.push(st); }); }); });
+      if (emb && sameSeating(emb, halls)) return { kind: 'embedded', data: emb };
+      return { kind: 'seating', halls: halls, settings: Object.assign({}, emb && emb.settings, readSettings(paras)),
+        base: emb, edited: !!emb && sig(emb.students) !== sig(found) };
+    }
     var dp = parseDispatch(doc, extra);
     if (dp.rows.length) {
+      // a dispatch list has no hall layout, so keep the hidden copy when the students are unchanged
+      if (emb && sig(emb.students) === sig(dp.rows)) return { kind: 'embedded', data: emb };
       var di = readDispatchInfo(dp.info, paras);
-      return { kind: 'dispatch', rows: dp.rows, dispatch: di.dispatch, settings: di.settings };
+      return { kind: 'dispatch', rows: dp.rows, base: emb, edited: !!emb,
+        dispatch: Object.assign({}, emb && emb.dispatch, di.dispatch), settings: Object.assign({}, emb && emb.settings, di.settings) };
     }
+    if (emb) return { kind: 'embedded', data: emb };
     throw new Error('لم أجد في الملف جدول جلوس أو قائمة طالبات');
   }
 

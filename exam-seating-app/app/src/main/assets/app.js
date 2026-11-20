@@ -1077,6 +1077,15 @@
   function schoolsFrom(students) {
     var m = {}; students.forEach(function (s) { if (s.school) m[s.school] = s.num; }); return m;
   }
+  // carry absences / notes from the hidden copy over to the re-read students (matched by exam number)
+  function remapMarks(base, students) {
+    var out = {}, old = (base && base.dispatch && base.dispatch.marks) || {}, byId = {};
+    ((base && base.students) || []).forEach(function (s) { byId[s.id] = s.num; });
+    var numToMark = {};
+    Object.keys(old).forEach(function (id) { if (byId[id]) numToMark[byId[id]] = old[id]; });
+    students.forEach(function (s) { if (numToMark[s.num]) out[s.id] = numToMark[s.num]; });
+    return out;
+  }
   function applyOpened(res) {
     var next, desc;
     if (res.kind === 'embedded') {
@@ -1098,11 +1107,13 @@
         ids.forEach(function (r) { for (var j = 0; j < c; j++) seats.push(r[j] || null); });
         halls.push({ seats: seats });
       });
-      var firstNo = res.halls[0].number;
+      var firstNo = res.halls[0].number, base = res.base || {};
       next = { students: students, layout: { halls: halls },
         settings: Object.assign({}, state.settings, res.settings, { cols: c, fill: 'cols', order: 'entry' }, firstNo ? { startHall: firstNo } : {}),
-        schools: schoolsFrom(students), dispatch: Object.assign({}, state.dispatch, { marks: {}, hall: 'all' }) };
-      desc = 'خارطة جلوس: ' + students.length + ' طالبة في ' + halls.length + ' قاعة';
+        schools: Object.assign({}, base.schools || {}, schoolsFrom(students)),
+        dispatch: Object.assign({}, state.dispatch, base.dispatch || {}, { marks: remapMarks(base, students), hall: 'all' }) };
+      desc = 'خارطة جلوس: ' + students.length + ' طالبة في ' + halls.length + ' قاعة' +
+        (res.edited ? '\n(الملف عُدِّل في Word بعد تصديره، فأُخذت البيانات من جداول الملف نفسها)' : '');
     } else {
       var marks = {}, st2 = res.rows.map(function (r, i) {
         var id = newId(i);
@@ -1110,8 +1121,10 @@
         return { id: id, name: r.name, num: r.num, school: r.school };
       });
       next = { students: st2, layout: null, settings: Object.assign({}, state.settings, res.settings, { fill: 'cols', order: 'entry' }),
-        schools: schoolsFrom(st2), dispatch: Object.assign({}, state.dispatch, res.dispatch, { marks: marks, hall: 'all' }) };
-      desc = 'إرسالية: ' + st2.length + ' طالبة (تُوزَّع على القاعات حسب العدد المحدد لكل قاعة)';
+        schools: Object.assign({}, (res.base && res.base.schools) || {}, schoolsFrom(st2)),
+        dispatch: Object.assign({}, state.dispatch, res.dispatch, { marks: marks, hall: 'all' }) };
+      desc = 'إرسالية: ' + st2.length + ' طالبة (تُوزَّع على القاعات حسب العدد المحدد لكل قاعة)' +
+        (res.edited ? '\n(الملف عُدِّل في Word بعد تصديره، فأُخذت البيانات من جدول الملف نفسه)' : '');
     }
     var msg = desc + '\n\nسيتم استبدال البيانات الحالية' + (state.students.length ? ' (' + state.students.length + ' طالبة)' : '') +
       ' بمحتوى الملف. يمكنك التراجع من تبويب «المعلومات». متابعة؟';

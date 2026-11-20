@@ -164,6 +164,13 @@
     return x;
   }
 
+  var STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>' +
+    '<w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/>' +
+    '<w:lang w:val="en-US" w:bidi="ar-IQ"/></w:rPr></w:rPrDefault>' +
+    '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault>' +
+    '</w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+
   function buildDocx(halls, s, logoBytes) {
     var hasLogo = !!(logoBytes && s.showLogo);
     var body = halls.map(function (h, i) {
@@ -182,12 +189,7 @@
       '<w:pgMar w:top="' + MARGIN + '" w:right="' + MARGIN + '" w:bottom="' + MARGIN + '" w:left="' + MARGIN + '" w:header="400" w:footer="400" w:gutter="0"/>' +
       '<w:bidi/></w:sectPr></w:body></w:document>';
 
-    var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults>' +
-      '<w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/>' +
-      '<w:lang w:val="en-US" w:bidi="ar-IQ"/></w:rPr></w:rPrDefault>' +
-      '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault>' +
-      '</w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+    var styles = STYLES;
 
     var ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
@@ -218,5 +220,84 @@
     return zip(files);
   }
 
-  window.DocxWriter = { build: buildDocx };
+
+  // ---------- Dispatch form (header + footer repeat on every page) ----------
+  var NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  function scaleW(arr, total) {
+    var sum = arr.reduce(function (a, b) { return a + b; }, 0), out = arr.map(function (w) { return Math.floor(w * total / sum); });
+    out[out.length - 1] += total - out.reduce(function (a, b) { return a + b; }, 0);
+    return out;
+  }
+  function buildDispatch(x) {
+    var BLUE = '002060';
+    // header: title + info table (6 columns: label, value, label, value, label, value)
+    var iw = scaleW([1503, 2250, 2070, 2700, 974, 1726], CONTENT_W);
+    var info = '';
+    x.info.forEach(function (r) {
+      info += tr(r.map(function (v, i) {
+        var small = i % 2 === 1 && String(v || '').length > 16;
+        return tc(iw[i], para(run(v || '', { sz: small ? 10 : 12, b: true, color: BLUE })), { fill: i % 2 ? '' : 'FFFF99' });
+      }).join(''));
+    });
+    var hdr = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ' + NS + '>' +
+      para(run(x.title, { sz: 16, b: true, color: BLUE }), { after: 80 }) +
+      tbl(iw, info, { borders: true }) + para('', { after: 60 }) + '</w:hdr>';
+
+    // footer: two lines (name | signature | mobile)
+    var fw = scaleW([4, 2, 4], CONTENT_W);
+    var frows = x.foot.map(function (r) {
+      return tr(tc(fw[0], para(run(r[0], { sz: 12, b: true, color: BLUE }), { after: 120 })) +
+        tc(fw[1], para(run(r[1], { sz: 12, b: true, color: BLUE }), { after: 120 })) +
+        tc(fw[2], para(run(r[2], { sz: 12, b: true, color: BLUE }), { after: 120 })));
+    }).join('');
+    var ftr = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ' + NS + '>' + tbl(fw, frows) + para('') + '</w:ftr>';
+
+    // body: list table with repeating header row
+    var lw = scaleW([448, 2732, 2845, 1154, 872, 938, 1091, 1073], CONTENT_W);
+    var rows = tr(x.heads.map(function (h, i) { return tc(lw[i], para(run(h, { sz: 10, b: true }))); })
+      .join('').replace(/<w:tcPr>/g, '<w:tcPr>').replace(/(<w:tcW [^>]*\/>)/g, '$1<w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/>'), { header: true });
+    var sizes = [12, 14, 14, 10, 11, 11, 10, 10];
+    x.rows.forEach(function (r) {
+      rows += tr(r.map(function (v, i) { return tc(lw[i], para(run(v, { sz: sizes[i], b: i < 3 || i === 5 }))); }).join(''));
+    });
+    var doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + NS + '><w:body>' +
+      tbl(lw, rows, { borders: true }) + para('') +
+      '<w:sectPr><w:headerReference w:type="default" r:id="rIdHdr"/><w:footerReference w:type="default" r:id="rIdFtr"/>' +
+      '<w:pgSz w:w="' + PAGE_W + '" w:h="' + PAGE_H + '" w:code="9"/>' +
+      '<w:pgMar w:top="3300" w:right="' + MARGIN + '" w:bottom="1500" w:left="' + MARGIN + '" w:header="360" w:footer="300" w:gutter="0"/>' +
+      '<w:bidi/></w:sectPr></w:body></w:document>';
+
+    var ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+      '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' +
+      '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' +
+      '</Types>';
+    var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>';
+    var R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+    var docRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rIdStyles" Type="' + R + 'styles" Target="styles.xml"/>' +
+      '<Relationship Id="rIdHdr" Type="' + R + 'header" Target="header1.xml"/>' +
+      '<Relationship Id="rIdFtr" Type="' + R + 'footer" Target="footer1.xml"/>' +
+      '</Relationships>';
+    return zip([
+      { name: '[Content_Types].xml', data: utf8(ct) },
+      { name: '_rels/.rels', data: utf8(rels) },
+      { name: 'word/document.xml', data: utf8(doc) },
+      { name: 'word/styles.xml', data: utf8(STYLES) },
+      { name: 'word/header1.xml', data: utf8(hdr) },
+      { name: 'word/footer1.xml', data: utf8(ftr) },
+      { name: 'word/_rels/document.xml.rels', data: utf8(docRels) }
+    ]);
+  }
+
+  window.DocxWriter = { build: buildDocx, buildDispatch: buildDispatch };
 })();

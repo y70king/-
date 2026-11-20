@@ -13,6 +13,7 @@
     <button data-tab="students" class="active">الطلاب</button>
     <button data-tab="settings">المعلومات</button>
     <button data-tab="sheets">الجدول</button>
+    <button data-tab="dispatch">الإرسالية</button>
   </nav>
 </header>
 
@@ -157,9 +158,78 @@
       <div id="editor"></div>
     </div>
   </section>
+
+  <!-- ================= Dispatch form ================= -->
+  <section id="tab-dispatch" class="tab">
+    <div class="card">
+      <h3>معلومات الإرسالية</h3>
+      <div class="row two">
+        <label>المادة <input data-d="subject" type="text"></label>
+        <label>التأريخ <input data-d="date" type="date"></label>
+      </div>
+      <div class="row two">
+        <label>اليوم <select data-d="day"><option value="">—</option><option>السبت</option><option>الأحد</option><option>الاثنين</option><option>الثلاثاء</option><option>الأربعاء</option><option>الخميس</option><option>الجمعة</option></select></label>
+        <label>القاعات <select id="dHalls"></select></label>
+      </div>
+      <div class="row two">
+        <label>المديرية <input data-d="directorate" type="text"></label>
+        <label>مركز الفحص <input data-d="examCenter" type="text"></label>
+      </div>
+      <div class="row two">
+        <label>الدراسة <select data-set="level"><option>المتوسطة</option><option>الإعدادية</option><option>الابتدائية</option></select></label>
+        <label>الدور <input data-set="round" type="text"></label>
+      </div>
+      <div class="row two">
+        <label>رقم المركز <input data-set="center" type="text"></label>
+        <label>العام الدراسي <input data-set="year" type="text"></label>
+      </div>
+      <label>اسم المركز <input data-set="building" type="text"></label>
+      <label>عنوان المركز <input data-d="address" type="text"></label>
+      <div class="row two">
+        <label>مجموع المشاركين <input data-d="participants" type="text" inputmode="numeric"></label>
+        <label>عدد الغياب <input data-d="absentCount" type="text" inputmode="numeric"></label>
+      </div>
+      <label>مجموع الدفاتر المرسلة <input data-d="booklets" type="text" inputmode="numeric"></label>
+      <div class="hint">اترك المجاميع فارغة لتُحسب تلقائياً من القائمة والغياب.</div>
+      <label>عنوان الاستمارة <input data-d="title" type="text"></label>
+      <div class="hint">اتركه فارغاً ليُكتب تلقائياً.</div>
+    </div>
+
+    <div class="card">
+      <h3>أسفل الصفحة</h3>
+      <div class="row two">
+        <label>اسم مدير المركز <input data-set="director" type="text"></label>
+        <label>موبايل المدير <input data-d="directorPhone" type="tel" dir="ltr"></label>
+      </div>
+      <div class="row two">
+        <label>اسم معاون المدير <input data-d="deputy" type="text"></label>
+        <label>موبايل المعاون <input data-d="deputyPhone" type="tel" dir="ltr"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row wrap">
+        <button id="dWord" class="primary">تصدير Word</button>
+        <button id="dPdf" class="primary">حفظ PDF</button>
+        <button id="dToggle" class="ghost">الغياب والملاحظات</button>
+      </div>
+      <div class="afterSaveD row wrap hidden" style="margin-top:8px">
+        <button class="ghost btnOpenAny">فتح الملف</button>
+        <button class="ghost btnShareAny">مشاركة</button>
+      </div>
+    </div>
+
+    <div id="dMarks" class="card hidden">
+      <h3>الغياب والملاحظات</h3>
+      <div class="hint" style="margin:0 0 6px">الطالبات بنفس ترتيب الجلوس. علّم الغائبة، واضغط ✎ لكتابة «الطالب المنقول مركزه» أو الملاحظات.</div>
+      <input id="dSearch" type="search" placeholder="بحث..." style="margin-bottom:6px">
+      <ol id="dList" class="list"></ol>
+    </div>
+  </section>
 </main>
 
 <div id="sheetsWrap"><div id="sheets"></div></div>
+<div id="dispatchWrap"><div id="dispatch"></div></div>
 
 <div id="actionBar" class="actionbar no-print hidden"></div>
 

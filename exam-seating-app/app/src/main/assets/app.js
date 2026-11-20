@@ -63,7 +63,9 @@
     currentTab = name;
     document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.id === 'tab-' + name); });
+    document.body.classList.toggle('show-dispatch', name === 'dispatch');
     if (name === 'sheets') renderSheetsTab(); else { document.body.classList.remove('show-sheets'); clearSel(); }
+    if (name === 'dispatch') renderDispatchTab();
     syncSettingsUI();
     window.scrollTo(0, 0);
   }
@@ -383,7 +385,7 @@
     el.style.height = (el.scrollHeight * scale) + 'px';
     el.style.marginRight = '0';
   }
-  window.addEventListener('resize', function () { if (currentTab === 'sheets') fitSheets(); });
+  window.addEventListener('resize', function () { if (currentTab === 'sheets') fitSheets(); if (currentTab === 'dispatch') renderDispatchPreview(); });
 
   // ---------------- Sheets tab: preview / edit ----------------
   var sheetMode = 'preview';
@@ -637,6 +639,7 @@
         document.querySelectorAll('[data-set="' + k + '"]').forEach(function (o) { if (o !== el) setEl(o, state.settings[k]); });
         save(); renderStats();
         if (currentTab === 'sheets') renderSheetsTab();
+        if (currentTab === 'dispatch') renderDispatchTab();
       });
     });
   });
@@ -705,6 +708,7 @@
       var err = Android.saveFile(bytesToB64(bytes), name, mime);
       if (err) { alert(err); return false; }
       $('afterSave').classList.remove('hidden');
+      document.querySelectorAll('.afterSaveD').forEach(function (x) { x.classList.remove('hidden'); });
       return true;
     }
     var a = document.createElement('a');
@@ -729,6 +733,161 @@
   });
   $('btnOpen').addEventListener('click', function () { if (window.Android) Android.openLast(); });
   $('btnShare').addEventListener('click', function () { if (window.Android) Android.shareLast(); });
+
+
+  // ---------------- Dispatch form (استمارة إرسال الرزمة) ----------------
+  var D_DEFAULTS = { subject: '', date: '', day: '', directorate: 'صلاح الدين', examCenter: 'الكرخ', address: 'بيجي / المركز',
+    participants: '', absentCount: '', booklets: '', title: '', directorPhone: '', deputy: '', deputyPhone: '', hall: 'all', marks: {} };
+  state.dispatch = Object.assign({}, D_DEFAULTS, state.dispatch || {});
+  state.dispatch.marks = state.dispatch.marks || {};
+  var DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+  // students in seating order: each hall, right column top→bottom, then the next column, then the next hall
+  function dispatchRows() {
+    var d = state.dispatch, out = [];
+    buildHalls().forEach(function (h, hi) {
+      if (d.hall !== 'all' && String(hi) !== String(d.hall)) return;
+      var c = h.grid.length ? h.grid[0].length : 0;
+      for (var cc = 0; cc < c; cc++) for (var r = 0; r < h.grid.length; r++) {
+        var st = h.grid[r][cc];
+        if (st) out.push({ st: st, hall: h.number, mark: d.marks[st.id] || {} });
+      }
+    });
+    return out;
+  }
+  function stripPrefix(s, p) { s = norm(s); return s.indexOf(p) === 0 ? norm(s.slice(p.length)) : s; }
+  function dispatchData() {
+    var d = state.dispatch, s = state.settings, rows = dispatchRows();
+    var absent = rows.filter(function (r) { return r.mark.absent; }).length;
+    var part = norm(d.participants) || String(rows.length);
+    var abs = norm(d.absentCount) || String(absent);
+    var book = norm(d.booklets) || String((parseInt(toLatinDigits(part), 10) || 0) - (parseInt(toLatinDigits(abs), 10) || 0));
+    var date = '';
+    if (d.date) { var p = d.date.split('-'); date = (+p[2]) + ' / ' + (+p[1]) + ' / ' + p[0]; }
+    var lvl = norm(s.level);
+    return {
+      title: norm(d.title) || ('استمارة ارسال الرزمة إلى مركز فحص الدراسة ' + lvl + (norm(d.examCenter) ? ' / ' + norm(d.examCenter) : '') +
+        ' للعام الدراسي ' + norm(s.year).replace(/\s*[–-]\s*/, ' / ') + 'م'),
+      info: [
+        ['المديرية', d.directorate, 'الدراسة', lvl, 'الدور', stripPrefix(s.round, 'الدور')],
+        ['رقم المركز', s.center, 'مجموع المشاركين', part, 'المادة', norm(d.subject) || norm(s.subject)],
+        ['اسم المركز', s.building, 'عدد الغياب', abs, 'اليوم', d.day],
+        ['عنوان المركز', d.address, 'مجموع الدفاتر المرسلة', book, 'التأريخ', date]
+      ],
+      heads: ['ت', 'الرقم الامتحاني', 'اسم الطالب', 'اسم المدرسة', 'اسم المديرية', 'الغياب', 'الطالب المنقول مركزه', 'الملاحظات'],
+      rows: rows.map(function (r, i) {
+        return [String(i + 1), r.st.num, r.st.name, r.st.school, d.directorate, r.mark.absent ? 'غائبة' : '', r.mark.moved || '', r.mark.note || ''];
+      }),
+      foot: [
+        ['اسم مدير المركز/ ' + norm(s.director), 'التوقيع', 'رقم موبايل مدير المركز/ ' + norm(d.directorPhone)],
+        ['اسم معاون مدير المركز/ ' + norm(d.deputy), 'التوقيع', 'رقم موبايل معاون مدير المركز/ ' + norm(d.deputyPhone)]
+      ]
+    };
+  }
+
+  function renderDispatchPreview() {
+    var x = dispatchData(), info = '<table class="dinfo">' + x.info.map(function (r) {
+      return '<tr>' + r.map(function (v, i) { return '<td class="' + (i % 2 ? '' : 'l') + '">' + esc(v) + '</td>'; }).join('') + '</tr>';
+    }).join('') + '</table>';
+    var head = '<tr><td colspan="8" style="border:0;padding:0"><div class="dtitle">' + esc(x.title) + '</div>' + info + '<div style="height:10px"></div></td></tr>' +
+      '<tr>' + x.heads.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr>';
+    var cls = ['', 'n', '', 'sc', 'dr', 'sm', 'sm', 'sm'];
+    var body = x.rows.map(function (r) {
+      return '<tr>' + r.map(function (v, i) { return '<td class="' + cls[i] + '">' + esc(v) + '</td>'; }).join('') + '</tr>';
+    }).join('') || '<tr><td colspan="8">لا يوجد طلاب</td></tr>';
+    var foot = '<tr><td colspan="8" style="border:0;padding:8px 0 0"><table class="dfoot">' + x.foot.map(function (r) {
+      return '<tr><td>' + esc(r[0]) + '</td><td class="c">' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td></tr>';
+    }).join('') + '</table></td></tr>';
+    $('dispatch').innerHTML = '<div class="dsheet"><table class="dlist"><colgroup>' +
+      [4, 19, 26, 13, 9, 7, 11, 11].map(function (w) { return '<col style="width:' + w + '%">'; }).join('') + '</colgroup>' +
+      '<thead>' + head + '</thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
+    var el = $('dispatch'), scale = Math.min(1, ($('dispatchWrap').clientWidth - 24) / 794);
+    el.style.width = '794px'; el.style.transform = 'scale(' + scale + ')'; el.style.height = '';
+    el.style.height = (el.scrollHeight * scale) + 'px';
+  }
+
+  function renderDispatchList() {
+    var q = norm($('dSearch').value), html = '';
+    dispatchRows().forEach(function (r, i) {
+      var st = r.st;
+      if (q && (st.name + ' ' + st.num + ' ' + st.school).indexOf(q) < 0) return;
+      html += '<li class="' + (r.mark.absent ? 'absent' : '') + '"><span class="idx">' + (i + 1) + '</span><div class="info"><div class="nm">' + esc(st.name) +
+        '</div><div class="sub"><b>' + esc(st.num) + '</b> — قاعة ' + r.hall + '</div>' +
+        (r.mark.moved || r.mark.note ? '<div class="note">' + esc([r.mark.moved, r.mark.note].filter(Boolean).join(' • ')) + '</div>' : '') +
+        '</div><div class="acts"><label class="chk"><input type="checkbox" data-abs="' + st.id + '"' + (r.mark.absent ? ' checked' : '') + '>غائبة</label>' +
+        '<button data-dnote="' + st.id + '">✎</button></div></li>';
+    });
+    $('dList').innerHTML = html || '<li class="empty">لا يوجد طلاب</li>';
+  }
+
+  function renderDispatchTab() {
+    var d = state.dispatch, start = parseInt(state.settings.startHall, 10) || 1, n = buildHalls().length;
+    if (d.hall !== 'all' && !(parseInt(d.hall, 10) < n)) d.hall = 'all';
+    $('dHalls').innerHTML = '<option value="all">جميع القاعات</option>' + Array.apply(null, Array(n)).map(function (_, i) {
+      return '<option value="' + i + '">قاعة ' + (start + i) + ' فقط</option>';
+    }).join('');
+    $('dHalls').value = d.hall;
+    document.querySelectorAll('[data-d]').forEach(function (el) {
+      if (el !== document.activeElement) el.value = d[el.dataset.d] || '';
+    });
+    var x = dispatchData();
+    document.querySelectorAll('[data-d="participants"],[data-d="absentCount"],[data-d="booklets"],[data-d="subject"],[data-d="title"]').forEach(function (el) {
+      var k = el.dataset.d;
+      el.placeholder = k === 'participants' ? 'تلقائي: ' + x.info[1][3] : k === 'absentCount' ? 'تلقائي: ' + x.info[2][3] :
+        k === 'booklets' ? 'تلقائي: ' + x.info[3][3] : k === 'subject' ? (norm(state.settings.subject) || '') : 'تلقائي';
+    });
+    renderDispatchPreview();
+    if (!$('dMarks').classList.contains('hidden')) renderDispatchList();
+  }
+
+  document.querySelectorAll('[data-d]').forEach(function (el) {
+    el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', function () {
+      var k = el.dataset.d;
+      state.dispatch[k] = el.value;
+      if (k === 'date' && el.value) { // fill the weekday automatically
+        var p = el.value.split('-'), dt = new Date(+p[0], +p[1] - 1, +p[2]);
+        state.dispatch.day = DAYS[dt.getDay()];
+      }
+      save(); renderDispatchTab();
+    });
+  });
+  $('dHalls').addEventListener('change', function () { state.dispatch.hall = this.value; save(); renderDispatchTab(); });
+  $('dToggle').addEventListener('click', function () {
+    $('dMarks').classList.toggle('hidden');
+    if (!$('dMarks').classList.contains('hidden')) { renderDispatchList(); $('dMarks').scrollIntoView({ behavior: 'smooth' }); }
+  });
+  $('dSearch').addEventListener('input', renderDispatchList);
+  $('dList').addEventListener('change', function (e) {
+    var id = e.target.dataset.abs; if (!id) return;
+    var m = state.dispatch.marks[id] = state.dispatch.marks[id] || {};
+    m.absent = e.target.checked;
+    save(); renderDispatchTab();
+  });
+  $('dList').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-dnote]'); if (!b) return;
+    var id = b.dataset.dnote, m = state.dispatch.marks[id] = state.dispatch.marks[id] || {};
+    var mv = prompt('الطالب المنقول مركزه (اتركه فارغاً إن لم يوجد):', m.moved || ''); if (mv == null) return;
+    var nt = prompt('الملاحظات:', m.note || ''); if (nt == null) return;
+    m.moved = norm(mv); m.note = norm(nt);
+    save(); renderDispatchTab();
+  });
+  $('dWord').addEventListener('click', function () {
+    var x = dispatchData();
+    if (!x.rows.length) { toast('لا يوجد طلاب'); return; }
+    try {
+      saveBytes(DocxWriter.buildDispatch(x), 'ارسالية_' + (norm(state.dispatch.subject) || norm(state.settings.subject) || '') + '_' + stamp() + '.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    } catch (e) { alert('خطأ: ' + e.message); }
+  });
+  $('dPdf').addEventListener('click', function () {
+    if (!dispatchRows().length) { toast('لا يوجد طلاب'); return; }
+    renderDispatchPreview();
+    if (window.Android && Android.printPdf) Android.printPdf('ارسالية_' + stamp()); else window.print();
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.classList.contains('btnOpenAny') && window.Android) Android.openLast();
+    if (e.target.classList.contains('btnShareAny') && window.Android) Android.shareLast();
+  });
 
   // ---------------- Backup ----------------
   $('btnBackup').addEventListener('click', function () {

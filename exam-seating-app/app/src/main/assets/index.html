@@ -34,6 +34,7 @@
         <datalist id="schoolList"></datalist>
       </label>
       <div id="schoolChips" class="chips"></div>
+      <button class="linkbtn btnPrepSchools">📄 تجهيز المدارس والأرقام من ملف Word قديم</button>
       <label>الرقم الامتحاني
         <input id="fNum" type="text" inputmode="numeric" autocomplete="off" dir="ltr" placeholder="مثال: 182692320040125">
       </label>
@@ -102,6 +103,20 @@
       <datalist id="rounds"><option value="الدور الأول"><option value="الدور الثاني"><option value="الدور الثالث"></datalist>
       <label>اسم مدير المركز <input data-set="director" type="text"></label>
       <label class="check"><input data-set="showLogo" type="checkbox"> إظهار الشعار</label>
+    </div>
+
+    <div class="card" id="schoolsCard">
+      <h3>المدارس والأرقام الامتحانية</h3>
+      <div class="hint" style="margin:0 0 8px">عند اختيار المدرسة أثناء إدخال الطالبة يُكتب رقمها الامتحاني من هنا لتعدّل آخر أرقامه.</div>
+      <button class="primary btnPrepSchools" style="width:100%">📄 تجهيز من ملف Word لخارطة جلوس قديمة</button>
+      <input id="schoolsFile" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden">
+      <div id="schoolsReview" class="hidden"></div>
+      <ol id="schoolsList" class="list"></ol>
+      <div class="row two" style="margin-top:8px">
+        <label>مدرسة جديدة <input id="newSchoolName" type="text"></label>
+        <label>رقمها الامتحاني <input id="newSchoolNum" type="text" inputmode="numeric" dir="ltr"></label>
+      </div>
+      <button id="btnAddSchool" class="ghost" style="width:100%">+ إضافة مدرسة</button>
     </div>
 
     <div class="card">

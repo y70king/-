@@ -66,6 +66,7 @@
     document.body.classList.toggle('show-dispatch', name === 'dispatch');
     if (name === 'sheets') renderSheetsTab(); else { document.body.classList.remove('show-sheets'); clearSel(); }
     if (name === 'dispatch') renderDispatchTab();
+    if (name === 'settings') renderSchoolsCard();
     syncSettingsUI();
     window.scrollTo(0, 0);
   }
@@ -86,6 +87,7 @@
     return names;
   }
   function lastNumFor(school) {
+    if (!editingId && state.schools[school]) return state.schools[school]; // saved / prepared number (updated on every add)
     for (var i = state.students.length - 1; i >= 0; i--) {
       if (state.students[i].school === school && state.students[i].id !== editingId) return state.students[i].num;
     }
@@ -889,6 +891,92 @@
     if (e.target.classList.contains('btnShareAny') && window.Android) Android.shareLast();
   });
 
+
+
+  // ---------------- Schools & exam numbers (prepare from an old Word file) ----------------
+  function numCmp(a, b) { return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0); }
+  function renderSchoolsCard() {
+    var names = Object.keys(state.schools);
+    $('schoolsList').innerHTML = names.length ? names.map(function (n) {
+      return '<li><div class="info"><div class="nm">' + esc(n) + '</div><input type="text" inputmode="numeric" dir="ltr" data-sn="' + esc(n) +
+        '" value="' + esc(state.schools[n] || '') + '"></div><div class="acts"><button class="delbtn" data-sdel="' + esc(n) + '">حذف</button></div></li>';
+    }).join('') : '<li class="empty">لا توجد مدارس محفوظة بعد</li>';
+  }
+  $('schoolsList').addEventListener('change', function (e) {
+    var n = e.target.dataset.sn; if (n == null) return;
+    state.schools[n] = toLatinDigits(e.target.value).replace(/\s+/g, ''); save(); renderSchools();
+  });
+  $('schoolsList').addEventListener('click', function (e) {
+    var n = e.target.dataset.sdel; if (n == null) return;
+    if (!confirm('حذف المدرسة «' + n + '» من القائمة؟')) return;
+    delete state.schools[n]; save(); renderSchoolsCard(); renderAll();
+    if (state.students.some(function (s) { return s.school === n; })) toast('ستبقى ظاهرة لأن لها طالبات في القائمة');
+  });
+  $('btnAddSchool').addEventListener('click', function () {
+    var n = norm($('newSchoolName').value), num = toLatinDigits($('newSchoolNum').value).replace(/\s+/g, '');
+    if (!n) { toast('اكتب اسم المدرسة'); return; }
+    state.schools[n] = num; save();
+    $('newSchoolName').value = ''; $('newSchoolNum').value = '';
+    renderSchoolsCard(); renderAll(); toast('تمت إضافة المدرسة');
+  });
+
+  document.querySelectorAll('.btnPrepSchools').forEach(function (b) {
+    b.addEventListener('click', function () { $('schoolsFile').click(); });
+  });
+  var foundSchools = [];
+  $('schoolsFile').addEventListener('change', function () {
+    var f = this.files[0]; this.value = '';
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var res = DocxReader.read(r.result), list = [];
+        if (res.kind === 'embedded') list = (res.data.students || []).map(function (s) { return { school: s.school, num: s.num }; });
+        else if (res.kind === 'seating') res.halls.forEach(function (h) { h.grid.forEach(function (row) { row.forEach(function (st) { if (st) list.push(st); }); }); });
+        else list = res.rows;
+        var map = {}, order = [];
+        list.forEach(function (x) {
+          var sc = norm(x.school), num = toLatinDigits(x.num || '').replace(/\s+/g, '');
+          if (!sc || !num) return;
+          if (!map[sc]) { map[sc] = { school: sc, nums: [] }; order.push(sc); }
+          map[sc].nums.push(num);
+        });
+        foundSchools = order.map(function (sc) {
+          var m = map[sc]; m.nums.sort(numCmp); m.num = m.nums[m.nums.length - 1]; return m;
+        });
+        if (!foundSchools.length) throw new Error('لم أجد أسماء مدارس وأرقاماً امتحانية في الملف');
+        showSchoolsReview();
+      } catch (e) { alert('تعذر قراءة الملف: ' + e.message); }
+    };
+    r.readAsArrayBuffer(f);
+  });
+  function showSchoolsReview() {
+    if (currentTab !== 'settings') showTab('settings');
+    var box = $('schoolsReview');
+    box.innerHTML = '<h3 style="margin:0 0 4px">وُجدت ' + foundSchools.length + ' مدرسة في الملف</h3>' +
+      '<div class="hint" style="margin:0 0 6px">الرقم المقترح هو آخر (أكبر) رقم امتحاني لكل مدرسة في الملف، ويمكنك تعديله. ألغِ تحديد أي مدرسة لا تريدها.</div>' +
+      '<ol class="list">' + foundSchools.map(function (m, i) {
+        var exists = state.schools.hasOwnProperty(m.school) || schoolNames().indexOf(m.school) >= 0;
+        return '<li><input type="checkbox" data-ri="' + i + '" checked><div class="info"><div class="nm">' + esc(m.school) + '</div>' +
+          '<div class="cnt">' + m.nums.length + ' طالبة في الملف' + (exists ? ' — موجودة مسبقاً وسيُحدَّث رقمها' : '') + '</div>' +
+          '<input type="text" inputmode="numeric" dir="ltr" data-rn="' + i + '" value="' + esc(m.num) + '"></div></li>';
+      }).join('') + '</ol><div class="row" style="margin-top:8px"><button id="btnSaveSchools" class="primary">حفظ المدارس المحددة</button>' +
+      '<button id="btnCancelSchools" class="ghost">إلغاء</button></div>';
+    box.classList.remove('hidden');
+    $('schoolsCard').scrollIntoView({ behavior: 'smooth' });
+    $('btnCancelSchools').onclick = function () { box.classList.add('hidden'); box.innerHTML = ''; };
+    $('btnSaveSchools').onclick = function () {
+      var n = 0;
+      foundSchools.forEach(function (m, i) {
+        if (!box.querySelector('[data-ri="' + i + '"]').checked) return;
+        state.schools[m.school] = toLatinDigits(box.querySelector('[data-rn="' + i + '"]').value).replace(/\s+/g, '');
+        n++;
+      });
+      save(); box.classList.add('hidden'); box.innerHTML = '';
+      renderSchoolsCard(); renderAll();
+      toast('تم حفظ ' + n + ' مدرسة — اخترها عند إدخال الطالبات');
+    };
+  }
 
   // ---------------- Open a previously exported Word file ----------------
   var PREV_KEY = 'examSeating.beforeOpen';

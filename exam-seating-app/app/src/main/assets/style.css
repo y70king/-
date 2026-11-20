@@ -150,3 +150,4 @@ body.has-bar .toast { bottom: 150px; }
 .hcGrid label.hc { margin: 0; font-size: 12px; text-align: center; }
 .hcGrid input { padding: 7px 4px; text-align: center; font-size: 16px; }
 .hcReset { color: var(--primary); }
+.list li .acts button.delbtn { color: var(--danger); font-size: 13px; font-weight: bold; border: 1px solid #f3c2c2; border-radius: 6px; padding: 4px 8px; }

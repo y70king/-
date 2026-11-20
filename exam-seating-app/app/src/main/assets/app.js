@@ -176,6 +176,7 @@
     $('formTitle').textContent = 'تعديل طالب';
     $('btnAdd').textContent = 'حفظ التعديل';
     $('btnCancelEdit').classList.remove('hidden');
+    $('btnDelEdit').classList.remove('hidden');
     $('numHint').textContent = '';
     window.scrollTo(0, 0); $('fName').focus();
   }
@@ -185,9 +186,15 @@
     $('formTitle').textContent = 'إضافة طالب';
     $('btnAdd').textContent = 'إضافة';
     $('btnCancelEdit').classList.add('hidden');
+    $('btnDelEdit').classList.add('hidden');
     onSchoolChosen(false);
   }
   $('btnCancelEdit').addEventListener('click', cancelEdit);
+  $('btnDelEdit').addEventListener('click', function () {
+    var st = state.students.filter(function (s) { return s.id === editingId; })[0]; if (!st) return;
+    if (!confirm('حذف الطالبة نهائياً؟\n' + st.name + ' — ' + st.num)) return;
+    deleteStudent(st.id); cancelEdit(); toast('تم الحذف');
+  });
 
   $('list').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-act]'); if (!b) return;
@@ -197,9 +204,8 @@
     var act = b.dataset.act;
     if (act === 'edit') return startEdit(id);
     if (act === 'del') {
-      if (!confirm('حذف الطالب: ' + arr[i].name + '؟')) return;
-      arr.splice(i, 1);
-      if (editingId === id) cancelEdit();
+      if (!confirm('حذف الطالبة نهائياً؟\n' + arr[i].name + ' — ' + arr[i].num + '\n' + arr[i].school)) return;
+      deleteStudent(id); toast('تم الحذف'); return;
     } else if (act === 'up' && i > 0) {
       var t = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = t;
     } else if (act === 'down' && i < arr.length - 1) {
@@ -208,6 +214,13 @@
     save(); renderAll();
   });
   $('search').addEventListener('input', renderList);
+
+  function deleteStudent(id) {
+    state.students = state.students.filter(function (s) { return s.id !== id; });
+    if (state.layout) state.layout.halls.forEach(function (h) { h.seats = h.seats.map(function (x) { return x === id ? null : x; }); });
+    if (editingId === id) cancelEdit();
+    save(); renderAll();
+  }
 
   // ---------------- Halls ----------------
   function orderedStudents() {
@@ -323,7 +336,7 @@
         '<div class="acts"><button data-act="up" data-id="' + s.id + '">▲</button>' +
         '<button data-act="down" data-id="' + s.id + '">▼</button>' +
         '<button data-act="edit" data-id="' + s.id + '">✎</button>' +
-        '<button data-act="del" data-id="' + s.id + '">🗑</button></div></li>';
+        '<button class="delbtn" data-act="del" data-id="' + s.id + '">حذف</button></div></li>';
     });
     $('list').innerHTML = html || '<li class="empty">لا توجد نتائج</li>';
   }
@@ -467,10 +480,16 @@
       '<div class="row"><select id="moveTo" class="grow">' + opts + '</select><button id="btnMoveTo" class="primary" style="flex:0 0 auto">نقل للقاعة</button></div>' +
       '<div class="row" style="margin-top:6px">' +
       (sel.id ? '' : '<button id="btnUnseat" class="ghost">إخراج من القاعة</button>') +
+      '<button id="btnSelDelete" class="danger">حذف الطالبة</button>' +
       '<button id="btnSelCancel" class="ghost">إلغاء</button></div>';
     bar.classList.remove('hidden'); document.body.classList.add('has-bar');
     $('btnMoveTo').onclick = function () { moveToHall(parseInt($('moveTo').value, 10)); };
     $('btnSelCancel').onclick = function () { clearSel(); renderEditor(); };
+    $('btnSelDelete').onclick = function () {
+      if (!confirm('حذف الطالبة نهائياً من القائمة؟\n' + st.name + ' — ' + st.num)) return;
+      deleteStudent(st.id);
+      clearSel(); renderEditor(); toast('تم حذف ' + st.name);
+    };
     if ($('btnUnseat')) $('btnUnseat').onclick = function () {
       state.layout.halls[sel.h].seats[sel.k] = null; clearSel(); save(); renderEditor(); toast('أُخرجت إلى «غير الموزعين»');
     };

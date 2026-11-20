@@ -179,3 +179,6 @@ body.show-dispatch #dispatchWrap { display: block; }
 .list li.absent .nm { color: var(--danger); text-decoration: line-through; }
 .list li .chk { display: flex; align-items: center; gap: 3px; font-size: 13px; color: var(--danger); margin: 0; }
 .list li .note { font-size: 12px; color: #8a5a00; }
+
+.titlerow { display: flex; align-items: center; justify-content: space-between; padding-left: 10px; }
+.openbtn { background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.45); padding: 6px 10px; font-size: 14px; margin-top: 6px; }

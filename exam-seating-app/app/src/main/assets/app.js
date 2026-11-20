@@ -720,7 +720,7 @@
     var halls = buildHalls();
     if (!halls.length) { toast('لا يوجد طلاب'); return; }
     try {
-      var bytes = DocxWriter.build(halls, state.settings, b64ToBytes(window.LOGO_B64));
+      var bytes = DocxWriter.build(halls, state.settings, b64ToBytes(window.LOGO_B64), exportPayload('seating'));
       saveBytes(bytes, 'خارطة_الجلوس_' + stamp() + '.docx',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     } catch (e) { alert('خطأ: ' + e.message); }
@@ -875,7 +875,7 @@
     var x = dispatchData();
     if (!x.rows.length) { toast('لا يوجد طلاب'); return; }
     try {
-      saveBytes(DocxWriter.buildDispatch(x), 'ارسالية_' + (norm(state.dispatch.subject) || norm(state.settings.subject) || '') + '_' + stamp() + '.docx',
+      saveBytes(DocxWriter.buildDispatch(x, exportPayload('dispatch')), 'ارسالية_' + (norm(state.dispatch.subject) || norm(state.settings.subject) || '') + '_' + stamp() + '.docx',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     } catch (e) { alert('خطأ: ' + e.message); }
   });
@@ -887,6 +887,79 @@
   document.addEventListener('click', function (e) {
     if (e.target.classList.contains('btnOpenAny') && window.Android) Android.openLast();
     if (e.target.classList.contains('btnShareAny') && window.Android) Android.shareLast();
+  });
+
+
+  // ---------------- Open a previously exported Word file ----------------
+  var PREV_KEY = 'examSeating.beforeOpen';
+  function exportPayload(kind) {
+    return { app: 'examSeating', v: 1, kind: kind, savedAt: new Date().toISOString(),
+      students: state.students, layout: state.layout || null, settings: state.settings, schools: state.schools, dispatch: state.dispatch };
+  }
+  function newId(i) { return 'i' + Date.now().toString(36) + '_' + i; }
+  function schoolsFrom(students) {
+    var m = {}; students.forEach(function (s) { if (s.school) m[s.school] = s.num; }); return m;
+  }
+  function applyOpened(res) {
+    var next, desc;
+    if (res.kind === 'embedded') {
+      var d = res.data || {};
+      if (!Array.isArray(d.students)) throw new Error('بيانات غير صالحة داخل الملف');
+      next = { students: d.students, layout: d.layout || null, settings: d.settings || state.settings,
+        schools: d.schools || schoolsFrom(d.students), dispatch: d.dispatch || state.dispatch };
+      desc = 'ملف من هذا التطبيق: ' + d.students.length + ' طالبة' + (d.layout ? '، ' + d.layout.halls.length + ' قاعة' : '');
+    } else if (res.kind === 'seating') {
+      var students = [], halls = [], c = 0, k = 0;
+      res.halls.forEach(function (h) { h.grid.forEach(function (r) { c = Math.max(c, r.length); }); });
+      res.halls.forEach(function (h) {
+        var ids = h.grid.map(function (r) { return r.map(function (st) { if (!st) return null; st.id = newId(k++); return st.id; }); });
+        // entry order = column by column from the right, top to bottom
+        for (var cc = 0; cc < c; cc++) for (var r = 0; r < h.grid.length; r++) {
+          var st = h.grid[r][cc]; if (st) students.push({ id: st.id, name: st.name, num: st.num, school: st.school });
+        }
+        var seats = [];
+        ids.forEach(function (r) { for (var j = 0; j < c; j++) seats.push(r[j] || null); });
+        halls.push({ seats: seats });
+      });
+      var firstNo = res.halls[0].number;
+      next = { students: students, layout: { halls: halls },
+        settings: Object.assign({}, state.settings, res.settings, { cols: c, fill: 'cols', order: 'entry' }, firstNo ? { startHall: firstNo } : {}),
+        schools: schoolsFrom(students), dispatch: Object.assign({}, state.dispatch, { marks: {}, hall: 'all' }) };
+      desc = 'خارطة جلوس: ' + students.length + ' طالبة في ' + halls.length + ' قاعة';
+    } else {
+      var marks = {}, st2 = res.rows.map(function (r, i) {
+        var id = newId(i);
+        if (r.absent || r.moved || r.note) marks[id] = { absent: r.absent, moved: r.moved, note: r.note };
+        return { id: id, name: r.name, num: r.num, school: r.school };
+      });
+      next = { students: st2, layout: null, settings: Object.assign({}, state.settings, res.settings, { fill: 'cols', order: 'entry' }),
+        schools: schoolsFrom(st2), dispatch: Object.assign({}, state.dispatch, res.dispatch, { marks: marks, hall: 'all' }) };
+      desc = 'إرسالية: ' + st2.length + ' طالبة (تُوزَّع على القاعات حسب العدد المحدد لكل قاعة)';
+    }
+    var msg = desc + '\n\nسيتم استبدال البيانات الحالية' + (state.students.length ? ' (' + state.students.length + ' طالبة)' : '') +
+      ' بمحتوى الملف. يمكنك التراجع من تبويب «المعلومات». متابعة؟';
+    if (!confirm(msg)) return;
+    try { localStorage.setItem(PREV_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    localStorage.setItem(KEY, JSON.stringify(next));
+    localStorage.setItem('examSeating.openedTab', res.kind === 'dispatch' || (res.data && res.data.kind === 'dispatch') ? 'dispatch' : 'sheets');
+    location.reload();
+  }
+  $('btnOpenDocx').addEventListener('click', function () { $('docxFile').click(); });
+  $('docxFile').addEventListener('change', function () {
+    var f = this.files[0]; this.value = '';
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try { applyOpened(DocxReader.read(r.result)); }
+      catch (e) { alert('تعذر فتح الملف: ' + e.message); }
+    };
+    r.readAsArrayBuffer(f);
+  });
+  try { if (localStorage.getItem(PREV_KEY)) $('btnUndoOpen').classList.remove('hidden'); } catch (e) { /* ignore */ }
+  $('btnUndoOpen').addEventListener('click', function () {
+    var prev = localStorage.getItem(PREV_KEY); if (!prev) return;
+    if (!confirm('إرجاع البيانات كما كانت قبل آخر فتح ملف؟')) return;
+    localStorage.setItem(KEY, prev); localStorage.removeItem(PREV_KEY); location.reload();
   });
 
   // ---------------- Backup ----------------
@@ -918,4 +991,8 @@
 
   renderAll();
   syncSettingsUI();
+  try {
+    var openedTab = localStorage.getItem('examSeating.openedTab');
+    if (openedTab) { localStorage.removeItem('examSeating.openedTab'); showTab(openedTab); toast('تم فتح الملف — يمكنك التعديل ثم التصدير من جديد'); }
+  } catch (e) { /* ignore */ }
 })();

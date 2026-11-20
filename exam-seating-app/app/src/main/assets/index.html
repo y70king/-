@@ -8,7 +8,11 @@
 </head>
 <body>
 <header class="appbar no-print">
-  <div class="apptitle">خارطة جلوس الطلبة</div>
+  <div class="titlerow">
+    <div class="apptitle">خارطة جلوس الطلبة</div>
+    <button id="btnOpenDocx" class="openbtn">📂 فتح ملف Word</button>
+    <input id="docxFile" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden">
+  </div>
   <nav class="tabs">
     <button data-tab="students" class="active">الطلاب</button>
     <button data-tab="settings">المعلومات</button>
@@ -106,6 +110,7 @@
         <button id="btnBackup" class="ghost">حفظ نسخة احتياطية</button>
         <button id="btnRestore" class="ghost">استرجاع نسخة</button>
         <input id="restoreFile" type="file" accept=".json,application/json" class="hidden">
+        <button id="btnUndoOpen" class="ghost hidden">التراجع عن آخر فتح ملف</button>
         <button id="btnClear" class="danger">حذف جميع الطلاب</button>
       </div>
     </div>
@@ -236,7 +241,9 @@
 <div id="toast" class="toast no-print"></div>
 
 <script src="logo.js"></script>
+<script src="pako_inflate.min.js"></script>
 <script src="docx.js"></script>
+<script src="importer.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

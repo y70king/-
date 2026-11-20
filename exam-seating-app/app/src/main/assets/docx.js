@@ -105,6 +105,66 @@
       '</wp:inline></w:drawing></w:r>';
   }
 
+
+  // ---------- Embedded app data (lets the app re-open its own exports exactly) ----------
+  var DATA_NS = 'urn:examseating:data';
+  function b64(bytes) {
+    var bin = '', CH = 0x8000;
+    for (var i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+    return btoa(bin);
+  }
+  function embedParts(payload) {
+    if (!payload) return { files: [], rel: '', ct: '' };
+    var item = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><examSeating xmlns="' + DATA_NS + '" v="1">' +
+      b64(utf8(JSON.stringify(payload))) + '</examSeating>';
+    var props = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
+      '<ds:datastoreItem ds:itemID="{6E3A4C1B-2F7D-4B8E-9A61-3C5D7E9F1A2B}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">' +
+      '<ds:schemaRefs><ds:schemaRef ds:uri="' + DATA_NS + '"/></ds:schemaRefs></ds:datastoreItem>';
+    var itemRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps1.xml"/></Relationships>';
+    return {
+      files: [
+        { name: 'customXml/item1.xml', data: utf8(item) },
+        { name: 'customXml/itemProps1.xml', data: utf8(props) },
+        { name: 'customXml/_rels/item1.xml.rels', data: utf8(itemRels) }
+      ],
+      rel: '<Relationship Id="rIdData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>',
+      ct: '<Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>'
+    };
+  }
+  function withEmbed(files, payload) {
+    var e = embedParts(payload);
+    if (!e.files.length) return files;
+    files.forEach(function (f) {
+      if (f.name === 'word/_rels/document.xml.rels' || f.name === '[Content_Types].xml') {
+        var txt = new TextDecoder().decode(f.data);
+        txt = f.name[0] === '[' ? txt.replace('</Types>', e.ct + '</Types>') : txt.replace('</Relationships>', e.rel + '</Relationships>');
+        f.data = utf8(txt);
+      }
+    });
+    return files.concat(e.files);
+  }
+
+  // ---------- ZIP reader (stored + deflate) ----------
+  function readZip(buf) {
+    var u8 = new Uint8Array(buf), dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), out = {};
+    var eocd = -1;
+    for (var i = u8.length - 22; i >= Math.max(0, u8.length - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('الملف ليس ملف Word (docx) صالحاً');
+    var n = dv.getUint16(eocd + 10, true), p = dv.getUint32(eocd + 16, true), dec = new TextDecoder();
+    for (var k = 0; k < n; k++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      var method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+      var nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+      var name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+      var ds = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), raw = u8.subarray(ds, ds + csize);
+      out[name] = method === 0 ? raw : method === 8 ? window.pako.inflateRaw(raw) : null;
+      p += 46 + nl + el + cl;
+    }
+    return out;
+  }
+
   // ---------- Document ----------
   var PAGE_W = 11906, PAGE_H = 16838, MARGIN = 720, CONTENT_W = PAGE_W - 2 * MARGIN;
 
@@ -171,7 +231,7 @@
     '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault>' +
     '</w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
 
-  function buildDocx(halls, s, logoBytes) {
+  function buildDocx(halls, s, logoBytes, payload) {
     var hasLogo = !!(logoBytes && s.showLogo);
     var body = halls.map(function (h, i) {
       var pre = i === 0 ? '' :
@@ -217,7 +277,7 @@
       { name: 'word/_rels/document.xml.rels', data: utf8(docRels) }
     ];
     if (hasLogo) files.push({ name: 'word/media/logo.png', data: logoBytes });
-    return zip(files);
+    return zip(withEmbed(files, payload));
   }
 
 
@@ -229,7 +289,7 @@
     out[out.length - 1] += total - out.reduce(function (a, b) { return a + b; }, 0);
     return out;
   }
-  function buildDispatch(x) {
+  function buildDispatch(x, payload) {
     var BLUE = '002060';
     // header: title + info table (6 columns: label, value, label, value, label, value)
     var iw = scaleW([1503, 2250, 2070, 2700, 974, 1726], CONTENT_W);
@@ -288,7 +348,7 @@
       '<Relationship Id="rIdHdr" Type="' + R + 'header" Target="header1.xml"/>' +
       '<Relationship Id="rIdFtr" Type="' + R + 'footer" Target="footer1.xml"/>' +
       '</Relationships>';
-    return zip([
+    return zip(withEmbed([
       { name: '[Content_Types].xml', data: utf8(ct) },
       { name: '_rels/.rels', data: utf8(rels) },
       { name: 'word/document.xml', data: utf8(doc) },
@@ -296,8 +356,8 @@
       { name: 'word/header1.xml', data: utf8(hdr) },
       { name: 'word/footer1.xml', data: utf8(ftr) },
       { name: 'word/_rels/document.xml.rels', data: utf8(docRels) }
-    ]);
+    ], payload));
   }
 
-  window.DocxWriter = { build: buildDocx, buildDispatch: buildDispatch };
+  window.DocxWriter = { build: buildDocx, buildDispatch: buildDispatch, readZip: readZip, DATA_NS: DATA_NS };
 })();

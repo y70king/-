@@ -60,14 +60,15 @@
     currentTab = name;
     document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.id === 'tab-' + name); });
-    document.body.classList.toggle('show-sheets', name === 'sheets');
-    if (name === 'sheets') renderSheets();
+    if (name === 'sheets') renderSheetsTab(); else { document.body.classList.remove('show-sheets'); clearSel(); }
+    syncSettingsUI();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.tabs button').forEach(function (b) {
     b.addEventListener('click', function () { showTab(b.dataset.tab); });
   });
   window.onAndroidBack = function () {
+    if (sel) { clearSel(); renderEditor(); return true; }
     if (editingId) { cancelEdit(); return true; }
     if (currentTab !== 'students') { showTab('students'); return true; }
     return false;
@@ -147,7 +148,7 @@
       cancelEdit();
     } else {
       state.students.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: f.name, school: f.school, num: f.num });
-      toast('تمت الإضافة (' + state.students.length + ')');
+      toast(state.layout ? 'تمت الإضافة — الجدول معدل يدوياً، ستجدها في «غير الموزعين» بتبويب الجدول' : 'تمت الإضافة (' + state.students.length + ')');
       // keep school, prepare the next number, focus the name
       $('fName').value = '';
       numAuto = true; $('fNum').value = '';
@@ -233,7 +234,7 @@
     return String(state.settings.customCounts || '').split(/[,،\s]+/).map(function (x) { return parseInt(toLatinDigits(x), 10); })
       .filter(function (x) { return x > 0; });
   }
-  function buildHalls() {
+  function autoHalls() {
     var s = state.settings, list = orderedStudents(), custom = hallCounts();
     var per = Math.max(1, parseInt(s.perHall, 10) || 21), cols = Math.max(1, parseInt(s.cols, 10) || 3);
     var halls = [], pos = 0, h = 0, start = parseInt(s.startHall, 10) || 1;
@@ -253,11 +254,58 @@
     return halls;
   }
 
+
+  // ---------------- Manual layout ----------------
+  // state.layout = { halls: [ { seats: [studentId | null, ...] } ] }   (seats in reading order, row by row)
+  function cols() { return Math.max(1, parseInt(state.settings.cols, 10) || 3); }
+  function studentMap() { var m = {}; state.students.forEach(function (s) { m[s.id] = s; }); return m; }
+  function freezeLayout() {
+    if (state.layout) return;
+    state.layout = {
+      halls: autoHalls().map(function (h) {
+        var seats = [];
+        h.grid.forEach(function (r) { r.forEach(function (st) { seats.push(st ? st.id : null); }); });
+        return { seats: seats };
+      })
+    };
+    save();
+  }
+  function cleanLayout() {
+    if (!state.layout) return;
+    var m = studentMap(), seen = {}, c = cols();
+    state.layout.halls.forEach(function (h) {
+      h.seats = h.seats.map(function (id) {
+        if (!id || !m[id] || seen[id]) return null;
+        seen[id] = 1; return id;
+      });
+      while (h.seats.length % c) h.seats.push(null);
+      if (!h.seats.length) for (var i = 0; i < c; i++) h.seats.push(null);
+    });
+  }
+  function reflowLayout() { cleanLayout(); }
+  function unassigned() {
+    if (!state.layout) return [];
+    var used = {};
+    state.layout.halls.forEach(function (h) { h.seats.forEach(function (id) { if (id) used[id] = 1; }); });
+    return state.students.filter(function (s) { return !used[s.id]; });
+  }
+  function buildHalls() {
+    if (!state.layout) return autoHalls();
+    cleanLayout();
+    var m = studentMap(), c = cols(), start = parseInt(state.settings.startHall, 10) || 1;
+    return state.layout.halls.map(function (h, i) {
+      var seats = h.seats.map(function (id) { return id ? m[id] : null; }), grid = [];
+      for (var k = 0; k < seats.length; k += c) grid.push(seats.slice(k, k + c));
+      return { number: start + i, students: seats.filter(Boolean), grid: grid };
+    });
+  }
+
   // ---------------- Render ----------------
   function renderStats() {
     var halls = buildHalls();
     $('stats').textContent = 'عدد الطلاب: ' + state.students.length + '  •  عدد القاعات: ' + halls.length +
-      '  •  عدد المدارس: ' + schoolNames().length;
+      '  •  عدد المدارس: ' + schoolNames().length +
+      (state.layout && unassigned().length ? '  •  غير موزعين على القاعات: ' + unassigned().length : '');
   }
   function renderList() {
     var q = norm($('search').value), arr = state.students;
@@ -319,15 +367,238 @@
   }
   window.addEventListener('resize', function () { if (currentTab === 'sheets') fitSheets(); });
 
+  // ---------------- Sheets tab: preview / edit ----------------
+  var sheetMode = 'preview';
+  var sel = null; // {h, k} seat  or  {id} from the unassigned tray
+  function clearSel() { sel = null; $('actionBar').classList.add('hidden'); document.body.classList.remove('has-bar'); }
+  function setMode(m) {
+    sheetMode = m;
+    $('modePreview').classList.toggle('active', m === 'preview');
+    $('modeEdit').classList.toggle('active', m === 'edit');
+    $('previewPanel').classList.toggle('hidden', m !== 'preview');
+    $('editPanel').classList.toggle('hidden', m !== 'edit');
+    clearSel();
+    renderSheetsTab();
+  }
+  $('modePreview').addEventListener('click', function () { setMode('preview'); });
+  $('modeEdit').addEventListener('click', function () {
+    if (!state.students.length) { toast('أضف الطلاب أولاً'); return; }
+    setMode('edit');
+  });
+  function renderSheetsTab() {
+    var preview = sheetMode === 'preview';
+    document.body.classList.toggle('show-sheets', preview);
+    if (preview) renderSheets(); else { freezeLayout(); renderEditor(); }
+  }
+
+  function seatClash(h, k) {
+    var seats = state.layout.halls[h].seats, c = cols(), id = seats[k];
+    if (!id) return false;
+    var m = studentMap(), me = m[id]; if (!me) return false;
+    var nb = [];
+    if (k % c > 0) nb.push(k - 1);
+    if (k % c < c - 1) nb.push(k + 1);
+    nb.push(k - c, k + c);
+    return nb.some(function (j) { return j >= 0 && j < seats.length && seats[j] && m[seats[j]] && m[seats[j]].school === me.school; });
+  }
+
+  function renderEditor() {
+    cleanLayout(); save();
+    var m = studentMap(), c = cols(), start = parseInt(state.settings.startHall, 10) || 1;
+    // unassigned tray
+    var un = unassigned();
+    var tray = $('tray');
+    if (un.length) {
+      tray.classList.remove('hidden');
+      tray.innerHTML = '<div class="row between"><h3>غير موزعين على القاعات (' + un.length + ')</h3>' +
+        '<button id="btnAutoPlace" class="ghost" style="padding:6px 10px;font-size:13px">توزيعهم تلقائياً</button></div>' +
+        '<div class="hint" style="margin:0 0 8px">اضغط على الاسم ثم اضغط على مكان في أي قاعة.</div><div class="chips">' +
+        un.map(function (s) {
+          return '<button class="chip' + (sel && sel.id === s.id ? ' sel' : '') + '" data-un="' + s.id + '">' + esc(s.name) + '</button>';
+        }).join('') + '</div>';
+    } else { tray.classList.add('hidden'); tray.innerHTML = ''; }
+
+    var html = '';
+    state.layout.halls.forEach(function (h, hi) {
+      var n = h.seats.filter(Boolean).length;
+      html += '<div class="hallcard" id="hall-' + hi + '"><div class="hallhead"><div class="ttl">قاعة ' + (start + hi) +
+        ' <small>— ' + n + ' طالب / ' + h.seats.length + ' مكان</small></div><div class="hb">' +
+        '<button data-hact="addrow" data-h="' + hi + '">+ صف</button>' +
+        '<button data-hact="delrow" data-h="' + hi + '">− صف</button>' +
+        (un.length && n < h.seats.length ? '<button data-hact="fill" data-h="' + hi + '">ملء الفراغات</button>' : '') +
+        '<button data-hact="up" data-h="' + hi + '">▲</button>' +
+        '<button data-hact="down" data-h="' + hi + '">▼</button>' +
+        '<button class="del" data-hact="del" data-h="' + hi + '">حذف</button></div></div>' +
+        '<div class="seats" style="grid-template-columns:repeat(' + c + ',1fr)">';
+      h.seats.forEach(function (id, k) {
+        var st = id ? m[id] : null, row = Math.floor(k / c);
+        var cls = 'seat' + (row % 2 === 0 ? ' alt' : '') + (st ? '' : ' empty') +
+          (sel && sel.h === hi && sel.k === k ? ' sel' : '') + (sel && !st ? ' target' : '') + (st && seatClash(hi, k) ? ' clash' : '');
+        html += '<div class="' + cls + '" data-h="' + hi + '" data-k="' + k + '">' +
+          (st ? '<div class="sn">' + esc(st.name) + '</div><div class="ss">' + esc(st.school) + '</div>' : '<span>فارغ</span>') + '</div>';
+      });
+      html += '</div></div>';
+    });
+    $('editor').innerHTML = html || '<div class="card empty">لا توجد قاعات</div>';
+    $('jumpHall').innerHTML = '<option value="">الانتقال إلى قاعة...</option>' + state.layout.halls.map(function (h, hi) {
+      return '<option value="' + hi + '">قاعة ' + (start + hi) + ' (' + h.seats.filter(Boolean).length + ')</option>';
+    }).join('');
+    renderActionBar();
+    renderStats();
+  }
+
+  function renderActionBar() {
+    var bar = $('actionBar');
+    if (!sel) { clearSel(); return; }
+    var m = studentMap(), start = parseInt(state.settings.startHall, 10) || 1;
+    var id = sel.id || state.layout.halls[sel.h].seats[sel.k], st = m[id];
+    if (!st) { clearSel(); return; }
+    var opts = state.layout.halls.map(function (h, hi) {
+      var free = h.seats.filter(function (x) { return !x; }).length;
+      return '<option value="' + hi + '">قاعة ' + (start + hi) + (free ? ' (فارغ ' + free + ')' : ' (ممتلئة)') + '</option>';
+    }).join('');
+    bar.innerHTML = '<div class="who">المحددة: ' + esc(st.name) + ' <small style="color:#667085;font-weight:normal">— اضغط على مكان آخر للنقل/التبديل</small></div>' +
+      '<div class="row"><select id="moveTo" class="grow">' + opts + '</select><button id="btnMoveTo" class="primary" style="flex:0 0 auto">نقل للقاعة</button></div>' +
+      '<div class="row" style="margin-top:6px">' +
+      (sel.id ? '' : '<button id="btnUnseat" class="ghost">إخراج من القاعة</button>') +
+      '<button id="btnSelCancel" class="ghost">إلغاء</button></div>';
+    bar.classList.remove('hidden'); document.body.classList.add('has-bar');
+    $('btnMoveTo').onclick = function () { moveToHall(parseInt($('moveTo').value, 10)); };
+    $('btnSelCancel').onclick = function () { clearSel(); renderEditor(); };
+    if ($('btnUnseat')) $('btnUnseat').onclick = function () {
+      state.layout.halls[sel.h].seats[sel.k] = null; clearSel(); save(); renderEditor(); toast('أُخرجت إلى «غير الموزعين»');
+    };
+  }
+
+  function moveToHall(hi) {
+    var h = state.layout.halls[hi], c = cols();
+    var id = sel.id || state.layout.halls[sel.h].seats[sel.k];
+    if (!sel.id && sel.h === hi) { toast('الطالبة في نفس القاعة'); return; }
+    var k = h.seats.indexOf(null);
+    if (k < 0) {
+      if (!confirm('القاعة ممتلئة. إضافة صف جديد لها؟')) return;
+      for (var i = 0; i < c; i++) h.seats.push(null);
+      k = h.seats.indexOf(null);
+    }
+    if (!sel.id) state.layout.halls[sel.h].seats[sel.k] = null;
+    h.seats[k] = id;
+    clearSel(); save(); renderEditor();
+    toast('تم النقل إلى قاعة ' + ((parseInt(state.settings.startHall, 10) || 1) + hi));
+  }
+
+  $('editor').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-hact]');
+    if (b) return hallAction(b.dataset.hact, parseInt(b.dataset.h, 10));
+    var cell = e.target.closest('.seat'); if (!cell) return;
+    var h = parseInt(cell.dataset.h, 10), k = parseInt(cell.dataset.k, 10), seats = state.layout.halls[h].seats;
+    if (!sel) {
+      if (!seats[k]) return;
+      sel = { h: h, k: k };
+    } else if (sel.id) {
+      seats[k] = sel.id; // previous occupant (if any) goes to the unassigned tray
+      clearSel(); save();
+    } else if (sel.h === h && sel.k === k) {
+      clearSel();
+    } else {
+      var from = state.layout.halls[sel.h].seats, t = from[sel.k];
+      from[sel.k] = seats[k]; seats[k] = t;
+      clearSel(); save();
+    }
+    renderEditor();
+  });
+  $('tray').addEventListener('click', function (e) {
+    if (e.target.id === 'btnAutoPlace') return autoPlace();
+    var b = e.target.closest('[data-un]'); if (!b) return;
+    sel = sel && sel.id === b.dataset.un ? null : { id: b.dataset.un };
+    renderEditor();
+  });
+  $('jumpHall').addEventListener('change', function () {
+    var el = $('hall-' + this.value); if (el) el.scrollIntoView({ behavior: 'smooth' });
+    this.value = '';
+  });
+
+  function fillHall(h, list) {
+    for (var k = 0; k < h.seats.length && list.length; k++) if (!h.seats[k]) h.seats[k] = list.shift().id;
+  }
+  function autoPlace() {
+    var list = unassigned();
+    state.layout.halls.forEach(function (h) { fillHall(h, list); });
+    var per = Math.max(1, parseInt(state.settings.perHall, 10) || 21), c = cols(), added = 0;
+    while (list.length) {
+      var seats = new Array(Math.ceil(per / c) * c).fill(null);
+      for (var k = 0; k < per && list.length; k++) seats[k] = list.shift().id;
+      state.layout.halls.push({ seats: seats }); added++;
+    }
+    clearSel(); save(); renderEditor();
+    toast(added ? 'تم التوزيع وفُتحت ' + added + ' قاعة جديدة' : 'تم التوزيع على الأماكن الفارغة');
+  }
+
+  function hallAction(act, hi) {
+    var halls = state.layout.halls, h = halls[hi], c = cols();
+    clearSel();
+    if (act === 'addrow') { for (var i = 0; i < c; i++) h.seats.push(null); }
+    else if (act === 'delrow') {
+      if (h.seats.length <= c) { toast('لا يمكن حذف آخر صف، استخدم «حذف» لحذف القاعة'); return; }
+      var last = h.seats.slice(-c), cnt = last.filter(Boolean).length;
+      if (cnt && !confirm('آخر صف فيه ' + cnt + ' طالب، سينتقلون إلى «غير الموزعين». متابعة؟')) return;
+      h.seats.length -= c;
+    }
+    else if (act === 'fill') fillHall(h, unassigned());
+    else if (act === 'up' && hi > 0) { halls[hi] = halls[hi - 1]; halls[hi - 1] = h; }
+    else if (act === 'down' && hi < halls.length - 1) { halls[hi] = halls[hi + 1]; halls[hi + 1] = h; }
+    else if (act === 'del') {
+      var n = h.seats.filter(Boolean).length;
+      if (!confirm('حذف القاعة' + (n ? '؟ طلابها (' + n + ') سينتقلون إلى «غير الموزعين».' : '؟'))) return;
+      halls.splice(hi, 1);
+    }
+    save(); renderEditor();
+  }
+
+  $('btnAddHall').addEventListener('click', function () {
+    var def = String(state.settings.perHall || 21);
+    var v = prompt('عدد الطلاب في القاعة الجديدة:', def);
+    if (v == null) return;
+    var n = parseInt(toLatinDigits(v), 10);
+    if (!(n > 0)) { toast('عدد غير صالح'); return; }
+    var c = cols(), seats = new Array(Math.ceil(n / c) * c).fill(null);
+    var list = unassigned(), placed = 0;
+    for (var k = 0; k < n && list.length; k++) { seats[k] = list.shift().id; placed++; }
+    state.layout.halls.push({ seats: seats });
+    clearSel(); save(); renderEditor();
+    var el = $('hall-' + (state.layout.halls.length - 1)); if (el) el.scrollIntoView({ behavior: 'smooth' });
+    toast('فُتحت قاعة جديدة بـ ' + n + ' مكان' + (placed ? ' ووُضع فيها ' + placed + ' من غير الموزعين' : '، انقل إليها الطلاب'));
+  });
+  $('btnReAuto').addEventListener('click', function () {
+    if (!confirm('سيتم حذف كل التعديلات اليدوية وإعادة توزيع الطلاب حسب الإعدادات. متابعة؟')) return;
+    state.layout = null; save(); freezeLayout(); clearSel(); renderEditor(); syncSettingsUI();
+    toast('تمت إعادة التوزيع');
+  });
+
   // ---------------- Settings ----------------
   var FIELDS = ['perHall', 'customCounts', 'startHall', 'cols', 'fill', 'order', 'numMode', 'line1', 'line2', 'center',
     'level', 'building', 'subject', 'year', 'round', 'director', 'showLogo'];
+  function setEl(el, v) {
+    if (el.type === 'checkbox') { el.checked = !!v; return; }
+    if (el.tagName === 'SELECT' && v != null && !Array.prototype.some.call(el.options, function (o) { return o.value === String(v); })) {
+      var o = document.createElement('option'); o.textContent = v; el.appendChild(o);
+    }
+    el.value = v;
+  }
+  function syncSettingsUI() {
+    FIELDS.forEach(function (k) {
+      document.querySelectorAll('[data-set="' + k + '"]').forEach(function (el) { if (el !== document.activeElement) setEl(el, state.settings[k]); });
+    });
+    $('manualNote').classList.toggle('hidden', !state.layout);
+  }
   FIELDS.forEach(function (k) {
-    var el = $('s_' + k);
-    if (el.type === 'checkbox') el.checked = !!state.settings[k]; else el.value = state.settings[k];
-    el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', function () {
-      state.settings[k] = el.type === 'checkbox' ? el.checked : el.value;
-      save(); renderStats();
+    document.querySelectorAll('[data-set="' + k + '"]').forEach(function (el) {
+      el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', function () {
+        state.settings[k] = el.type === 'checkbox' ? el.checked : el.value;
+        if (k === 'cols' && state.layout) reflowLayout();
+        document.querySelectorAll('[data-set="' + k + '"]').forEach(function (o) { if (o !== el) setEl(o, state.settings[k]); });
+        save(); renderStats();
+        if (currentTab === 'sheets') renderSheetsTab();
+      });
     });
   });
 
@@ -400,8 +671,9 @@
     if (!state.students.length) return;
     if (!confirm('حذف جميع الطلاب (' + state.students.length + ')؟ لا يمكن التراجع.')) return;
     if (!confirm('تأكيد نهائي: حذف جميع الطلاب؟')) return;
-    state.students = []; save(); cancelEdit(); renderAll(); toast('تم الحذف');
+    state.students = []; state.layout = null; save(); cancelEdit(); renderAll(); toast('تم الحذف');
   });
 
   renderAll();
+  syncSettingsUI();
 })();

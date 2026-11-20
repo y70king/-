@@ -2,7 +2,7 @@
   'use strict';
   var KEY = 'examSeating.v1';
   var DEFAULTS = {
-    perHall: 21, customCounts: '', startHall: 1, cols: 3, fill: 'rows', order: 'entry', numMode: 'same',
+    perHall: 21, customCounts: '', startHall: 1, cols: 3, fill: 'cols', order: 'entry', numMode: 'same',
     line1: 'المديرية العامة لتربية صلاح الدين',
     line2: 'اللجنة الفرعية للامتحانات العامة',
     center: '9', level: 'المتوسطة', building: 'السماحة الابتدائية للبنات',
@@ -19,6 +19,9 @@
     try { st = JSON.parse(localStorage.getItem(KEY)); } catch (e) { st = null; }
     st = st || {};
     st.settings = Object.assign({}, DEFAULTS, st.settings || {});
+    if (!st.settings.v || st.settings.v < 2) { // v2: default = entry order, filled column by column from the right
+      st.settings.fill = 'cols'; st.settings.order = 'entry'; st.settings.v = 2;
+    }
     st.students = st.students || [];
     st.schools = st.schools || {}; // school name -> last exam number used
     return st;
@@ -230,9 +233,11 @@
     }
     return list;
   }
+  // per-hall counts by position; 0 = use the default count
   function hallCounts() {
-    return String(state.settings.customCounts || '').split(/[,،\s]+/).map(function (x) { return parseInt(toLatinDigits(x), 10); })
-      .filter(function (x) { return x > 0; });
+    var str = String(state.settings.customCounts || '').trim();
+    if (!str) return [];
+    return str.split(/[,،]/).map(function (x) { var v = parseInt(toLatinDigits(x), 10); return v > 0 ? v : 0; });
   }
   function autoHalls() {
     var s = state.settings, list = orderedStudents(), custom = hallCounts();
@@ -389,6 +394,7 @@
     var preview = sheetMode === 'preview';
     document.body.classList.toggle('show-sheets', preview);
     if (preview) renderSheets(); else { freezeLayout(); renderEditor(); }
+    renderHallCounts();
   }
 
   function seatClash(h, k) {
@@ -474,7 +480,8 @@
     var h = state.layout.halls[hi], c = cols();
     var id = sel.id || state.layout.halls[sel.h].seats[sel.k];
     if (!sel.id && sel.h === hi) { toast('الطالبة في نفس القاعة'); return; }
-    var k = h.seats.indexOf(null);
+    var firstFree = function () { var o = seatOrder(h.seats.length); for (var j = 0; j < o.length; j++) if (!h.seats[o[j]]) return o[j]; return -1; };
+    var k = firstFree();
     if (k < 0) {
       if (!confirm('القاعة ممتلئة. إضافة صف جديد لها؟')) return;
       for (var i = 0; i < c; i++) h.seats.push(null);
@@ -517,17 +524,31 @@
     this.value = '';
   });
 
+  // seat indexes (row-major storage) in the configured filling order
+  function seatOrder(len) {
+    var c = cols(), rows = Math.ceil(len / c), out = [];
+    if (state.settings.fill === 'cols') {
+      for (var cc = 0; cc < c; cc++) for (var r = 0; r < rows; r++) out.push(r * c + cc);
+    } else for (var k = 0; k < len; k++) out.push(k);
+    return out;
+  }
+  function newSeats(n, list) {
+    var c = cols(), rows = Math.ceil(n / c), seats = new Array(rows * c).fill(null), placed = 0;
+    if (state.settings.fill === 'cols') {
+      // same shape as the automatic layout: n seats spread column by column
+      for (var k = 0; k < n && list.length; k++) { seats[(k % rows) * c + Math.floor(k / rows)] = list.shift().id; placed++; }
+    } else for (var k2 = 0; k2 < n && list.length; k2++) { seats[k2] = list.shift().id; placed++; }
+    return { seats: seats, placed: placed };
+  }
   function fillHall(h, list) {
-    for (var k = 0; k < h.seats.length && list.length; k++) if (!h.seats[k]) h.seats[k] = list.shift().id;
+    seatOrder(h.seats.length).forEach(function (k) { if (!h.seats[k] && list.length) h.seats[k] = list.shift().id; });
   }
   function autoPlace() {
     var list = unassigned();
     state.layout.halls.forEach(function (h) { fillHall(h, list); });
     var per = Math.max(1, parseInt(state.settings.perHall, 10) || 21), c = cols(), added = 0;
     while (list.length) {
-      var seats = new Array(Math.ceil(per / c) * c).fill(null);
-      for (var k = 0; k < per && list.length; k++) seats[k] = list.shift().id;
-      state.layout.halls.push({ seats: seats }); added++;
+      state.layout.halls.push({ seats: newSeats(per, list).seats }); added++;
     }
     clearSel(); save(); renderEditor();
     toast(added ? 'تم التوزيع وفُتحت ' + added + ' قاعة جديدة' : 'تم التوزيع على الأماكن الفارغة');
@@ -560,10 +581,8 @@
     if (v == null) return;
     var n = parseInt(toLatinDigits(v), 10);
     if (!(n > 0)) { toast('عدد غير صالح'); return; }
-    var c = cols(), seats = new Array(Math.ceil(n / c) * c).fill(null);
-    var list = unassigned(), placed = 0;
-    for (var k = 0; k < n && list.length; k++) { seats[k] = list.shift().id; placed++; }
-    state.layout.halls.push({ seats: seats });
+    var ns = newSeats(n, unassigned()), placed = ns.placed;
+    state.layout.halls.push({ seats: ns.seats });
     clearSel(); save(); renderEditor();
     var el = $('hall-' + (state.layout.halls.length - 1)); if (el) el.scrollIntoView({ behavior: 'smooth' });
     toast('فُتحت قاعة جديدة بـ ' + n + ' مكان' + (placed ? ' ووُضع فيها ' + placed + ' من غير الموزعين' : '، انقل إليها الطلاب'));
@@ -575,7 +594,7 @@
   });
 
   // ---------------- Settings ----------------
-  var FIELDS = ['perHall', 'customCounts', 'startHall', 'cols', 'fill', 'order', 'numMode', 'line1', 'line2', 'center',
+  var FIELDS = ['startHall', 'cols', 'fill', 'order', 'numMode', 'line1', 'line2', 'center',
     'level', 'building', 'subject', 'year', 'round', 'director', 'showLogo'];
   function setEl(el, v) {
     if (el.type === 'checkbox') { el.checked = !!v; return; }
@@ -589,6 +608,7 @@
       document.querySelectorAll('[data-set="' + k + '"]').forEach(function (el) { if (el !== document.activeElement) setEl(el, state.settings[k]); });
     });
     $('manualNote').classList.toggle('hidden', !state.layout);
+    renderHallCounts();
   }
   FIELDS.forEach(function (k) {
     document.querySelectorAll('[data-set="' + k + '"]').forEach(function (el) {
@@ -602,6 +622,50 @@
     });
   });
 
+
+  // ---------------- Students per hall editor ----------------
+  function setCounts(arr) {
+    var per = parseInt(state.settings.perHall, 10) || 21;
+    arr = arr.map(function (v) { return v === per ? 0 : v; });
+    while (arr.length && !arr[arr.length - 1]) arr.pop();
+    state.settings.customCounts = arr.join(',');
+  }
+  function renderHallCounts() {
+    var per = parseInt(state.settings.perHall, 10) || 21, custom = hallCounts();
+    var n = state.layout ? state.layout.halls.length : autoHalls().length;
+    var start = parseInt(state.settings.startHall, 10) || 1;
+    var html = '<label>العدد الافتراضي لكل قاعة <input class="hcDefault" type="number" min="1" inputmode="numeric" value="' + per + '"></label>';
+    if (state.layout) {
+      html += '<div class="hint">الجدول معدَّل يدوياً. غيّر عدد الطالبات في قاعة من «تعديل الجدول» (+ صف / − صف / فتح قاعة جديدة)، أو اضغط «إعادة التوزيع التلقائي» لتطبيق الأعداد هنا.</div>';
+    } else if (n) {
+      html += '<div class="hint" style="margin:0 0 6px">ويمكنك تغيير عدد أي قاعة بمفردها:</div><div class="hcGrid">';
+      for (var i = 0; i < n; i++) {
+        html += '<label class="hc">قاعة ' + (start + i) + '<input type="number" min="1" inputmode="numeric" data-hc="' + i + '" value="' + (custom[i] || per) + '"></label>';
+      }
+      html += '</div><div class="hint" style="margin:6px 0 0">عدد القاعات: ' + n + ' — تتغير القاعات تلقائياً حسب الأعداد.' +
+        (custom.some(Boolean) ? ' <a href="#" class="hcReset">إرجاع الكل إلى ' + per + '</a>' : '') + '</div>';
+    } else html += '<div class="hint">أضف الطلاب لتظهر القاعات.</div>';
+    document.querySelectorAll('.hallCountsBox').forEach(function (b) { b.innerHTML = html; });
+  }
+  document.addEventListener('change', function (e) {
+    var t = e.target, v = parseInt(toLatinDigits(t.value), 10);
+    if (t.classList.contains('hcDefault')) {
+      if (!(v > 0)) { renderHallCounts(); return; }
+      state.settings.perHall = v; setCounts(hallCounts());
+    } else if (t.dataset && t.dataset.hc != null) {
+      var i = parseInt(t.dataset.hc, 10), arr = hallCounts(), per = parseInt(state.settings.perHall, 10) || 21;
+      if (!(v > 0)) { renderHallCounts(); return; }
+      while (arr.length < i) arr.push(0);
+      arr[i] = v; setCounts(arr);
+    } else return;
+    save(); renderHallCounts(); renderStats();
+    if (currentTab === 'sheets' && sheetMode === 'preview') renderSheets();
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.classList.contains('hcReset')) return;
+    e.preventDefault(); state.settings.customCounts = ''; save(); renderHallCounts(); renderStats();
+    if (currentTab === 'sheets' && sheetMode === 'preview') renderSheets();
+  });
   // ---------------- Export ----------------
   function bytesToB64(bytes) {
     var bin = '', CH = 0x8000;

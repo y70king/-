@@ -55,13 +55,7 @@
     <div id="manualNote" class="card warn hidden">الجدول معدَّل يدوياً، لذلك إعدادات «عدد الطلاب في كل قاعة» و«الترتيب» و«طريقة التوزيع» لا تُطبَّق عليه. لتطبيقها اضغط «إعادة التوزيع التلقائي» في تبويب الجدول.</div>
     <div class="card">
       <h3>القاعات</h3>
-      <label>عدد الطلاب في كل قاعة
-        <input data-set="perHall" type="number" min="1" inputmode="numeric">
-      </label>
-      <label>أعداد مختلفة لقاعات معينة (اختياري)
-        <input data-set="customCounts" type="text" dir="ltr" placeholder="مثال: 21,22,22">
-      </label>
-      <div class="hint">اكتب عدد طلاب كل قاعة بالترتيب مفصولة بفاصلة. القاعات التي لا تكتب لها عدداً تأخذ العدد الافتراضي أعلاه.</div>
+      <div class="hallCountsBox"></div>
       <label>رقم أول قاعة
         <input data-set="startHall" type="number" min="1" inputmode="numeric">
       </label>
@@ -70,8 +64,8 @@
       </label>
       <label>طريقة التوزيع داخل القاعة
         <select data-set="fill">
-          <option value="rows">بالصفوف (من اليمين لليسار ثم للأسفل)</option>
-          <option value="cols">بالأعمدة (من الأعلى للأسفل ثم العمود التالي)</option>
+          <option value="cols">بالأعمدة: الأولى أعلى العمود الأيمن ثم نزولاً، ثم العمود الأوسط، ثم الأيسر</option>
+          <option value="rows">بالصفوف: من اليمين لليسار ثم الصف التالي</option>
         </select>
       </label>
       <label>ترتيب الطلاب
@@ -130,6 +124,10 @@
     </div>
 
     <div id="previewPanel">
+      <div class="card">
+        <h3>عدد الطلاب في كل قاعة</h3>
+        <div class="hallCountsBox"></div>
+      </div>
       <div class="card">
         <div class="row wrap">
           <button id="btnWord" class="primary">تصدير ملف Word</button>

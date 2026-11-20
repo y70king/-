@@ -146,3 +146,7 @@ body.show-sheets #sheetsWrap { display: block; }
 .actionbar select { margin: 0; padding: 8px; font-size: 14px; }
 body.has-bar { padding-bottom: 130px; }
 body.has-bar .toast { bottom: 150px; }
+.hcGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.hcGrid label.hc { margin: 0; font-size: 12px; text-align: center; }
+.hcGrid input { padding: 7px 4px; text-align: center; font-size: 16px; }
+.hcReset { color: var(--primary); }

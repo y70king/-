@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>خارطة جلوس الطلبة</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="appbar no-print">
+  <div class="apptitle">خارطة جلوس الطلبة</div>
+  <nav class="tabs">
+    <button data-tab="students" class="active">الطلاب</button>
+    <button data-tab="settings">المعلومات</button>
+    <button data-tab="sheets">الجدول</button>
+  </nav>
+</header>
+
+<main class="no-print">
+  <!-- ================= Students ================= -->
+  <section id="tab-students" class="tab active">
+    <div class="card">
+      <h3 id="formTitle">إضافة طالب</h3>
+      <label>اسم الطالب
+        <input id="fName" type="text" autocomplete="off" placeholder="الاسم الرباعي">
+      </label>
+      <label>المدرسة
+        <input id="fSchool" type="text" list="schoolList" autocomplete="off" placeholder="اكتب أو اختر المدرسة">
+        <datalist id="schoolList"></datalist>
+      </label>
+      <div id="schoolChips" class="chips"></div>
+      <label>الرقم الامتحاني
+        <input id="fNum" type="text" inputmode="numeric" autocomplete="off" dir="ltr" placeholder="مثال: 182692320040125">
+      </label>
+      <div id="numHint" class="hint"></div>
+      <div class="row">
+        <button id="btnAdd" class="primary">إضافة</button>
+        <button id="btnCancelEdit" class="ghost hidden">إلغاء التعديل</button>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="card">
+      <div class="row between">
+        <h3>قائمة الطلاب</h3>
+        <input id="search" type="search" placeholder="بحث..." class="small">
+      </div>
+      <ol id="list" class="list"></ol>
+    </div>
+  </section>
+
+  <!-- ================= Settings ================= -->
+  <section id="tab-settings" class="tab">
+    <div class="card">
+      <h3>القاعات</h3>
+      <label>عدد الطلاب في كل قاعة
+        <input id="s_perHall" type="number" min="1" inputmode="numeric">
+      </label>
+      <label>أعداد مختلفة لقاعات معينة (اختياري)
+        <input id="s_customCounts" type="text" dir="ltr" placeholder="مثال: 21,22,22">
+      </label>
+      <div class="hint">اكتب عدد طلاب كل قاعة بالترتيب مفصولة بفاصلة. القاعات التي لا تكتب لها عدداً تأخذ العدد الافتراضي أعلاه.</div>
+      <label>رقم أول قاعة
+        <input id="s_startHall" type="number" min="1" inputmode="numeric">
+      </label>
+      <label>عدد الأعمدة في الجدول
+        <select id="s_cols"><option>2</option><option>3</option><option>4</option></select>
+      </label>
+      <label>طريقة التوزيع داخل القاعة
+        <select id="s_fill">
+          <option value="rows">بالصفوف (من اليمين لليسار ثم للأسفل)</option>
+          <option value="cols">بالأعمدة (من الأعلى للأسفل ثم العمود التالي)</option>
+        </select>
+      </label>
+      <label>ترتيب الطلاب
+        <select id="s_order">
+          <option value="entry">حسب ترتيب الإدخال</option>
+          <option value="mix">تناوب المدارس (حتى لا تجلس طالبتان من نفس المدرسة متجاورتين)</option>
+          <option value="num">حسب الرقم الامتحاني</option>
+        </select>
+      </label>
+      <label>عند اختيار المدرسة يُكتب الرقم الامتحاني
+        <select id="s_numMode">
+          <option value="same">الرقم السابق نفسه (للتعديل عليه)</option>
+          <option value="plus">الرقم السابق + 1</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
+      <h3>رأس الصفحة</h3>
+      <label>السطر الأول <input id="s_line1" type="text"></label>
+      <label>السطر الثاني <input id="s_line2" type="text"></label>
+      <label>رقم المركز الامتحاني <input id="s_center" type="text"></label>
+      <label>الدراسة <input id="s_level" type="text" list="levels"></label>
+      <datalist id="levels"><option value="المتوسطة"><option value="الإعدادية"><option value="الابتدائية"></datalist>
+      <label>في بناية مدرسة <input id="s_building" type="text"></label>
+      <label>المادة <input id="s_subject" type="text"></label>
+      <label>العام الدراسي <input id="s_year" type="text"></label>
+      <label>الدور <input id="s_round" type="text" list="rounds"></label>
+      <datalist id="rounds"><option value="الدور الأول"><option value="الدور الثاني"><option value="الدور الثالث"></datalist>
+      <label>مدير المركز <input id="s_director" type="text"></label>
+      <label class="check"><input id="s_showLogo" type="checkbox"> إظهار الشعار</label>
+    </div>
+
+    <div class="card">
+      <h3>نسخ احتياطي</h3>
+      <div class="row wrap">
+        <button id="btnBackup" class="ghost">حفظ نسخة احتياطية</button>
+        <button id="btnRestore" class="ghost">استرجاع نسخة</button>
+        <input id="restoreFile" type="file" accept=".json,application/json" class="hidden">
+        <button id="btnClear" class="danger">حذف جميع الطلاب</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Sheets ================= -->
+  <section id="tab-sheets" class="tab">
+    <div class="card">
+      <div class="row wrap">
+        <button id="btnWord" class="primary">تصدير ملف Word</button>
+        <button id="btnPdf" class="primary">حفظ PDF</button>
+      </div>
+      <div id="afterSave" class="row wrap hidden">
+        <button id="btnOpen" class="ghost">فتح الملف</button>
+        <button id="btnShare" class="ghost">مشاركة</button>
+      </div>
+      <div class="hint" style="margin-top:10px">عند الضغط على «حفظ PDF» تظهر نافذة الطباعة: اختر «حفظ بتنسيق PDF» من الأعلى ثم اضغط زر PDF.</div>
+    </div>
+  </section>
+</main>
+
+<div id="sheetsWrap"><div id="sheets"></div></div>
+
+<div id="toast" class="toast no-print"></div>
+
+<script src="logo.js"></script>
+<script src="docx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

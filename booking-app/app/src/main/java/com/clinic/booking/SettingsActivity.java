@@ -17,7 +17,8 @@ public class SettingsActivity extends Activity {
 
     private Prefs prefs;
     private TextView status;
-    private EditText keyword, reply;
+    private EditText keyword, fee, card;
+    private EditText[] msgs;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -60,19 +61,43 @@ public class SettingsActivity extends Activity {
         keyword = edit(prefs.keyword(), "مثال: حجز", false);
         c2.addView(keyword);
 
-        // الرد التلقائي
-        LinearLayout c3 = card(root, "الرد التلقائي على الزبون");
-        Switch auto = sw("إرسال رد تلقائي بعد تسجيل الحجز", prefs.autoReply());
-        auto.setOnCheckedChangeListener((b, v) -> prefs.setAutoReply(v));
-        c3.addView(auto);
-        c3.addView(note("استخدم {name} لاسم المريض/ة و {n} لرقم الدور."));
-        reply = edit(prefs.replyText(), Prefs.DEFAULT_REPLY, true);
-        c3.addView(reply);
+        // المحادثة التلقائية
+        LinearLayout c3 = card(root, "المحادثة التلقائية مع الزبون");
+        Switch flow = sw("بعد الحجز: طلب العمر ثم طريقة دفع الكشفية", prefs.flow());
+        flow.setOnCheckedChangeListener((b, v) -> prefs.setFlow(v));
+        c3.addView(flow);
+        c3.addView(note("الخطوات: الزبون يرسل الاسم ← يُطلب العمر ويُسجَّل في خانة العمر ← يُسأل عن الدفع: «يدوي» (في العيادة) أو «الان» (ماستر كارد)."));
+
+        c3.addView(note("مبلغ الكشفية {fee}"));
+        fee = edit(prefs.fee(), "مثال: 25,000 دينار", false);
+        c3.addView(fee);
+        c3.addView(note("معلومات الدفع بالماستر كارد {card} — تُرسل لمن يكتب «الان»"));
+        card = edit(prefs.card(), "رقم البطاقة واسم صاحبها", true);
+        c3.addView(card);
+
+        LinearLayout c4 = card(root, "نصوص الرسائل");
+        c4.addView(note("يمكنك استخدام: {name} الاسم، {n} رقم الدور، {age} العمر، {fee} الكشفية، {card} معلومات البطاقة."));
+        msgs = new EditText[Prefs.MESSAGES.length];
+        for (int i = 0; i < Prefs.MESSAGES.length; i++) {
+            String[] m = Prefs.MESSAGES[i];
+            TextView l = note(m[2]);
+            l.setTextColor(getColor(R.color.text));
+            c4.addView(l);
+            msgs[i] = edit(prefs.msg(m[0]), m[1], true);
+            c4.addView(msgs[i]);
+        }
+        c4.addView(button("استرجاع النصوص الافتراضية", v -> {
+            for (int i = 0; i < Prefs.MESSAGES.length; i++) msgs[i].setText(Prefs.MESSAGES[i][1]);
+        }));
 
         TextView save = button("حفظ", v -> {
             prefs.setKeyword(keyword.getText().toString().trim());
-            String r = reply.getText().toString().trim();
-            prefs.setReplyText(r.isEmpty() ? Prefs.DEFAULT_REPLY : r);
+            prefs.setFee(fee.getText().toString().trim());
+            prefs.setCard(card.getText().toString().trim());
+            for (int i = 0; i < Prefs.MESSAGES.length; i++) {
+                String v2 = msgs[i].getText().toString().trim();
+                prefs.setMsg(Prefs.MESSAGES[i][0], v2.isEmpty() ? Prefs.MESSAGES[i][1] : v2);
+            }
             Toast.makeText(this, "تم الحفظ ✅", Toast.LENGTH_SHORT).show();
             finish();
         });

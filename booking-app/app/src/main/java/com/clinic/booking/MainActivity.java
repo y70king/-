@@ -17,6 +17,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -155,6 +156,15 @@ public class MainActivity extends Activity {
         EditText name = input("اسم المريض/ة", isNew ? presetName : b.name, false);
         EditText ttl = input("العنوان / ملاحظة (اختياري)", isNew ? "" : b.title, false);
         EditText sender = input("المرسل / رقم الهاتف (اختياري)", isNew ? "" : b.sender, true);
+        EditText age = input("مثال: 25 سنة", isNew ? "" : b.age, false);
+
+        RadioGroup pay = new RadioGroup(this);
+        pay.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton pNone = radio("غير محدد"), pManual = radio("يدوي 💵"), pCard = radio("ماستر 💳");
+        pay.addView(pNone); pay.addView(pManual); pay.addView(pCard);
+        String curPay = isNew ? "" : b.payment;
+        pay.check(BookingDb.PAY_CARD.equals(curPay) ? pCard.getId()
+                : BookingDb.PAY_MANUAL.equals(curPay) ? pManual.getId() : pNone.getId());
 
         RadioGroup rg = new RadioGroup(this);
         rg.setOrientation(RadioGroup.HORIZONTAL);
@@ -176,25 +186,42 @@ public class MainActivity extends Activity {
         box.addView(label("اسم المريض/ة")); box.addView(name);
         box.addView(label("العنوان")); box.addView(ttl);
         box.addView(label("المرسل")); box.addView(sender);
+        box.addView(label("عمر المريض/ة")); box.addView(age);
+        box.addView(label("دفع الكشفية")); box.addView(pay);
         box.addView(label("الحالة")); box.addView(rg);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(box);
 
         AlertDialog.Builder bd = new AlertDialog.Builder(this)
                 .setTitle(isNew ? "حجز جديد" : "تعديل الحجز رقم " + b.queueNo)
-                .setView(box)
+                .setView(scroll)
                 .setPositiveButton("حفظ", (d, w) -> {
                     String n = name.getText().toString().trim();
                     if (n.isEmpty()) { toast("اكتب اسم المريض/ة"); return; }
                     boolean arrived = rg.getCheckedRadioButtonId() == rArr.getId();
+                    String ageV = age.getText().toString().trim();
+                    int pid = pay.getCheckedRadioButtonId();
+                    String payV = pid == pCard.getId() ? BookingDb.PAY_CARD
+                            : pid == pManual.getId() ? BookingDb.PAY_MANUAL : "";
                     if (isNew) {
                         if (!dayKey().equals(BookingDb.today())) toast("أُضيف الحجز الى جدول اليوم");
                         BookingDb.Booking nb = db.add(n, ttl.getText().toString().trim(), sender.getText().toString().trim());
-                        if (arrived) { nb.arrived = true; db.update(nb); }
+                        nb.arrived = arrived;
+                        nb.age = ageV;
+                        nb.payment = payV;
+                        db.update(nb);
                         day.setTimeInMillis(System.currentTimeMillis());
                     } else {
                         b.name = n;
                         b.title = ttl.getText().toString().trim();
                         b.sender = sender.getText().toString().trim();
                         b.arrived = arrived;
+                        b.age = ageV;
+                        b.payment = payV;
+                        // تعديل يدوي ينهي المحادثة التلقائية اذا اكتملت البيانات
+                        if (!payV.isEmpty()) b.stage = BookingDb.STAGE_DONE;
+                        else if (!ageV.isEmpty() && b.stage == BookingDb.STAGE_AGE) b.stage = BookingDb.STAGE_PAYMENT;
                         db.update(b);
                     }
                     refresh();
@@ -225,7 +252,10 @@ public class MainActivity extends Activity {
         sb.append("📋 ").append(prefs.title()).append("\n").append(dayLabel.getText()).append("\n\n");
         for (BookingDb.Booking b : all) {
             sb.append(b.queueNo).append(". ").append(b.name);
+            if (b.age != null && !b.age.isEmpty()) sb.append(" (").append(b.age).append(")");
             if (b.title != null && !b.title.isEmpty()) sb.append(" — ").append(b.title);
+            if (BookingDb.PAY_CARD.equals(b.payment)) sb.append("  💳");
+            else if (BookingDb.PAY_MANUAL.equals(b.payment)) sb.append("  💵");
             sb.append(b.arrived ? "  ✅ واصل" : "  ⏳ غير واصل").append("\n");
         }
         int[] c = db.counts(dayKey());
@@ -261,7 +291,14 @@ public class MainActivity extends Activity {
             ((TextView) v.findViewById(R.id.name)).setText(b.name);
 
             StringBuilder sub = new StringBuilder();
-            if (b.title != null && !b.title.isEmpty()) sub.append("📍 ").append(b.title);
+            if (BookingDb.PAY_CARD.equals(b.payment)) sub.append("💳 ماستر كارد");
+            else if (BookingDb.PAY_MANUAL.equals(b.payment)) sub.append("💵 دفع يدوي");
+            else if (b.stage == BookingDb.STAGE_AGE) sub.append("⏳ بانتظار العمر");
+            else if (b.stage == BookingDb.STAGE_PAYMENT) sub.append("⏳ بانتظار طريقة الدفع");
+            if (b.title != null && !b.title.isEmpty()) {
+                if (sub.length() > 0) sub.append("   ");
+                sub.append("📍 ").append(b.title);
+            }
             if (b.sender != null && !b.sender.isEmpty() && !b.sender.equals(b.name)) {
                 if (sub.length() > 0) sub.append("   ");
                 sub.append("💬 ").append(b.sender);
@@ -270,6 +307,7 @@ public class MainActivity extends Activity {
             subV.setText(sub);
             subV.setVisibility(sub.length() == 0 ? View.GONE : View.VISIBLE);
 
+            ((TextView) v.findViewById(R.id.age)).setText(b.age == null || b.age.isEmpty() ? "—" : b.age);
             ((TextView) v.findViewById(R.id.time)).setText(
                     new SimpleDateFormat("h:mm a", new Locale("ar")).format(new Date(b.createdAt)));
 
@@ -296,6 +334,13 @@ public class MainActivity extends Activity {
         e.setPadding(dp(12), dp(10), dp(12), dp(10));
         if (phone) e.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         return e;
+    }
+
+    private RadioButton radio(String s) {
+        RadioButton r = new RadioButton(this);
+        r.setText(s);
+        r.setId(View.generateViewId());
+        return r;
     }
 
     private View wrap(View v) {

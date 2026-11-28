@@ -197,7 +197,15 @@
                 android:textStyle="bold" />
 
             <TextView
-                android:layout_width="56dp"
+                android:layout_width="50dp"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="العمر"
+                android:textColor="@color/text"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="52dp"
                 android:layout_height="wrap_content"
                 android:gravity="center"
                 android:text="الوقت"

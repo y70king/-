@@ -26,7 +26,13 @@ public class BookingDb extends SQLiteOpenHelper {
         public String sender;   // اسم/رقم المرسل في واتساب
         public long createdAt;
         public boolean arrived; // واصل أم لا
+        public String age = "";     // عمر المريض/ة
+        public String payment = ""; // طريقة دفع الكشفية: يدوي / ماستر كارد
+        public int stage = STAGE_DONE; // مرحلة المحادثة مع الزبون
     }
+
+    public static final int STAGE_AGE = 0, STAGE_PAYMENT = 1, STAGE_DONE = 2;
+    public static final String PAY_MANUAL = "يدوي", PAY_CARD = "ماستر كارد";
 
     public static final int FILTER_ALL = 0, FILTER_ARRIVED = 1, FILTER_WAITING = 2;
 
@@ -45,20 +51,27 @@ public class BookingDb extends SQLiteOpenHelper {
         MAIN.post(() -> { Runnable r = changeListener; if (r != null) r.run(); });
     }
 
-    private BookingDb(Context c) { super(c, "bookings.db", null, 1); }
+    private BookingDb(Context c) { super(c, "bookings.db", null, 2); }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE bookings (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, " +
                 "queue_no INTEGER NOT NULL, name TEXT NOT NULL, title TEXT, sender TEXT, " +
-                "created_at INTEGER NOT NULL, arrived INTEGER NOT NULL DEFAULT 0)");
+                "created_at INTEGER NOT NULL, arrived INTEGER NOT NULL DEFAULT 0, " +
+                "age TEXT DEFAULT '', payment TEXT DEFAULT '', stage INTEGER NOT NULL DEFAULT 2)");
         db.execSQL("CREATE INDEX idx_day ON bookings(day)");
         // مفاتيح الرسائل التي تمت معالجتها حتى لا تتكرر
         db.execSQL("CREATE TABLE seen (k TEXT PRIMARY KEY, t INTEGER NOT NULL)");
     }
 
     @Override
-    public void onUpgrade(SQLiteDatabase db, int o, int n) { }
+    public void onUpgrade(SQLiteDatabase db, int o, int n) {
+        if (o < 2) {
+            db.execSQL("ALTER TABLE bookings ADD COLUMN age TEXT DEFAULT ''");
+            db.execSQL("ALTER TABLE bookings ADD COLUMN payment TEXT DEFAULT ''");
+            db.execSQL("ALTER TABLE bookings ADD COLUMN stage INTEGER NOT NULL DEFAULT 2");
+        }
+    }
 
     public static String today() { return dayOf(System.currentTimeMillis()); }
 
@@ -67,6 +80,10 @@ public class BookingDb extends SQLiteOpenHelper {
     }
 
     public synchronized Booking add(String name, String title, String sender) {
+        return add(name, title, sender, STAGE_DONE);
+    }
+
+    public synchronized Booking add(String name, String title, String sender, int stage) {
         SQLiteDatabase db = getWritableDatabase();
         Booking b = new Booking();
         b.day = today();
@@ -74,6 +91,7 @@ public class BookingDb extends SQLiteOpenHelper {
         b.name = name;
         b.title = title == null ? "" : title;
         b.sender = sender == null ? "" : sender;
+        b.stage = stage;
         try (Cursor c = db.rawQuery("SELECT IFNULL(MAX(queue_no),0) FROM bookings WHERE day=?", new String[]{b.day})) {
             b.queueNo = c.moveToFirst() ? c.getInt(0) + 1 : 1;
         }
@@ -85,6 +103,9 @@ public class BookingDb extends SQLiteOpenHelper {
         v.put("sender", b.sender);
         v.put("created_at", b.createdAt);
         v.put("arrived", 0);
+        v.put("age", "");
+        v.put("payment", "");
+        v.put("stage", stage);
         b.id = db.insert("bookings", null, v);
         notifyChanged();
         return b;
@@ -105,6 +126,9 @@ public class BookingDb extends SQLiteOpenHelper {
         v.put("title", b.title);
         v.put("sender", b.sender);
         v.put("arrived", b.arrived ? 1 : 0);
+        v.put("age", b.age);
+        v.put("payment", b.payment);
+        v.put("stage", b.stage);
         getWritableDatabase().update("bookings", v, "id=?", new String[]{String.valueOf(b.id)});
         notifyChanged();
     }
@@ -143,10 +167,26 @@ public class BookingDb extends SQLiteOpenHelper {
                 b.sender = c.getString(c.getColumnIndexOrThrow("sender"));
                 b.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
                 b.arrived = c.getInt(c.getColumnIndexOrThrow("arrived")) == 1;
+                b.age = nz(c.getString(c.getColumnIndexOrThrow("age")));
+                b.payment = nz(c.getString(c.getColumnIndexOrThrow("payment")));
+                b.stage = c.getInt(c.getColumnIndexOrThrow("stage"));
                 out.add(b);
             }
         }
         return out;
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
+
+    /** آخر حجز اليوم من هذا المرسل ما زال بانتظار العمر او الدفع. */
+    public synchronized Booking pendingFor(String sender) {
+        if (sender == null || sender.isEmpty()) return null;
+        List<Booking> all = list(today(), FILTER_ALL, null);
+        for (int i = all.size() - 1; i >= 0; i--) {
+            Booking b = all.get(i);
+            if (sender.equals(b.sender) && b.stage != STAGE_DONE) return b;
+        }
+        return null;
     }
 
     /** [الكل، الواصلين، المنتظرين] */

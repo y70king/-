@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#F4F7FB</color>
+    <color name="card">#FFFFFF</color>
+    <color name="primary">#5B8DEF</color>
+    <color name="primary_soft">#E6EFFE</color>
+    <color name="header_row">#DCE9FB</color>
+    <color name="row_alt">#F8FAFE</color>
+    <color name="text">#2D3748</color>
+    <color name="text_soft">#718096</color>
+    <color name="arrived_bg">#E3F6EA</color>
+    <color name="arrived_text">#2F855A</color>
+    <color name="waiting_bg">#FDEDED</color>
+    <color name="waiting_text">#C05656</color>
+    <color name="warn_bg">#FFF6DD</color>
+    <color name="warn_text">#946B00</color>
+    <color name="divider">#E6ECF3</color>
+</resources>
